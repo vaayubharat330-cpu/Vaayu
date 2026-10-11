@@ -502,6 +502,18 @@ function initDriverRegistration() {
     showStep('FLEET');
   });
 
+  const btnLandingFleetHero = document.getElementById('btnLandingFleetRegisterHero');
+  if (btnLandingFleetHero) btnLandingFleetHero.addEventListener('click', () => {
+    openAuthBottomSheet();
+    showStep('FLEET');
+  });
+
+  const btnLandingFleetTop = document.getElementById('btnLandingFleetRegisterTop');
+  if (btnLandingFleetTop) btnLandingFleetTop.addEventListener('click', () => {
+    openAuthBottomSheet();
+    showStep('FLEET');
+  });
+
   // Back to Sign In links
   const btnBack = document.getElementById('btnBackToSignIn');
   if (btnBack) btnBack.addEventListener('click', () => showStep('SIGNIN'));
