@@ -187,62 +187,365 @@
                 </div>
               </div>
 
-              </div>
-
               <!-- Continue to OTP Button -->
               <button id="btnProceedToOtp" data-on="click" data-action="proceedToOtpStep" type="button" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer">
                 <span>CONTINUE TO OTP</span>
                 <svg class="w-4 h-4 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
               </button>
 
-              <!-- New driver? Opens the registration form -->
-              <div class="text-center text-xs text-slate-400 pt-1">
-                New to VAAYU?
-                <button id="btnOpenDriverRegister" type="button" class="text-emerald-400 hover:text-emerald-300 font-bold underline cursor-pointer">Register as a driver</button>
+              <!-- New driver or fleet partner registration options -->
+              <div class="pt-2 border-t border-slate-800 space-y-2">
+                <div class="text-center text-xs text-slate-400">
+                  New individual driver?
+                  <button id="btnOpenDriverRegister" type="button" class="text-emerald-400 hover:text-emerald-300 font-bold underline cursor-pointer ml-1">Register as a driver</button>
+                </div>
+                <div class="p-2.5 rounded-xl bg-slate-950 border border-cyan-500/30 flex items-center justify-between text-xs">
+                  <div class="flex items-center gap-2">
+                    <span class="text-lg">🚛</span>
+                    <div>
+                      <strong class="text-white font-bold block text-[11px]">Fleet Owner Registration</strong>
+                      <span class="text-[10px] text-cyan-300">Register commercial vehicle fleets</span>
+                    </div>
+                  </div>
+                  <button id="btnOpenFleetRegister" type="button" class="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/40 rounded-lg text-[10px] font-bold font-mono transition cursor-pointer">
+                    Fleet Portal &rarr;
+                  </button>
+                </div>
               </div>
             </div>
 
-            <!-- Driver Registration: step 1 collects the application details -->
-            <div id="registerStepDetails" class="hidden space-y-3">
+            <!-- ==================================================== -->
+            <!-- DRIVER REGISTRATION: STEP 1 - BASIC DRIVER IDENTITY -->
+            <!-- ==================================================== -->
+            <div id="registerStepDetails" class="hidden space-y-3.5">
               <div class="space-y-1">
-                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block font-mono">Driver Registration &bull; Step 1 of 3</span>
-                <h3 class="font-display font-black text-lg text-white leading-tight">Your details</h3>
-                <p class="text-xs text-slate-400">An admin reviews every application before you can go online.</p>
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block font-mono">Step 1 of 4 &bull; Driver Identity</span>
+                  <span class="text-[10px] text-slate-400 font-mono">25% completed</span>
+                </div>
+                <h3 class="font-display font-black text-lg text-white leading-tight">Driver Details &amp; Vehicle</h3>
+                <p class="text-xs text-slate-400">Enter your official name, mobile number and vehicle category.</p>
               </div>
-              <input id="regName" type="text" maxlength="60" placeholder="Full name (as on licence)" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none placeholder-slate-600" />
-              <input id="regPhone" type="tel" maxlength="10" placeholder="10-digit mobile number" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none placeholder-slate-600 tracking-wider" />
-              <select id="regVehicle" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none">
-                <option value="">Vehicle you will drive</option>
-              </select>
-              <input id="regVehicleNumber" type="text" maxlength="13" placeholder="Vehicle number, e.g. TS09EA4589" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm font-mono text-white uppercase focus:outline-none placeholder-slate-600" />
-              <input id="regLicense" type="text" maxlength="20" placeholder="Driving licence number" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm font-mono text-white uppercase focus:outline-none placeholder-slate-600" />
+
+              <!-- Full Name -->
+              <div class="space-y-1">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono">Full Legal Name</label>
+                <input id="regName" type="text" maxlength="60" placeholder="Full name (as printed on licence)" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none placeholder-slate-600" />
+              </div>
+
+              <!-- Phone Number -->
+              <div class="space-y-1">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono">Mobile Number</label>
+                <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-1 px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-mono font-bold text-white shrink-0">
+                    <span>🇮🇳</span> <span>+91</span>
+                  </div>
+                  <input id="regPhone" type="tel" maxlength="10" placeholder="10-digit mobile number" class="flex-1 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none placeholder-slate-600 tracking-wider" />
+                </div>
+              </div>
+
+              <!-- Vehicle Category Selection -->
+              <div class="space-y-1">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono">Vehicle You Will Drive</label>
+                <select id="regVehicle" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none">
+                  <option value="">Select vehicle category</option>
+                </select>
+              </div>
+
+              <!-- Driving Licence Number -->
+              <div class="space-y-1">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono">Driving Licence Number</label>
+                <input id="regLicense" type="text" maxlength="20" placeholder="e.g. TS092021008899" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm font-mono text-white uppercase focus:outline-none placeholder-slate-600" />
+              </div>
+
               <p id="regError" class="text-xs text-rose-400 min-h-[1rem]"></p>
-              <button id="btnRegContinue" type="button" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl cursor-pointer">Continue</button>
-              <div class="text-center text-xs text-slate-400">Already registered? <button id="btnBackToSignIn" type="button" class="text-emerald-400 font-bold underline cursor-pointer">Sign in</button></div>
+
+              <button id="btnRegContinue" type="button" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-2 transition active:scale-95">
+                <span>NEXT: VEHICLE &amp; OWNERSHIP</span>
+                <svg class="w-4 h-4 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+              </button>
+
+              <div class="text-center text-xs text-slate-400">
+                Already registered? <button id="btnBackToSignIn" type="button" class="text-emerald-400 font-bold underline cursor-pointer">Sign in</button>
+              </div>
             </div>
 
-            <!-- Driver Registration: step 2 verifies the phone with an OTP -->
-            <div id="registerStepOtp" class="hidden space-y-3">
+            <!-- ======================================================== -->
+            <!-- DRIVER REGISTRATION: STEP 2 - VEHICLE & RC OWNERSHIP     -->
+            <!-- ======================================================== -->
+            <div id="registerStepOwnership" class="hidden space-y-3.5">
               <div class="space-y-1">
-                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block font-mono">Driver Registration &bull; Step 2 of 3</span>
-                <h3 class="font-display font-black text-lg text-white leading-tight">Verify your mobile</h3>
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block font-mono">Step 2 of 4 &bull; Vehicle &amp; RC Ownership</span>
+                  <span class="text-[10px] text-slate-400 font-mono">50% completed</span>
+                </div>
+                <h3 class="font-display font-black text-lg text-white leading-tight">Vehicle Registration Card (RC)</h3>
+                <p class="text-xs text-slate-400">Is the vehicle registered in your own name, or another owner/fleet?</p>
+              </div>
+
+              <!-- Vehicle Plate Number -->
+              <div class="space-y-1">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono">Vehicle Registration Number (Plate)</label>
+                <input id="regVehicleNumber" type="text" maxlength="13" placeholder="e.g. TS09EA4589" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm font-mono text-white uppercase focus:outline-none placeholder-slate-600" />
+              </div>
+
+              <!-- Ownership Type Toggle -->
+              <div class="space-y-2 pt-1">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono">Is the Vehicle RC in your name?</label>
+                <div class="grid grid-cols-2 gap-2">
+                  <label id="optOwnerSelf" class="p-3 rounded-xl border border-emerald-500 bg-emerald-500/10 flex items-start gap-2.5 cursor-pointer transition">
+                    <input type="radio" name="regOwnershipType" value="SELF" checked class="mt-0.5 accent-emerald-500" />
+                    <div>
+                      <strong class="text-xs font-bold text-white block">Yes, I am the Owner</strong>
+                      <span class="text-[10px] text-slate-400">RC is in my legal name</span>
+                    </div>
+                  </label>
+                  <label id="optOwnerOther" class="p-3 rounded-xl border border-slate-800 bg-slate-950/60 hover:border-slate-700 flex items-start gap-2.5 cursor-pointer transition">
+                    <input type="radio" name="regOwnershipType" value="THIRD_PARTY" class="mt-0.5 accent-emerald-500" />
+                    <div>
+                      <strong class="text-xs font-bold text-white block">No, Someone Else</strong>
+                      <span class="text-[10px] text-slate-400">Fleet / Leased / Family</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Third Party Owner Name (conditionally visible) -->
+              <div id="thirdPartyOwnerFields" class="hidden space-y-2.5 p-3 rounded-xl bg-slate-950 border border-amber-500/30">
+                <div class="flex items-center gap-1.5 text-amber-400 text-xs font-bold font-mono">
+                  <span>ℹ️</span> <span>Third-Party Vehicle Authorization</span>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-300 block font-mono">Vehicle Owner Name (as on RC)</label>
+                  <input id="regRcOwnerName" type="text" maxlength="60" placeholder="Name printed on RC smart card" class="w-full bg-slate-900 border border-slate-700 focus:border-amber-400 rounded-xl px-3 py-2 text-sm text-white focus:outline-none placeholder-slate-600" />
+                </div>
+                <label class="flex items-start gap-2 pt-1 cursor-pointer">
+                  <input id="regOwnerConsent" type="checkbox" checked class="mt-0.5 accent-emerald-500" />
+                  <span class="text-[11px] text-slate-300 leading-tight">
+                    I declare that I am authorized by the vehicle owner to operate this commercial vehicle on the VAAYU platform (NOC/Consent).
+                  </span>
+                </label>
+              </div>
+
+              <p id="regOwnershipError" class="text-xs text-rose-400 min-h-[1rem]"></p>
+
+              <div class="flex gap-2">
+                <button id="btnRegBackToDetails" type="button" class="w-1/3 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer">
+                  Back
+                </button>
+                <button id="btnRegContinueToPhotos" type="button" class="flex-1 py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-2 transition active:scale-95">
+                  <span>NEXT: LIVE CAPTURES</span>
+                  <svg class="w-4 h-4 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- DRIVER REGISTRATION: STEP 3 - LIVE CAMERA PHOTO CAPTURES -->
+            <!-- ======================================================== -->
+            <div id="registerStepCaptures" class="hidden space-y-3.5">
+              <div class="space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block font-mono">Step 3 of 4 &bull; Live Camera Captures</span>
+                  <span class="text-[10px] text-slate-400 font-mono">75% completed</span>
+                </div>
+                <h3 class="font-display font-black text-lg text-white leading-tight">Capture Required Documents</h3>
+                <p class="text-xs text-slate-400">Capture clear live photos of your vehicle, RC card, licence and selfie.</p>
+              </div>
+
+              <!-- Document Capture Grid -->
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                
+                <!-- 1. Live Vehicle Photo -->
+                <div class="p-3 bg-slate-950 border border-slate-800 rounded-2xl space-y-2 flex flex-col justify-between">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center justify-between">
+                      <span class="text-lg">🚚</span>
+                      <span id="badgeDocVehicle" class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-slate-800 text-slate-400">Pending</span>
+                    </div>
+                    <strong class="text-white font-bold block text-xs">Vehicle Photo</strong>
+                    <span class="text-[10px] text-slate-400 block">Number plate visible</span>
+                  </div>
+                  <button id="btnCaptureVehicle" type="button" class="w-full py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer">
+                    <span>📷</span> <span id="labelCaptureVehicle">Live Capture</span>
+                  </button>
+                </div>
+
+                <!-- 2. Live RC Card Photo -->
+                <div class="p-3 bg-slate-950 border border-slate-800 rounded-2xl space-y-2 flex flex-col justify-between">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center justify-between">
+                      <span class="text-lg">📄</span>
+                      <span id="badgeDocRc" class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-slate-800 text-slate-400">Pending</span>
+                    </div>
+                    <strong class="text-white font-bold block text-xs">RC Card (Front)</strong>
+                    <span class="text-[10px] text-slate-400 block">Clear registration card</span>
+                  </div>
+                  <button id="btnCaptureRc" type="button" class="w-full py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer">
+                    <span>📷</span> <span id="labelCaptureRc">Live Capture</span>
+                  </button>
+                </div>
+
+                <!-- 3. Live Driver Licence -->
+                <div class="p-3 bg-slate-950 border border-slate-800 rounded-2xl space-y-2 flex flex-col justify-between">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center justify-between">
+                      <span class="text-lg">🪪</span>
+                      <span id="badgeDocLicense" class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-slate-800 text-slate-400">Pending</span>
+                    </div>
+                    <strong class="text-white font-bold block text-xs">Driving Licence</strong>
+                    <span class="text-[10px] text-slate-400 block">Front side with photo</span>
+                  </div>
+                  <button id="btnCaptureLicense" type="button" class="w-full py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer">
+                    <span>📷</span> <span id="labelCaptureLicense">Live Capture</span>
+                  </button>
+                </div>
+
+                <!-- 4. Live Driver Selfie -->
+                <div class="p-3 bg-slate-950 border border-slate-800 rounded-2xl space-y-2 flex flex-col justify-between">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center justify-between">
+                      <span class="text-lg">👨‍✈️</span>
+                      <span id="badgeDocSelfie" class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-slate-800 text-slate-400">Pending</span>
+                    </div>
+                    <strong class="text-white font-bold block text-xs">Driver Live Selfie</strong>
+                    <span class="text-[10px] text-slate-400 block">Face centered &amp; clear</span>
+                  </div>
+                  <button id="btnCaptureSelfie" type="button" class="w-full py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer">
+                    <span>📷</span> <span id="labelCaptureSelfie">Live Capture</span>
+                  </button>
+                </div>
+
+              </div>
+
+              <!-- Quick helper note -->
+              <p class="text-[10px] text-slate-400 text-center">
+                Camera access required. If camera is blocked, file selection will be available.
+              </p>
+
+              <p id="regCapturesError" class="text-xs text-rose-400 min-h-[1rem]"></p>
+
+              <div class="flex gap-2">
+                <button id="btnRegBackToOwnership" type="button" class="w-1/3 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer">
+                  Back
+                </button>
+                <button id="btnRegProceedToVerify" type="button" class="flex-1 py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-2 transition active:scale-95">
+                  <span>SEND OTP TO VERIFY</span>
+                  <svg class="w-4 h-4 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- DRIVER REGISTRATION: STEP 4 - PHONE OTP VERIFICATION     -->
+            <!-- ======================================================== -->
+            <div id="registerStepOtp" class="hidden space-y-3.5">
+              <div class="space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block font-mono">Step 4 of 4 &bull; Phone Verification</span>
+                  <span class="text-[10px] text-slate-400 font-mono">Almost done</span>
+                </div>
+                <h3 class="font-display font-black text-lg text-white leading-tight">Verify Your Mobile Number</h3>
                 <p class="text-xs text-slate-400">Enter the 6-digit code sent to <strong id="regOtpPhone" class="text-emerald-400">+91</strong>.</p>
               </div>
-              <input id="regOtpCode" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-center text-lg font-mono font-bold text-white tracking-[0.5em] focus:outline-none placeholder-slate-600" />
-              <p id="regOtpError" class="text-xs text-rose-400 min-h-[1rem]"></p>
-              <button id="btnRegVerify" type="button" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl cursor-pointer">Verify &amp; continue</button>
-              <div class="flex justify-between text-xs text-slate-400">
-                <button id="btnRegBack" type="button" class="hover:text-white cursor-pointer">Back</button>
+
+              <!-- 6-digit code input -->
+              <input id="regOtpCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-3 text-center text-2xl font-mono font-bold text-white tracking-[0.4em] focus:outline-none placeholder-slate-600" />
+              
+              <div class="flex items-center justify-between text-xs text-slate-400">
+                <a href="/otp-console.html" target="_blank" class="text-emerald-400 hover:underline font-bold flex items-center gap-1">
+                  <span>📱</span> View code in SMS Inbox
+                </a>
                 <button id="btnRegResend" type="button" class="hover:text-white cursor-pointer">Resend code</button>
+              </div>
+
+              <p id="regOtpError" class="text-xs text-rose-400 min-h-[1rem]"></p>
+
+              <div class="flex gap-2">
+                <button id="btnRegBack" type="button" class="w-1/3 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer">
+                  Back
+                </button>
+                <button id="btnRegVerify" type="button" class="flex-1 py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-2 transition active:scale-95">
+                  <span>SUBMIT APPLICATION</span>
+                  <span>⚡</span>
+                </button>
               </div>
             </div>
 
-            <!-- Driver Registration: step 3 confirms the application was received -->
-            <div id="registerStepDone" class="hidden space-y-3 text-center">
-              <div class="text-4xl">📝</div>
-              <h3 class="font-display font-black text-lg text-white">Application received</h3>
-              <p class="text-xs text-slate-400">Your application is waiting for admin approval. Come back and sign in with this number once it is approved. We will not send you a code until then.</p>
-              <button id="btnRegDoneBack" type="button" class="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl cursor-pointer">Back to sign in</button>
+            <!-- ======================================================== -->
+            <!-- DRIVER REGISTRATION: STEP 5 - CONFIRMATION RECEIVED      -->
+            <!-- ======================================================== -->
+            <div id="registerStepDone" class="hidden space-y-4 text-center py-4">
+              <div class="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 mx-auto flex items-center justify-center text-3xl">
+                ✓
+              </div>
+              <div class="space-y-1">
+                <h3 class="font-display font-black text-xl text-white">Application Submitted!</h3>
+                <p id="regSuccessAppId" class="text-xs text-emerald-400 font-mono font-bold"></p>
+                <p class="text-xs text-slate-300 max-w-sm mx-auto pt-1 leading-relaxed">
+                  Your application and live documents have been received by VAAYU Operations. Once reviewed and approved by the admin team, you will receive an SMS and can immediately sign in with this mobile number.
+                </p>
+              </div>
+
+              <button id="btnRegDoneBack" type="button" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl cursor-pointer">
+                Back to Sign In
+              </button>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- FLEET OWNER REGISTRATION MODAL / VIEW                   -->
+            <!-- ======================================================== -->
+            <div id="fleetRegisterView" class="hidden space-y-3.5">
+              <div class="space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-400 block font-mono">Fleet Partner Onboarding</span>
+                  <span class="text-lg">🚛</span>
+                </div>
+                <h3 class="font-display font-black text-lg text-white leading-tight">Register Your Fleet</h3>
+                <p class="text-xs text-slate-400">Onboard multiple commercial vehicles &amp; assign drivers.</p>
+              </div>
+
+              <div class="space-y-1">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono">Company / Fleet Name</label>
+                <input id="fleetRegCompanyName" type="text" placeholder="e.g. Royal Logistics Hub" class="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none placeholder-slate-600" />
+              </div>
+
+              <div class="space-y-1">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono">Authorized Contact Person</label>
+                <input id="fleetRegContactName" type="text" placeholder="Contact person full name" class="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none placeholder-slate-600" />
+              </div>
+
+              <div class="space-y-1">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono">Contact Mobile Number</label>
+                <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-1 px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-mono font-bold text-white shrink-0">
+                    <span>🇮🇳</span> <span>+91</span>
+                  </div>
+                  <input id="fleetRegPhone" type="tel" maxlength="10" placeholder="10-digit mobile number" class="flex-1 bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none placeholder-slate-600 tracking-wider" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-300 block font-mono">Fleet Size (Vehicles)</label>
+                  <input id="fleetRegSize" type="number" min="1" max="500" placeholder="e.g. 5" class="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none placeholder-slate-600 font-mono" />
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[11px] font-bold text-slate-300 block font-mono">Operating City</label>
+                  <input id="fleetRegCity" type="text" value="Hyderabad" class="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none placeholder-slate-600" />
+                </div>
+              </div>
+
+              <p id="fleetRegError" class="text-xs text-rose-400 min-h-[1rem]"></p>
+
+              <button id="btnSubmitFleetRegister" type="button" class="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-cyan-500/20 cursor-pointer flex items-center justify-center gap-2 transition active:scale-95">
+                <span>SUBMIT FLEET REGISTRATION</span>
+                <span>🚛</span>
+              </button>
+
+              <div class="text-center text-xs text-slate-400">
+                <button id="btnBackToDriverFromFleet" type="button" class="text-slate-300 hover:text-white font-bold underline cursor-pointer">&larr; Back to Driver Sign In</button>
+              </div>
             </div>
 
             <!-- Step 2: 4-Digit OTP Verification -->

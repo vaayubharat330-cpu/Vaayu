@@ -2,19 +2,28 @@
   {
     "name": "01_customer_portal_desktop",
     "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\01_customer_portal_desktop.png",
-    "errors": [],
+    "errors": [
+      "Loading the script 'https://cdn.tailwindcss.com/' violates the following Content Security Policy directive: \"script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com\". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.",
+      "Applying inline style violates the following Content Security Policy directive 'style-src 'self' https://fonts.googleapis.com https://unpkg.com https://cdnjs.cloudflare.com'. Either the 'unsafe-inline' keyword, a hash ('sha256-nT05iievB8Bm5+j53jNYw/Xr6JTGtBGADGX/vBlBnSQ='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+    ],
     "success": true
   },
   {
     "name": "02_customer_portal_mobile",
     "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\02_customer_portal_mobile.png",
-    "errors": [],
+    "errors": [
+      "Loading the script 'https://cdn.tailwindcss.com/' violates the following Content Security Policy directive: \"script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com\". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.",
+      "Applying inline style violates the following Content Security Policy directive 'style-src 'self' https://fonts.googleapis.com https://unpkg.com https://cdnjs.cloudflare.com'. Either the 'unsafe-inline' keyword, a hash ('sha256-nT05iievB8Bm5+j53jNYw/Xr6JTGtBGADGX/vBlBnSQ='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+    ],
     "success": true
   },
   {
     "name": "03_merchant_b2b_cockpit_desktop",
     "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\03_merchant_b2b_cockpit_desktop.png",
-    "errors": [],
+    "errors": [
+      "Loading the script 'https://cdn.tailwindcss.com/' violates the following Content Security Policy directive: \"script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com\". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.",
+      "Applying inline style violates the following Content Security Policy directive 'style-src 'self' https://fonts.googleapis.com https://unpkg.com https://cdnjs.cloudflare.com'. Either the 'unsafe-inline' keyword, a hash ('sha256-auH8vFwbgu4e1FaIRMpNhJZ7+jgVGCAIbUwLjmGiObo='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+    ],
     "success": true
   },
   {
@@ -28,7 +37,9 @@
   {
     "name": "05_operations_admin_control_tower",
     "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\05_operations_admin_control_tower.png",
-    "errors": [],
+    "errors": [
+      "Applying inline style violates the following Content Security Policy directive 'style-src 'self' https://fonts.googleapis.com https://unpkg.com https://cdnjs.cloudflare.com'. Either the 'unsafe-inline' keyword, a hash ('sha256-OsVvwJxRV9KzFDRzt5EZFeh1eB/IJ6kOZ5uuzrdQd30='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+    ],
     "success": true
   },
   {
@@ -50,7 +61,10 @@
   {
     "name": "08_public_live_tracking_mobile",
     "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\08_public_live_tracking_mobile.png",
-    "errors": [],
+    "errors": [
+      "Loading the script 'https://cdn.tailwindcss.com/' violates the following Content Security Policy directive: \"script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com\". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.",
+      "Applying inline style violates the following Content Security Policy directive 'style-src 'self' https://fonts.googleapis.com https://unpkg.com https://cdnjs.cloudflare.com'. Either the 'unsafe-inline' keyword, a hash ('sha256-MCeYxggDECEfb3q6ckh/dnRf+BlhkYqNRU67jm09HDM='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked."
+    ],
     "success": true
   },
   {

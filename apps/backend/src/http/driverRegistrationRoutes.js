@@ -89,7 +89,19 @@ function createDriverRegistrationRoutes({ db, otpChallenges, OtpError, redisRate
           return fail(401, 'Verify your mobile number with the code sent to you before registering.');
         }
 
-        const application = db.createDriverApplication({ name, phone, vehicleId, vehicleNumber, licenseNumber, city, email: data.email });
+        const application = db.createDriverApplication({
+          name,
+          phone,
+          vehicleId,
+          vehicleNumber,
+          licenseNumber,
+          city,
+          email: data.email,
+          ownershipType: data.ownershipType || 'SELF',
+          rcOwnerName: data.rcOwnerName || name,
+          ownerConsent: data.ownerConsent !== undefined ? Boolean(data.ownerConsent) : true,
+          capturedDocuments: data.capturedDocuments || {},
+        });
         res.writeHead(201, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           success: true,
