@@ -110,10 +110,12 @@ class InMemoryDriverLocationStore extends DriverLocationStore {
     if (!driver) {
       const dbStore = db.getDb();
       const dProf = (dbStore.driver_profiles || []).find(d => d.id === driverId || d.userId === driverId);
+      const latVal = Number(dProf?.currentLat ?? dProf?.lat ?? 17.4850);
+      const lngVal = Number(dProf?.currentLng ?? dProf?.lng ?? 78.4041);
       driver = {
         driverId,
-        lat: dProf ? dProf.currentLat : 17.4850,
-        lng: dProf ? dProf.currentLng : 78.4041,
+        lat: Number.isFinite(latVal) ? latVal : 17.4850,
+        lng: Number.isFinite(lngVal) ? lngVal : 78.4041,
         bearing: 0,
         speed: 0,
         lastPingMs: Date.now(),
@@ -238,10 +240,12 @@ class RedisDriverLocationStore extends DriverLocationStore {
     if (!loc) {
       const dbStore = db.getDb();
       const dProf = (dbStore.driver_profiles || []).find(d => d.id === driverId || d.userId === driverId);
+      const latVal = Number(dProf?.currentLat ?? dProf?.lat ?? 17.4850);
+      const lngVal = Number(dProf?.currentLng ?? dProf?.lng ?? 78.4041);
       loc = {
         driverId,
-        lat: dProf ? dProf.currentLat : 17.4850,
-        lng: dProf ? dProf.currentLng : 78.4041,
+        lat: Number.isFinite(latVal) ? latVal : 17.4850,
+        lng: Number.isFinite(lngVal) ? lngVal : 78.4041,
         bearing: 0,
         speed: 0,
         lastPingMs: Date.now(),

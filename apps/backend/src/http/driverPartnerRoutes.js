@@ -81,6 +81,11 @@ function createDriverPartnerRoutes({
           }
         }
         if (typeof data.vehicle_id === 'string' && db.getVehicles().some(vehicle => vehicle.id === data.vehicle_id)) changes.vehicleId = data.vehicle_id;
+        const latNum = Number(data.lat ?? data.latitude);
+        const lngNum = Number(data.lng ?? data.longitude);
+        if (Number.isFinite(latNum) && Math.abs(latNum) <= 90) changes.currentLat = latNum;
+        if (Number.isFinite(lngNum) && Math.abs(lngNum) <= 180) changes.currentLng = lngNum;
+
         const updated = db.updateDriverProfile ? db.updateDriverProfile(req.authorizedDriverId, changes) : (changes.status && db.updateDriverStatus ? db.updateDriverStatus(req.authorizedDriverId, changes.status) : null);
         if (changes.status && changes.status !== 'ON_TRIP' && driverLocationService.setDriverAvailability) {
           await driverLocationService.setDriverAvailability(req.authorizedDriverId, changes.status === 'ONLINE');

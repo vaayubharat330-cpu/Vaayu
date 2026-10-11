@@ -16,7 +16,8 @@ const suites = [
   'test/security/authorization.test.js',
   'test/security/input.test.js',
   'test/security/transitions.test.js',
-  'test/unit/no-silent-success.test.js'
+  'test/unit/no-silent-success.test.js',
+  'test/integration/lifecycle.test.js'
 ];
 
 console.log('----------------------------------------------------');
