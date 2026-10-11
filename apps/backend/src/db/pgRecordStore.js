@@ -29,8 +29,12 @@ function canonical(value) {
   return value;
 }
 
+function safeSerializeJson(val) {
+  return JSON.stringify(val).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '');
+}
+
 function digest(value) {
-  return crypto.createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+  return crypto.createHash('sha256').update(safeSerializeJson(canonical(value))).digest('hex');
 }
 
 // Splits a collection into keyed records. Array items use their `id`; items without one are keyed
@@ -117,13 +121,13 @@ class PgRecordStore {
                ON CONFLICT (collection, record_key) DO UPDATE
                  SET data = EXCLUDED.data, position = EXCLUDED.position,
                      version = ${TABLE}.version + 1, updated_at = now()`,
-              [change.collection, change.key, JSON.stringify(change.upsert), change.position || 0]
+              [change.collection, change.key, safeSerializeJson(change.upsert), change.position || 0]
             );
           } else {
             const updated = await client.query(
               `UPDATE ${TABLE} SET data = $4, position = $5, version = version + 1, updated_at = now()
                WHERE collection = $1 AND record_key = $2 AND version = $3`,
-              [change.collection, change.key, change.expectedVersion, JSON.stringify(change.upsert), change.position || 0]
+              [change.collection, change.key, change.expectedVersion, safeSerializeJson(change.upsert), change.position || 0]
             );
             if (!updated.rowCount) throw new VersionConflictError(change.collection, change.key);
           }

@@ -100,7 +100,13 @@ function createBreakdownRoutes({ db, redisLockManager, websocketService, enforce
         if (brokenDriverId) await redisLockManager.releaseDriverLock(brokenDriverId, orderId);
 
         const drivers = db.getDrivers ? db.getDrivers() : [];
-        const replacementDriver = drivers.find(d => (d.id !== brokenDriverId && d.userId !== brokenDriverId && d.status === 'ONLINE'));
+        let replacementDriver = null;
+        if (data.replacementDriverId) {
+          replacementDriver = drivers.find(d => (d.id === data.replacementDriverId || d.userId === data.replacementDriverId) && d.id !== brokenDriverId && d.userId !== brokenDriverId);
+        }
+        if (!replacementDriver) {
+          replacementDriver = drivers.find(d => (d.id !== brokenDriverId && d.userId !== brokenDriverId && d.status === 'ONLINE'));
+        }
         if (!replacementDriver) {
           res.writeHead(409, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ success: false, error: 'No driver is online to take over this trip.' }));
@@ -111,7 +117,7 @@ function createBreakdownRoutes({ db, redisLockManager, websocketService, enforce
         if (trip) {
           trip.status = 'DRIVER_ASSIGNED';
           trip.driver = replacementDriver;
-          trip.pickupAddress = `📍 BREAKDOWN TRANSFER SITE (${trip.pickupAddress || 'Pickup'})`;
+          trip.pickupAddress = `[TRANSFER SITE] BREAKDOWN TRANSFER SITE (${trip.pickupAddress || 'Pickup'})`;
           if (!trip.auditTrail) trip.auditTrail = [];
           trip.auditTrail.push({
             timestamp: new Date().toISOString(),
