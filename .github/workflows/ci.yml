@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+      - run: npm ci
+      - name: Syntax check (production entry and services)
+        run: |
+          node --check src/server_production.js
+          for f in src/services/*.js src/db/*.js src/map-engine/*.js; do node --check "$f"; done
+      - name: Unit tests (auth and OTP security)
+        run: npm test
+      - name: Dependency audit (production, fails on high or critical)
+        run: npm audit --omit=dev --audit-level=high
+
+  portals:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+      - run: npm ci
+      - name: Build portal bundles (fails if JSX does not compile)
+        run: node scripts/build-portals.js
+      - name: Bundles parse
+        run: |
+          for f in public/built/*.js public/driver/app.js; do node --check "$f"; done

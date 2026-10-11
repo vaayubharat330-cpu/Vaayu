@@ -1,0 +1,16 @@
+node_modules
+.local-tools
+dist
+.env
+.env.*
+!.env.example
+*.log
+*.out
+*.err
+local-data
+private_uploads
+src/db/vaayu_store.json
+src/db/*.sqlite
+src/db/vaayu_store.json.bak
+.git
+.gitignore

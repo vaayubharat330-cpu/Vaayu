@@ -1,0 +1,23 @@
+{
+  "name": "vaayu-backend",
+  "version": "1.0.0",
+  "description": "VAAYU Secure Intra-City Logistics API & Real-time Dispatch Engine",
+  "main": "src/server_production.js",
+  "scripts": {
+    "dev": "node src/server_production.js",
+    "test": "node --test test/unit/security.test.js test/unit/otp.test.js",
+    "start": "node src/server_production.js",
+    "db:seed": "node src/db/seedPostgres.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^3.4.19"
+  }
+}

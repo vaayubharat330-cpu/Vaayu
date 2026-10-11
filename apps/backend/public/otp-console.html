@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VAAYU OTP Console</title>
+  <link rel="stylesheet" href="/built/tailwind.css" />
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased">
+  <div class="max-w-6xl mx-auto px-4 py-8">
+    <header class="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">OTP Console</h1>
+        <p class="text-sm text-slate-400">Login codes for the customer, merchant, driver and fleet portals.</p>
+      </div>
+      <div id="session" class="hidden items-center gap-3 text-sm">
+        <span id="adminName" class="text-slate-300"></span>
+        <button id="signOut" class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700">Sign out</button>
+      </div>
+    </header>
+
+    <section id="loginPanel" class="max-w-sm mx-auto bg-slate-900 border border-slate-800 rounded-xl p-6">
+      <h2 class="text-lg font-semibold mb-4">Admin sign in</h2>
+      <form id="loginForm" class="space-y-3">
+        <input id="username" autocomplete="username" required placeholder="Username" class="w-full px-3 py-2 rounded bg-slate-950 border border-slate-700" />
+        <input id="password" type="password" autocomplete="current-password" required placeholder="Password" class="w-full px-3 py-2 rounded bg-slate-950 border border-slate-700" />
+        <button type="submit" class="w-full py-2 rounded bg-emerald-600 hover:bg-emerald-500 font-semibold">Sign in</button>
+        <p id="loginError" class="text-sm text-rose-400 min-h-[1.25rem]"></p>
+      </form>
+    </section>
+
+    <section id="console" class="hidden">
+      <div id="modeBanner" class="mb-4 rounded-lg border px-4 py-3 text-sm"></div>
+
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-3"><div class="text-xs text-slate-400">Total</div><div id="sTotal" class="text-xl font-bold">0</div></div>
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-3"><div class="text-xs text-slate-400">Pending</div><div id="sPending" class="text-xl font-bold text-amber-300">0</div></div>
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-3"><div class="text-xs text-slate-400">Verified</div><div id="sVerified" class="text-xl font-bold text-emerald-300">0</div></div>
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-3"><div class="text-xs text-slate-400">Expired / locked</div><div id="sExpired" class="text-xl font-bold text-slate-300">0</div></div>
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-3"><div class="text-xs text-slate-400">Delivery failed</div><div id="sFailed" class="text-xl font-bold text-rose-300">0</div></div>
+      </div>
+
+      <div class="flex flex-wrap gap-3 mb-4">
+        <select id="appFilter" class="px-3 py-2 rounded bg-slate-900 border border-slate-700 text-sm">
+          <option value="">All apps</option>
+          <option value="CUSTOMER">Customer</option>
+          <option value="MERCHANT">Merchant</option>
+          <option value="DRIVER">Driver</option>
+          <option value="FLEET_OWNER">Fleet owner</option>
+        </select>
+        <select id="statusFilter" class="px-3 py-2 rounded bg-slate-900 border border-slate-700 text-sm">
+          <option value="">All statuses</option>
+          <option value="PENDING">Pending</option>
+          <option value="VERIFIED">Verified</option>
+          <option value="EXPIRED">Expired</option>
+          <option value="LOCKED">Locked</option>
+          <option value="INVALIDATED">Invalidated</option>
+        </select>
+        <span id="updated" class="text-xs text-slate-500 self-center"></span>
+      </div>
+
+      <div class="overflow-x-auto bg-slate-900 border border-slate-800 rounded-xl">
+        <table class="w-full text-sm">
+          <thead class="text-left text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="px-3 py-2">Requested</th>
+              <th class="px-3 py-2">App</th>
+              <th class="px-3 py-2">Phone</th>
+              <th class="px-3 py-2">Status</th>
+              <th class="px-3 py-2">Attempts</th>
+              <th class="px-3 py-2">Delivery</th>
+              <th class="px-3 py-2">Code</th>
+              <th class="px-3 py-2">Expires</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <p id="empty" class="hidden p-6 text-center text-slate-500">No login codes have been requested yet.</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="/otp-console.js" defer></script>
+</body>
+</html>

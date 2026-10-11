@@ -1,0 +1,68 @@
+# Local and staging stack: PostgreSQL, Redis, and the VAAYU backend.
+# Secrets come from a .env file next to this file (copy .env.compose.example and fill it in).
+# Nothing secret is written in this file. Database and Redis ports are bound to 127.0.0.1 only.
+name: vaayu
+
+services:
+  vaayu_postgres:
+    image: postgres:18
+    container_name: vaayu_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-vaayu}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-vaayu}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vaayu_redis:
+    image: redis:7-alpine
+    container_name: vaayu_redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+
+  vaayu_backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: vaayu_backend
+    restart: unless-stopped
+    depends_on:
+      vaayu_postgres:
+        condition: service_healthy
+      vaayu_redis:
+        condition: service_healthy
+    env_file:
+      - ./apps/backend/.env
+    environment:
+      NODE_ENV: production
+      PERSISTENCE_PROVIDER: postgres
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@vaayu_postgres:5432/${POSTGRES_DB:-vaayu}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@vaayu_redis:6379
+      HOST: 0.0.0.0
+      PORT: 4000
+      TRUST_PROXY: "true"
+    ports:
+      - "127.0.0.1:4000:4000"
+
+volumes:
+  postgres_data:
+  redis_data:

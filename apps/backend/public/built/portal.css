@@ -1,0 +1,34 @@
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+body.portal-track-body { background-color: #090d16; }
+#map { height: 100%; width: 100%; min-height: 480px; border-radius: 1.25rem; z-index: 1; }
+#admin-map { height: 100%; width: 100%; min-height: 440px; border-radius: 1.25rem; z-index: 1; }
+.leaflet-pane { z-index: 10 !important; }
+.leaflet-top, .leaflet-bottom { z-index: 20 !important; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.clean-leaflet-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+.leaflet-container { background: #090d16 !important; font-family: inherit; }
+.capacity-empty { width: 0%; }
+.slider-fill-initial { width: 56px; }
+.slider-thumb-touch { touch-action: none; }
+.ocr-overlay-layer { z-index: 9998; }
+.pin-emoji-lg { font-size: 28px; line-height: 1; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.6)); }
+.pin-emoji-xl { font-size: 32px; line-height: 1; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.6)); cursor: pointer; }
+.pin-emoji-xl-center { font-size: 32px; line-height: 1; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.6)); cursor: pointer; text-align: center; }
+.pin-emoji-md { font-size: 20px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+.pin-emoji-sm { font-size: 18px; }
+.pin-emoji-truck { font-size: 22px; }
+.pin-emoji-24 { font-size: 24px; }
+.pin-emoji-28-glow { font-size: 28px; filter: drop-shadow(0 0 10px #f59e0b); }
+.pin-emoji-sm-box { font-size: 18px; background: #0f172a; padding: 4px; border-radius: 8px; border: 1px solid #f59e0b; }
+.pin-dot-emerald-20 { background: #10b981; width: 20px; height: 20px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 12px rgba(16,185,129,0.9), 0 3px 6px rgba(0,0,0,0.5); }
+.pin-dot-emerald-22 { background: #10b981; width: 22px; height: 22px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 14px rgba(16,185,129,0.9), 0 3px 6px rgba(0,0,0,0.5); }
+.pin-dot-amber-18 { background: #f59e0b; width: 18px; height: 18px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 10px rgba(245,158,11,0.9), 0 3px 6px rgba(0,0,0,0.5); }
+.pin-dot-rose-20 { background: #f43f5e; width: 20px; height: 20px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 12px rgba(244,63,94,0.9), 0 3px 6px rgba(0,0,0,0.5); }
+.pin-dot-rose-22 { background: #f43f5e; width: 22px; height: 22px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 14px rgba(244,63,94,0.9), 0 3px 6px rgba(0,0,0,0.5); }
+.pin-label-cyan { background: #06b6d4; color: #020617; font-weight: bold; font-size: 10px; padding: 3px 6px; border-radius: 10px; border: 2px solid #fff; }
+.pin-label-pickedup { background: #059669; color: #fff; font-weight: bold; font-size: 10px; padding: 3px 8px; border-radius: 12px; border: 2px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,0.5); white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+.pin-label-destination { background: #f43f5e; color: #fff; font-weight: 900; font-size: 11px; padding: 4px 10px; border-radius: 14px; border: 2px solid #fff; box-shadow: 0 4px 12px rgba(244,63,94,0.6); white-space: nowrap; display: flex; align-items: center; gap: 4px; }
