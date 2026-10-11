@@ -877,8 +877,6 @@ window.initDraggableOverlay = initDraggableOverlay;
 function showFloatingOverlay() {
   const permModal = document.getElementById('permissionsModal');
   if (permModal && !permModal.classList.contains('hidden')) return;
-  const simModal = document.getElementById('mapsOverlaySimulatorModal');
-  if (simModal && !simModal.classList.contains('hidden')) return;
   if (!state.permissions?.overlay || !state.floatingOverlayEnabled || !state.isLoggedIn) return;
   const overlay = document.getElementById('floatingOverlayHud');
   if (overlay) {
@@ -915,8 +913,6 @@ function updateFloatingOverlayContent() {
   const bubbleStatus = document.getElementById('floatingBubbleStatus');
   const hudBadge = document.getElementById('floatingHudDutyBadge');
   const hudTrip = document.getElementById('floatingHudTripInfo');
-  const simTripTitle = document.getElementById('simOverlayTripTitle');
-  const simTripSub = document.getElementById('simOverlayTripSubtitle');
 
   const isTrip = typeof currentTrip !== 'undefined' && currentTrip;
 
@@ -945,34 +941,8 @@ function updateFloatingOverlayContent() {
       hudTrip.innerText = state.status === 'ONLINE' ? 'Searching nearby delivery orders...' : 'Go Online to receive orders';
     }
   }
-
-  if (simTripTitle) {
-    simTripTitle.innerText = isTrip ? (currentTrip.dropoffName || 'Active Order') : 'Vaayu Captain Active';
-  }
-  if (simTripSub) {
-    simTripSub.innerText = isTrip ? `Fare ₹${currentTrip.fare || 180} • Live Route` : 'Ready for orders';
-  }
 }
 window.updateFloatingOverlayContent = updateFloatingOverlayContent;
-
-function openMapsOverlaySim() {
-  hideFloatingOverlay();
-  const modal = document.getElementById('mapsOverlaySimulatorModal');
-  if (modal) {
-    modal.classList.remove('hidden');
-    updateFloatingOverlayContent();
-  }
-}
-window.openMapsOverlaySim = openMapsOverlaySim;
-
-function closeMapsOverlaySim() {
-  const modal = document.getElementById('mapsOverlaySimulatorModal');
-  if (modal) modal.classList.add('hidden');
-  if (state.permissions?.overlay && state.floatingOverlayEnabled && state.status === 'ONLINE') {
-    showFloatingOverlay();
-  }
-}
-window.closeMapsOverlaySim = closeMapsOverlaySim;
 
 function quickStartDriving(customProfile) {
   if (typeof audioSynth !== 'undefined' && audioSynth) {
@@ -1090,7 +1060,6 @@ function updateLoginScreenVisibility() {
     if (loginScreen) loginScreen.classList.remove('hidden');
     if (cockpitScreen) cockpitScreen.classList.add('hidden');
     hideFloatingOverlay();
-    closeMapsOverlaySim();
     renderHeroSlide(currentHeroSlideIndex);
     startHeroCarousel();
   }
@@ -1161,7 +1130,6 @@ function performLogout() {
   saveState();
   closeAuthBottomSheet();
   hideFloatingOverlay();
-  closeMapsOverlaySim();
   updateLoginScreenVisibility();
   syncUI();
 }
@@ -6457,8 +6425,6 @@ function initApplication() {
   window.hideFloatingOverlay = hideFloatingOverlay;
   window.initDraggableOverlay = initDraggableOverlay;
   window.toggleFloatingHud = toggleFloatingHud;
-  window.openMapsOverlaySim = openMapsOverlaySim;
-  window.closeMapsOverlaySim = closeMapsOverlaySim;
   window.quickStartDriving = quickStartDriving;
   window.toggleDuty = toggleDuty;
   window.switchTab = switchTab;

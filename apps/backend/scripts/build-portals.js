@@ -12,10 +12,23 @@ const pages = ['index.html', 'merchant.html', 'fleet.html', 'admin.html', 'publi
 
 const babelBlock = /<script type="text\/babel"([^>]*)>([\s\S]*?)<\/script>/;
 
+const portalSrcDir = path.join(__dirname, '..', 'portal-src');
+
 async function buildPage(page) {
-  const htmlPath = path.join(publicDir, page);
-  const html = fs.readFileSync(htmlPath, 'utf8');
-  const match = html.match(babelBlock);
+  const portalSrcPath = path.join(portalSrcDir, page);
+  const publicHtmlPath = path.join(publicDir, page);
+  
+  let sourceHtml;
+  if (fs.existsSync(portalSrcPath)) {
+    sourceHtml = fs.readFileSync(portalSrcPath, 'utf8');
+  } else if (fs.existsSync(publicHtmlPath)) {
+    sourceHtml = fs.readFileSync(publicHtmlPath, 'utf8');
+  } else {
+    console.log(page, '-> file not found, skipped');
+    return;
+  }
+
+  const match = sourceHtml.match(babelBlock);
   if (!match) {
     console.log(page, '-> no text/babel block, skipped');
     return;
@@ -29,8 +42,8 @@ async function buildPage(page) {
   });
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, `${name}.js`), result.code, 'utf8');
-  const replaced = html.replace(babelBlock, `<script src="/built/${name}.js" defer></script>`);
-  fs.writeFileSync(htmlPath, replaced, 'utf8');
+  const replaced = sourceHtml.replace(babelBlock, `<script src="/built/${name}.js" defer></script>`);
+  fs.writeFileSync(publicHtmlPath, replaced, 'utf8');
   console.log(page, '-> built/' + name + '.js', result.code.length, 'bytes');
 }
 
