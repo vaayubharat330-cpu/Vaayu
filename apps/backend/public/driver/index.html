@@ -4237,22 +4237,22 @@
       <!-- ========================================== -->
       <!-- ========================================== -->
       <!-- DISPLAY OVER OTHER APPS (FLOATING HUD)     -->
-      <!-- Draggable Circle Shape on Mobile Display   -->
+      <!-- Draggable Circle Shape (Fixed on screen)    -->
       <!-- ========================================== -->
-      <div id="floatingOverlayHud" class="hidden absolute bottom-20 right-3 z-40 select-none touch-none transition-shadow">
+      <div id="floatingOverlayHud" class="hidden fixed bottom-20 right-6 z-50 select-none touch-none transition-shadow">
         <!-- Minimized Floating Head (True Circle Shape & Draggable) -->
         <div id="floatingBubbleMin" class="relative w-12 h-12 rounded-full bg-slate-950/95 border-2 border-emerald-400 hover:border-emerald-300 shadow-2xl shadow-emerald-500/40 backdrop-blur-md flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform hover:scale-105 active:scale-95 group">
           <!-- Central Circular Logo -->
-          <div class="w-7 h-7 rounded-full bg-gradient-to-tr from-vaayu-500 via-emerald-400 to-teal-300 flex items-center justify-center font-display font-black text-slate-950 text-xs shadow-md shadow-emerald-950/60 ring-1 ring-white/30 pointer-events-none">
+          <div id="floatingBubbleLogo" class="w-7 h-7 rounded-full bg-gradient-to-tr from-vaayu-500 via-emerald-400 to-teal-300 flex items-center justify-center font-display font-black text-slate-950 text-xs shadow-md shadow-emerald-950/60 ring-1 ring-white/30 pointer-events-none">
             V
           </div>
           <!-- Corner Live Pulse Beacon -->
-          <span class="absolute top-0 right-0 -mt-0.5 -mr-0.5 flex h-3.5 w-3.5 pointer-events-none">
+          <span id="floatingBubbleBeacon" class="absolute top-0 right-0 -mt-0.5 -mr-0.5 flex h-3.5 w-3.5 pointer-events-none">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80"></span>
             <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-slate-950 shadow-sm"></span>
           </span>
           <!-- Tiny floating label tooltip below circle -->
-          <span id="floatingBubbleStatus" class="absolute -bottom-4 px-1.5 py-0.2 rounded-full bg-slate-950/90 border border-emerald-500/40 text-[8px] font-mono font-bold text-emerald-400 tracking-wider pointer-events-none whitespace-nowrap shadow">
+          <span id="floatingBubbleStatus" class="absolute -bottom-4 px-1.5 py-0.5 rounded-full bg-slate-950/90 border border-emerald-500/40 text-[8px] font-mono font-bold text-emerald-400 tracking-wider pointer-events-none whitespace-nowrap shadow">
             ONLINE
           </span>
         </div>

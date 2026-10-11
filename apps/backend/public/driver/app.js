@@ -770,7 +770,7 @@ window.openPermissionsModal = openPermissionsModal;
 function closePermissionsModal() {
   const modal = document.getElementById('permissionsModal');
   if (modal) modal.classList.add('hidden');
-  if (state.permissions?.overlay && state.floatingOverlayEnabled && state.status === 'ONLINE') {
+  if (state.permissions?.overlay && state.floatingOverlayEnabled) {
     showFloatingOverlay();
   }
 }
@@ -784,9 +784,9 @@ function handlePermissionToggle(key, isChecked) {
     state.floatingOverlayEnabled = isChecked;
     const settingToggle = document.getElementById('settingDisplayOverApps');
     if (settingToggle) settingToggle.checked = isChecked;
-    if (isChecked && state.status === 'ONLINE') {
+    if (isChecked) {
       showFloatingOverlay();
-    } else if (!isChecked) {
+    } else {
       hideFloatingOverlay();
     }
   }
@@ -810,7 +810,7 @@ function handleOverlayToggle(enabled) {
   if (permToggle) permToggle.checked = enabled;
 
   if (enabled) {
-    if (state.status === 'ONLINE') showFloatingOverlay();
+    showFloatingOverlay();
     showToast('Display Over Apps Enabled 🪟', 'Floating Head & alerts will show over Google Maps.', '✅');
   } else {
     hideFloatingOverlay();
@@ -865,7 +865,7 @@ function grantAllPermissions() {
     showToast('Permissions Active ✓', 'All 6 required device permissions enabled.', '🛡️');
   }
 
-  if (state.floatingOverlayEnabled && state.status === 'ONLINE') {
+  if (state.floatingOverlayEnabled) {
     showFloatingOverlay();
   }
   syncUI();
@@ -892,7 +892,7 @@ function saveSelectedPermissions() {
   saveState();
   closePermissionsModal();
 
-  if (state.permissions.overlay && state.floatingOverlayEnabled && state.status === 'ONLINE') {
+  if (state.permissions.overlay && state.floatingOverlayEnabled) {
     showFloatingOverlay();
   } else {
     hideFloatingOverlay();
@@ -961,16 +961,14 @@ let isOverlayDragInitialized = false;
 function initDraggableOverlay() {
   const hud = document.getElementById('floatingOverlayHud');
   const bubbleMin = document.getElementById('floatingBubbleMin');
-  const viewport = document.getElementById('appViewport');
-  if (!hud || !bubbleMin || !viewport) return;
+  if (!hud || !bubbleMin) return;
 
-  // Restore saved position if available
+  // Restore saved position if available (within window viewport)
   if (state.overlayPos && typeof state.overlayPos.left === 'number' && typeof state.overlayPos.top === 'number') {
-    const vpRect = viewport.getBoundingClientRect();
-    const maxL = Math.max(0, vpRect.width - 56);
-    const maxT = Math.max(0, vpRect.height - 56);
-    const clampL = Math.min(Math.max(8, state.overlayPos.left), maxL);
-    const clampT = Math.min(Math.max(28, state.overlayPos.top), maxT);
+    const maxL = Math.max(10, window.innerWidth - 64);
+    const maxT = Math.max(10, window.innerHeight - 64);
+    const clampL = Math.min(Math.max(10, state.overlayPos.left), maxL);
+    const clampT = Math.min(Math.max(10, state.overlayPos.top), maxT);
     hud.style.left = `${clampL}px`;
     hud.style.top = `${clampT}px`;
     hud.style.bottom = 'auto';
@@ -986,13 +984,12 @@ function initDraggableOverlay() {
   let initialLeft = 0, initialTop = 0;
 
   function onDragStart(clientX, clientY) {
-    const vpRect = viewport.getBoundingClientRect();
     const hudRect = hud.getBoundingClientRect();
 
     startX = clientX;
     startY = clientY;
-    initialLeft = hudRect.left - vpRect.left;
-    initialTop = hudRect.top - vpRect.top;
+    initialLeft = hudRect.left;
+    initialTop = hudRect.top;
 
     isDragging = true;
     hasMoved = false;
@@ -1008,18 +1005,19 @@ function initDraggableOverlay() {
       hasMoved = true;
     }
 
-    const vpRect = viewport.getBoundingClientRect();
     const hudRect = hud.getBoundingClientRect();
+    const hudWidth = hudRect.width || 52;
+    const hudHeight = hudRect.height || 52;
 
     let newLeft = initialLeft + deltaX;
     let newTop = initialTop + deltaY;
 
-    // Clamp within viewport
-    const maxLeft = Math.max(0, vpRect.width - hudRect.width - 6);
-    const maxTop = Math.max(0, vpRect.height - hudRect.height - 6);
+    // Clamp within window screen viewport
+    const maxLeft = Math.max(10, window.innerWidth - hudWidth - 10);
+    const maxTop = Math.max(10, window.innerHeight - hudHeight - 10);
 
-    newLeft = Math.max(6, Math.min(newLeft, maxLeft));
-    newTop = Math.max(24, Math.min(newTop, maxTop));
+    newLeft = Math.max(10, Math.min(newLeft, maxLeft));
+    newTop = Math.max(10, Math.min(newTop, maxTop));
 
     hud.style.left = `${newLeft}px`;
     hud.style.top = `${newTop}px`;
@@ -1032,11 +1030,10 @@ function initDraggableOverlay() {
     isDragging = false;
 
     if (hasMoved) {
-      const vpRect = viewport.getBoundingClientRect();
       const hudRect = hud.getBoundingClientRect();
       state.overlayPos = {
-        left: hudRect.left - vpRect.left,
-        top: hudRect.top - vpRect.top
+        left: hudRect.left,
+        top: hudRect.top
       };
       saveState();
     }
@@ -1132,35 +1129,65 @@ function toggleFloatingHud(expand) {
 window.toggleFloatingHud = toggleFloatingHud;
 
 function updateFloatingOverlayContent() {
+  const bubbleMin = document.getElementById('floatingBubbleMin');
   const bubbleStatus = document.getElementById('floatingBubbleStatus');
+  const bubbleBeacon = document.getElementById('floatingBubbleBeacon');
   const hudBadge = document.getElementById('floatingHudDutyBadge');
   const hudTrip = document.getElementById('floatingHudTripInfo');
 
   const isTrip = typeof currentTrip !== 'undefined' && currentTrip;
+  const isOnline = state.status === 'ONLINE';
+
+  // Update outer bubble ring border & glow according to status
+  if (bubbleMin) {
+    if (isTrip) {
+      bubbleMin.className = 'relative w-12 h-12 rounded-full bg-slate-950/95 border-2 border-amber-400 hover:border-amber-300 shadow-2xl shadow-amber-500/40 backdrop-blur-md flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform hover:scale-105 active:scale-95 group';
+    } else if (isOnline) {
+      bubbleMin.className = 'relative w-12 h-12 rounded-full bg-slate-950/95 border-2 border-emerald-400 hover:border-emerald-300 shadow-2xl shadow-emerald-500/40 backdrop-blur-md flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform hover:scale-105 active:scale-95 group';
+    } else {
+      bubbleMin.className = 'relative w-12 h-12 rounded-full bg-slate-950/95 border-2 border-slate-600 hover:border-slate-500 shadow-xl shadow-slate-950/60 backdrop-blur-md flex items-center justify-center cursor-grab active:cursor-grabbing transition-transform hover:scale-105 active:scale-95 group opacity-85';
+    }
+  }
+
+  // Update pulse beacon
+  if (bubbleBeacon) {
+    if (isOnline) {
+      bubbleBeacon.classList.remove('hidden');
+      bubbleBeacon.innerHTML = `
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full ${isTrip ? 'bg-amber-400' : 'bg-emerald-400'} opacity-80"></span>
+        <span class="relative inline-flex rounded-full h-3.5 w-3.5 ${isTrip ? 'bg-amber-500' : 'bg-emerald-500'} border-2 border-slate-950 shadow-sm"></span>
+      `;
+    } else {
+      bubbleBeacon.classList.remove('hidden');
+      bubbleBeacon.innerHTML = `
+        <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-slate-500 border-2 border-slate-950 shadow-sm"></span>
+      `;
+    }
+  }
 
   if (bubbleStatus) {
     if (isTrip) {
       bubbleStatus.innerText = 'TRIP ON';
-      bubbleStatus.className = 'absolute -bottom-2.5 px-1.5 py-0.5 rounded-full bg-amber-500 text-[8px] font-mono font-black text-slate-950 uppercase tracking-wider shadow pointer-events-none whitespace-nowrap';
-    } else if (state.status === 'ONLINE') {
+      bubbleStatus.className = 'absolute -bottom-3.5 px-2 py-0.5 rounded-full bg-amber-500 text-[8px] font-mono font-black text-slate-950 uppercase tracking-wider shadow pointer-events-none whitespace-nowrap';
+    } else if (isOnline) {
       bubbleStatus.innerText = 'ONLINE';
-      bubbleStatus.className = 'absolute -bottom-2.5 px-1.5 py-0.5 rounded-full bg-emerald-500 text-[8px] font-mono font-black text-slate-950 uppercase tracking-wider shadow pointer-events-none whitespace-nowrap';
+      bubbleStatus.className = 'absolute -bottom-3.5 px-2 py-0.5 rounded-full bg-emerald-500 text-[8px] font-mono font-black text-slate-950 uppercase tracking-wider shadow pointer-events-none whitespace-nowrap';
     } else {
       bubbleStatus.innerText = 'OFFLINE';
-      bubbleStatus.className = 'absolute -bottom-2.5 px-1.5 py-0.5 rounded-full bg-slate-800 text-[8px] font-mono font-bold text-slate-300 uppercase tracking-wider shadow pointer-events-none whitespace-nowrap';
+      bubbleStatus.className = 'absolute -bottom-3.5 px-2 py-0.5 rounded-full bg-slate-800 text-[8px] font-mono font-bold text-slate-300 border border-slate-700 uppercase tracking-wider shadow pointer-events-none whitespace-nowrap';
     }
   }
 
   if (hudBadge) {
-    hudBadge.innerText = state.status === 'ONLINE' ? 'ONLINE • RADAR ACTIVE' : 'OFFLINE • DUTY PAUSED';
-    hudBadge.className = state.status === 'ONLINE' ? 'font-mono font-bold text-emerald-400' : 'font-mono font-bold text-slate-400';
+    hudBadge.innerText = isOnline ? 'ONLINE • RADAR ACTIVE' : 'OFFLINE • DUTY PAUSED';
+    hudBadge.className = isOnline ? 'font-mono font-bold text-emerald-400' : 'font-mono font-bold text-slate-400';
   }
 
   if (hudTrip) {
     if (isTrip) {
       hudTrip.innerText = `Drop: ${currentTrip.dropoffName || 'Customer Destination'}`;
     } else {
-      hudTrip.innerText = state.status === 'ONLINE' ? 'Searching nearby delivery orders...' : 'Go Online to receive orders';
+      hudTrip.innerText = isOnline ? 'Searching nearby delivery orders...' : 'Offline (Duty paused)';
     }
   }
 }
@@ -1249,7 +1276,10 @@ async function toggleDuty() {
     releaseScreenWakeLock();
     if (driverOfferPollInterval) { clearInterval(driverOfferPollInterval); driverOfferPollInterval = null; }
     showToast('Duty Offline ⚪', 'Duty paused. Telemetry offline.', '⏸️');
-    hideFloatingOverlay();
+    if (state.permissions?.overlay && state.floatingOverlayEnabled) {
+      showFloatingOverlay();
+      updateFloatingOverlayContent();
+    }
   }
   syncUI();
   saveState();
@@ -1325,7 +1355,7 @@ function performLogin(profile) {
     setTimeout(() => {
       openPermissionsModal();
     }, 700);
-  } else if (state.permissions?.overlay && state.floatingOverlayEnabled && state.status === 'ONLINE') {
+  } else if (state.permissions?.overlay && state.floatingOverlayEnabled) {
     showFloatingOverlay();
   }
 
