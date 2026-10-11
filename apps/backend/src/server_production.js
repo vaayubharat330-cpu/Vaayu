@@ -709,7 +709,7 @@ const server = http.createServer(async (req, res) => {
   // public/ must never be served, so anything not on this list gets a plain 404.
   const PUBLIC_ASSETS = new Set([
     '/', '/index.html', '/admin.html', '/merchant.html', '/fleet.html', '/public-track.html',
-    '/otp-console.html', '/otp-console.js', '/map-engine.js', '/manifest.json',
+    '/otp-console.html', '/otp-console.js', '/map-engine.js', '/manifest.json', '/favicon.ico', '/favicon.svg',
     '/driver/index.html', '/driver/app.js', '/driver/style.css',
     '/driver/leaflet.js', '/driver/leaflet.css', '/driver/hero_driver.jpg', '/driver/manifest.json',
     '/built/index.js', '/built/merchant.js', '/built/fleet.js', '/built/admin.js', '/built/public-track.js', '/built/tailwind.css', '/built/portal.css',
