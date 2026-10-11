@@ -6,6 +6,7 @@
 apps/backend/.env
 apps/backend/.env.*
 !apps/backend/.env.example
+!apps/backend/.env.production.example
 apps/backend/secrets/
 
 # Dependencies and local tools
@@ -32,3 +33,5 @@ apps/backend/dist/
 scratch/
 archive/
 local-data/
+backups/
+apps/backend/backups/
