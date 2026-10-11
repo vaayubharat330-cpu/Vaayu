@@ -18,7 +18,8 @@ const suites = [
   'test/security/transitions.test.js',
   'test/unit/no-silent-success.test.js',
   'test/integration/lifecycle.test.js',
-  'test/integration/operations.test.js'
+  'test/integration/operations.test.js',
+  'test/integration/websocket.test.js'
 ];
 
 console.log('----------------------------------------------------');

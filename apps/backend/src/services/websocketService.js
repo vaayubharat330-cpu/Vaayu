@@ -121,7 +121,16 @@ class WebSocketService {
       return { authorized: false, reason: 'Forbidden: Unauthorized driver stream access' };
     }
 
-    // 3. Trip room requires participant in trip (customer or assigned driver or admin)
+    // 3. Customer stream requires matching customerId or admin
+    if (roomName.startsWith('customer:')) {
+      const targetCustomerId = roomName.replace('customer:', '');
+      if (client.userId === targetCustomerId || client.role === 'ADMIN' || client.role === 'SUPER_ADMIN') {
+        return { authorized: true };
+      }
+      return { authorized: false, reason: 'Forbidden: Unauthorized customer stream access' };
+    }
+
+    // 4. Trip room requires participant in trip (customer or assigned driver or admin)
     if (roomName.startsWith('trip:')) {
       if (client.role === 'ADMIN' || client.role === 'SUPER_ADMIN' || client.role === 'FLEET_ADMIN') {
         return { authorized: true };

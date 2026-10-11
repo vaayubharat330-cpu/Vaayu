@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
+const { WebSocketServer } = require('ws');
 const envPath = fs.existsSync(path.resolve(__dirname, '../.env'))
   ? path.resolve(__dirname, '../.env')
   : path.resolve(process.cwd(), '.env');
@@ -823,6 +824,78 @@ process.on('uncaughtException', (error) => {
 const redisReady = redisRateLimiter.redis.connect().then((ok) => {
   if (!ok && process.env.NODE_ENV === 'production') throw new Error('Redis is unreachable; refusing to start without rate limiting.');
   return ok;
+});
+
+// -------------------------------------------------------------
+// Real-Time WebSocket Server Gateway
+// -------------------------------------------------------------
+const wss = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (req, socket, head) => {
+  const requestUrl = new URL(req.url, 'http://localhost');
+  const pathname = requestUrl.pathname;
+
+  // Only upgrade on /ws or /socket.io paths
+  if (pathname !== '/ws' && pathname !== '/socket.io' && !pathname.startsWith('/socket.io/')) {
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  // Extract auth token from query params or Authorization header
+  const token = requestUrl.searchParams.get('token') || authService.extractToken(req);
+  if (!token) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  const user = authService.verifyToken(token);
+  if (!user) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req, user, token);
+  });
+});
+
+wss.on('connection', (ws, req, user, token) => {
+  const clientId = websocketService.registerClient(ws, user.role, user.id, user.role, token);
+
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      if (data.action === 'join' && data.room) {
+        const joinRes = websocketService.joinRoom(clientId, data.room);
+        ws.send(JSON.stringify({ event: 'room_joined', room: data.room, success: joinRes.success, error: joinRes.error }));
+      } else if (data.action === 'leave' && data.room) {
+        websocketService.leaveRoom(clientId, data.room);
+        ws.send(JSON.stringify({ event: 'room_left', room: data.room, success: true }));
+      } else if (data.action === 'ping') {
+        const client = websocketService.clients.get(clientId);
+        if (client) client.lastPingMs = Date.now();
+        ws.send(JSON.stringify({ event: 'pong', timestamp: new Date().toISOString() }));
+      }
+    } catch (_) {}
+  });
+
+  ws.on('close', () => {
+    websocketService.unregisterClient(clientId);
+  });
+
+  ws.on('error', () => {
+    websocketService.unregisterClient(clientId);
+  });
+
+  ws.send(JSON.stringify({
+    event: 'connected',
+    clientId,
+    user: { id: user.id, role: user.role, name: user.name },
+    timestamp: new Date().toISOString()
+  }));
 });
 
 Promise.all([db.initPersistence(), redisReady]).then(() => server.listen(PORT, HOST, () => {
