@@ -282,6 +282,9 @@ window.openAuthBottomSheet = openAuthBottomSheet;
 function closeAuthBottomSheet() {
   const sheet = document.getElementById('authBottomSheet');
   if (sheet) sheet.classList.add('hidden');
+  if (typeof window.showDriverAuthStep === 'function') {
+    window.showDriverAuthStep('SIGNIN');
+  }
 }
 window.closeAuthBottomSheet = closeAuthBottomSheet;
 
@@ -290,12 +293,21 @@ function openMobileNumberStep(profile) {
   if (typeof audioSynth !== 'undefined' && audioSynth) {
     try { audioSynth.playClick(); } catch (e) {}
   }
-  const phoneStep = document.getElementById('loginStepPhone');
-  const otpStep = document.getElementById('loginStepOtp');
-  const title = document.getElementById('authSheetTitle');
-  if (phoneStep) phoneStep.classList.remove('hidden');
-  if (otpStep) otpStep.classList.add('hidden');
-  if (title) title.innerText = 'Driver Sign In';
+  
+  if (typeof window.showDriverAuthStep === 'function') {
+    window.showDriverAuthStep('SIGNIN');
+  } else {
+    const phoneStep = document.getElementById('loginStepPhone');
+    const otpStep = document.getElementById('loginStepOtp');
+    const title = document.getElementById('authSheetTitle');
+    ['registerStepDetails', 'registerStepOwnership', 'registerStepCaptures', 'registerStepOtp', 'registerStepDone', 'fleetRegisterView'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+    if (phoneStep) phoneStep.classList.remove('hidden');
+    if (otpStep) otpStep.classList.add('hidden');
+    if (title) title.innerText = 'Driver Sign In';
+  }
 
   openAuthBottomSheet();
 
@@ -420,6 +432,7 @@ function initDriverRegistration() {
 
     if (step === 'VERIFY') setText('regOtpError', '');
   };
+  window.showDriverAuthStep = showStep;
 
   const cleanPhone = (value) => String(value || '').replace(/\D/g, '').slice(-10);
   
