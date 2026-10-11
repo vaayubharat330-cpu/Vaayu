@@ -236,7 +236,6 @@ const server = http.createServer(async (req, res) => {
   if (!ownLimitRoutes.has(pathname) && declaredLength > 1024 * 1024) {
     res.writeHead(413, { 'Content-Type': 'application/json', 'Connection': 'close' });
     res.end(JSON.stringify({ success: false, error: 'Request body exceeds the 1 MB limit.' }));
-    req.resume();
     return;
   }
   if (!ownLimitRoutes.has(pathname) && req.method !== 'GET' && req.method !== 'HEAD') {
