@@ -692,7 +692,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (pathname === '/fleet' || pathname === '/fleet/' || pathname === '/fleet.html') {
-    res.writeHead(302, { Location: '/driver/index.html?mode=fleet', 'Cache-Control': 'no-store' });
+    res.writeHead(302, { Location: '/driver/index.html?tab=fleet', 'Cache-Control': 'no-store' });
     return res.end();
   }
   let targetPath = pathname;
@@ -709,7 +709,7 @@ const server = http.createServer(async (req, res) => {
   // Only the portal pages and assets are public. Scripts, databases, tests, and uploads under
   // public/ must never be served, so anything not on this list gets a plain 404.
   const PUBLIC_ASSETS = new Set([
-    '/', '/index.html', '/admin.html', '/merchant.html', '/fleet.html', '/public-track.html',
+    '/', '/index.html', '/admin.html', '/merchant.html', '/public-track.html',
     '/otp-console.html', '/otp-console.js', '/map-engine.js', '/manifest.json', '/favicon.ico', '/favicon.svg',
     '/driver/index.html', '/driver/app.js', '/driver/style.css',
     '/driver/leaflet.js', '/driver/leaflet.css', '/driver/hero_driver.jpg', '/driver/manifest.json',

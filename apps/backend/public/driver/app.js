@@ -1526,11 +1526,16 @@ async function loadDriverFromDatabase(driverId) {
       state.driverName = dbDriver.name;
       state.phone = dbDriver.phone;
       state.driverPartnerId = dbDriver.partner_id || dbDriver.userId || dbDriver.id;
-      state.driverRating = String(dbDriver.rating || '4.94');
+      state.driverRating = String(dbDriver.rating || '4.92');
       state.driverHub = dbDriver.hub;
       state.pocketBalance = Number(dbDriver.pocket_balance ?? dbDriver.pocketBalance ?? state.pocketBalance ?? 0);
       state.todayEarnings = Number(dbDriver.today_earnings ?? dbDriver.todayEarnings ?? 0);
       state.todayTrips = Number(dbDriver.today_trips ?? dbDriver.todayTrips ?? 0);
+      state.totalTrips = Number(dbDriver.total_trips ?? dbDriver.totalTrips ?? 0);
+      state.acceptanceRate = dbDriver.acceptance_rate || (dbDriver.acceptanceRate ? `${dbDriver.acceptanceRate}%` : '96.8%');
+      state.todayBonus = Number(dbDriver.today_bonus ?? 320);
+      state.yesterdayDiffTrips = Number(dbDriver.yesterday_diff_trips ?? 3);
+      state.avgDeliveryMins = Number(dbDriver.avg_delivery_mins ?? 18);
       state.shiftSeconds = Number(dbDriver.shift_seconds ?? dbDriver.shiftSeconds ?? 0);
       state.availableCashLimit = Number(dbDriver.available_cash_limit ?? dbDriver.availableCashLimit ?? 0);
       state.codCashInHand = Number(dbDriver.cod_cash_in_hand ?? dbDriver.codCashInHand ?? 0);
@@ -4372,8 +4377,40 @@ function syncUI() {
   const orderCountEl = document.getElementById('todayOrderCount');
   if (orderCountEl) orderCountEl.innerText = state.todayTrips;
 
+  const orderDiffEl = document.getElementById('todayOrderDiff');
+  if (orderDiffEl) {
+    const diff = Number(state.yesterdayDiffTrips ?? 0);
+    orderDiffEl.innerText = `${diff >= 0 ? '+' : ''}${diff} vs yesterday`;
+  }
+
+  const avgSpeedEl = document.getElementById('todayAvgDeliverySpeed');
+  if (avgSpeedEl) {
+    avgSpeedEl.innerText = `Avg ${state.avgDeliveryMins || 18}m delivery speed`;
+  }
+
   const topEarnEl = document.getElementById('todayEarningsTop');
-  if (topEarnEl) topEarnEl.innerText = `₹${state.todayEarnings.toFixed(2)}`;
+  if (topEarnEl) topEarnEl.innerText = `₹${(Number(state.todayEarnings) || 0).toFixed(2)}`;
+
+  const bonusBadgeEl = document.getElementById('todayBonusBadge');
+  if (bonusBadgeEl) {
+    bonusBadgeEl.innerText = `₹${Number(state.todayBonus ?? 0)} bonus`;
+  }
+
+  const acceptanceEl = document.getElementById('todayAcceptanceRate');
+  if (acceptanceEl) {
+    acceptanceEl.innerText = state.acceptanceRate || '96.8%';
+  }
+
+  const ratingEl = document.getElementById('todayDriverRating');
+  if (ratingEl) {
+    ratingEl.innerText = `${state.driverRating || '4.92'}★`;
+  }
+
+  const totalTripsBadgeEl = document.getElementById('todayTotalTripsBadge');
+  if (totalTripsBadgeEl) {
+    const trips = Number(state.totalTrips || state.todayTrips || 0);
+    totalTripsBadgeEl.innerText = `${trips.toLocaleString('en-IN')} trips`;
+  }
 
   const pocketBalEl = document.getElementById('pocketBalance');
   if (pocketBalEl) pocketBalEl.innerText = `₹${state.pocketBalance.toFixed(2)}`;
@@ -5653,7 +5690,7 @@ function initApplication() {
   // Check URL params for mode=fleet
   try {
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('mode') === 'fleet') {
+    if (urlParams.get('mode') === 'fleet' || urlParams.get('tab') === 'fleet') {
       setTimeout(() => {
         state.partnerMode = 'FLEET_OWNER';
         const label = document.getElementById('roleSwitcherLabel');
