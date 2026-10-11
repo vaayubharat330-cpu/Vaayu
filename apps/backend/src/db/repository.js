@@ -40,11 +40,19 @@ class JsonDatabaseRepository extends DatabaseRepository {
     this.defaultData = defaultDataObj;
   }
 
-  getUserByPhone(phone) {
+  getUserByPhone(phone, role = null) {
     const db = this.readDb();
     if (!phone) return null;
     const cleanInput = phone.replace(/\D/g, '').slice(-10);
-    return db.users.find(u => (u.phone || '').replace(/\D/g, '').slice(-10) === cleanInput);
+    return db.users.find(u => {
+      const matchPhone = (u.phone || '').replace(/\D/g, '').slice(-10) === cleanInput;
+      if (!matchPhone) return false;
+      if (role) {
+        if (role === 'CUSTOMER') return u.role === 'CUSTOMER' || !u.role;
+        return u.role === role;
+      }
+      return true;
+    });
   }
 
   createUser(userData) {

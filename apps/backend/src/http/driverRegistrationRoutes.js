@@ -78,7 +78,8 @@ function createDriverRegistrationRoutes({ db, otpChallenges, OtpError, redisRate
         if (!(db.getVehicles() || []).some(v => v.id === vehicleId)) return fail(400, 'Please choose the vehicle you will drive.');
         if (!/^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{4}$/.test(vehicleNumber.replace(/\s/g, ''))) return fail(400, 'Enter a valid vehicle registration number, for example TS09EA4589.');
         if (licenseNumber.length < 8) return fail(400, 'Enter a valid driving licence number.');
-        if (db.getUserByPhone(phone) && (db.getUserByPhone(phone).role || '') !== 'DRIVER') return fail(409, 'This number is already registered to another account.');
+        const existingDriverUser = db.getUserByPhone(phone, 'DRIVER');
+        if (existingDriverUser) return fail(409, 'A driver account already exists for this number. Sign in instead.');
         if ((db.getDrivers() || []).some(d => String(d.phone || '').replace(/\D/g, '').slice(-10) === phone)) return fail(409, 'A driver account already exists for this number. Sign in instead.');
 
         const pending = (db.getDb().driver_applications || []).find(a => a.phone === phone && a.status === 'PENDING');

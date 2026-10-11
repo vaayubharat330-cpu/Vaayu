@@ -338,7 +338,7 @@ module.exports = {
   jsonRepo,
   postgresRepo,
 
-  getUserByPhone: (phone) => getActiveRepository().getUserByPhone(phone),
+  getUserByPhone: (phone, role = null) => getActiveRepository().getUserByPhone(phone, role),
   createUser: (userData) => getActiveRepository().createUser(userData),
   getCustomers: () => getActiveRepository().getCustomers(),
   getDrivers: () => getActiveRepository().getDrivers(),

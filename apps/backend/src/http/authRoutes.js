@@ -33,7 +33,7 @@ function createAuthRoutes({ db, otpChallenges, OtpError, authService, logger, pa
         const cleanPhone = phone.replace(/\D/g, '').slice(-10);
   
         if (isSignUp) {
-          const existingUser = db.getUserByPhone(cleanPhone);
+          const existingUser = db.getUserByPhone(cleanPhone, 'CUSTOMER');
           if (existingUser) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             return end(JSON.stringify({
@@ -97,16 +97,28 @@ function createAuthRoutes({ db, otpChallenges, OtpError, authService, logger, pa
           return end(JSON.stringify({ success: false, error: error.message, code: error.code, ...(error.extra || {}) }));
         }
   
+        const challengeApp = String(verifiedChallenge.appType || data.appType || 'CUSTOMER').toUpperCase();
         const matchingMerchants = (db.getMerchants ? db.getMerchants(null, cleanPhone) : [])
           .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
         const matchingFleetOwner = (db.getFleetOwners ? db.getFleetOwners() : []).find(owner =>
           String(owner.phone || '').replace(/\D/g, '').slice(-10) === cleanPhone
         );
-        let user = matchingMerchants[0]
-          ? { id: matchingMerchants[0].id, phone: matchingMerchants[0].phone, name: matchingMerchants[0].contactName || matchingMerchants[0].businessName, role: 'MERCHANT' }
-          : (matchingFleetOwner
-            ? { id: matchingFleetOwner.userId || matchingFleetOwner.id, phone: matchingFleetOwner.phone, name: matchingFleetOwner.ownerName || matchingFleetOwner.companyName, role: 'FLEET_OWNER' }
-            : db.getUserByPhone(cleanPhone));
+        let user = null;
+        if (challengeApp === 'MERCHANT' && matchingMerchants[0]) {
+          user = { id: matchingMerchants[0].id, phone: matchingMerchants[0].phone, name: matchingMerchants[0].contactName || matchingMerchants[0].businessName, role: 'MERCHANT' };
+        } else if (challengeApp === 'FLEET_OWNER' && matchingFleetOwner) {
+          user = { id: matchingFleetOwner.userId || matchingFleetOwner.id, phone: matchingFleetOwner.phone, name: matchingFleetOwner.ownerName || matchingFleetOwner.companyName, role: 'FLEET_OWNER' };
+        } else if (challengeApp === 'DRIVER') {
+          user = db.getUserByPhone(cleanPhone, 'DRIVER');
+        } else if (challengeApp === 'CUSTOMER') {
+          user = db.getUserByPhone(cleanPhone, 'CUSTOMER');
+        } else {
+          user = matchingMerchants[0]
+            ? { id: matchingMerchants[0].id, phone: matchingMerchants[0].phone, name: matchingMerchants[0].contactName || matchingMerchants[0].businessName, role: 'MERCHANT' }
+            : (matchingFleetOwner
+              ? { id: matchingFleetOwner.userId || matchingFleetOwner.id, phone: matchingFleetOwner.phone, name: matchingFleetOwner.ownerName || matchingFleetOwner.companyName, role: 'FLEET_OWNER' }
+              : (db.getUserByPhone(cleanPhone, 'CUSTOMER') || db.getUserByPhone(cleanPhone, 'DRIVER')));
+        }
   
         if (!user && !isSignUp) {
           res.writeHead(404, { 'Content-Type': 'application/json' });

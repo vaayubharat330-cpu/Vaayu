@@ -332,7 +332,7 @@ async function proceedToOtpStep() {
   try {
     const sendRes = await nativeDriverFetch('/api/auth/send-otp', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: cleanPhone })
+      body: JSON.stringify({ phone: cleanPhone, appType: 'DRIVER' })
     });
     const sendData = await sendRes.json();
     if (!sendRes.ok || !sendData.success) throw new Error(sendData.error || 'Could not send verification code.');
@@ -6371,6 +6371,7 @@ function initApplication() {
         try { sessionStorage.setItem('vaayu_driver_token', result.token); } catch (_) {}
         if (result.driverProfileId) state.driverId = result.driverProfileId;
         targetProfile.partnerId = result.user.id;
+        targetProfile.name = result.user.name || targetProfile.name;
         targetProfile.phone = result.user.phone || targetProfile.phone;
         performLogin(targetProfile);
         showToast('Authentication Successful ✓', `Welcome back, ${targetProfile.name}!`, '🎉');
