@@ -167,59 +167,70 @@
 
         <!-- Modern Web Authentication Modal (Desktop Centered / Responsive) -->
         <div id="authBottomSheet" class="hidden absolute inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 transition-all duration-300">
-          <div class="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl max-h-[92vh] overflow-y-auto space-y-5 animate-slide-up">
+          <div class="w-full max-w-md bg-gradient-to-b from-slate-900 via-slate-900/95 to-slate-950 border border-slate-700/60 rounded-[28px] p-6 sm:p-7 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7)] max-h-[92vh] overflow-y-auto space-y-6 animate-slide-up backdrop-blur-xl">
             
             <!-- Modal Header & Close Button -->
-            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div class="flex items-center justify-between pb-3.5 border-b border-slate-800/80">
               <div class="flex items-center gap-2.5">
-                <span class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span id="authSheetTitle" class="font-display font-black text-sm text-white uppercase tracking-wider">Driver Partner Authentication</span>
+                <div class="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-sm font-bold shadow-sm">
+                  ⚡
+                </div>
+                <div>
+                  <span id="authSheetTitle" class="font-display font-extrabold text-sm text-white tracking-wide block">Captain Portal</span>
+                  <span class="text-[10px] text-slate-400 font-mono">Secure Access &bull; Intra-City Logistics</span>
+                </div>
               </div>
-              <button id="btnCloseAuthSheet" data-on="click" data-action="closeAuthBottomSheet" type="button" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-base font-bold transition cursor-pointer" title="Close">
+              <button id="btnCloseAuthSheet" data-on="click" data-action="closeAuthBottomSheet" type="button" class="w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-all active:scale-95 cursor-pointer border border-slate-700/50" title="Close">
                 &times;
               </button>
             </div>
 
-            <!-- Step 1: Enter Mobile Number -->
-            <div id="loginStepPhone" class="space-y-3.5">
-              <div class="space-y-1">
-                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block font-mono">Step 1 of 2 &bull; Sign In</span>
-                <h3 class="font-display font-black text-lg text-white leading-tight">Enter Your Mobile Number</h3>
-                <p class="text-xs text-slate-400">Enter your 10-digit mobile number to receive a secure OTP to sign into your captain account.</p>
+            <!-- Step 1: Enter Mobile Number (Redesigned Clean Layout) -->
+            <div id="loginStepPhone" class="space-y-4">
+              <div class="space-y-1.5">
+                <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>Driver Sign In</span>
+                </div>
+                <h3 class="font-display font-black text-xl text-white tracking-tight">Welcome, Captain</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">Enter your registered 10-digit mobile number to receive your login code.</p>
               </div>
 
-              <!-- Phone Number Input -->
+              <!-- Phone Number Input with Modern Prefix -->
               <div class="space-y-1.5">
-                <label class="text-[11px] font-bold text-slate-300 block font-mono">Mobile Number</label>
-                <div class="flex items-center gap-2">
-                  <div class="flex items-center gap-1.5 px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-mono font-bold text-white shrink-0">
+                <label class="text-[11px] font-bold text-slate-300 block font-mono uppercase tracking-wider">Mobile Number</label>
+                <div class="flex items-center gap-2 p-1 bg-slate-950/90 border border-slate-700/80 rounded-2xl focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all shadow-inner">
+                  <div class="flex items-center gap-1.5 px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono font-bold text-slate-200 shrink-0">
                     <span>🇮🇳</span> <span>+91</span>
                   </div>
-                  <input type="tel" id="modalLoginPhoneInput" maxlength="10" placeholder="10-digit mobile number" value="" class="flex-1 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2.5 text-sm font-mono font-bold text-white focus:outline-none placeholder-slate-600 tracking-wider" />
+                  <input type="tel" id="modalLoginPhoneInput" maxlength="10" placeholder="98765 43210" value="" class="flex-1 bg-transparent px-2 py-2 text-base font-mono font-bold text-white focus:outline-none placeholder-slate-600 tracking-wider" />
                 </div>
               </div>
 
               <!-- Continue to OTP Button -->
-              <button id="btnProceedToOtp" data-on="click" data-action="proceedToOtpStep" type="button" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-xl shadow-xl shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer">
-                <span>CONTINUE TO OTP</span>
+              <button id="btnProceedToOtp" data-on="click" data-action="proceedToOtpStep" type="button" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-500/25 active:scale-[0.98] transition flex items-center justify-center gap-2 cursor-pointer">
+                <span>GET OTP CODE</span>
                 <svg class="w-4 h-4 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
               </button>
 
-              <!-- New driver or fleet partner registration options -->
-              <div class="pt-2 border-t border-slate-800 space-y-2">
-                <div class="text-center text-xs text-slate-400">
-                  New individual driver?
-                  <button id="btnOpenDriverRegister" type="button" class="text-emerald-400 hover:text-emerald-300 font-bold underline cursor-pointer ml-1">Register as a driver</button>
+              <!-- Secondary Navigation: Register as Driver & Fleet Onboarding -->
+              <div class="pt-3 border-t border-slate-800/80 space-y-2.5">
+                <div class="flex items-center justify-between text-xs text-slate-400 px-1">
+                  <span>New Captain?</span>
+                  <button id="btnOpenDriverRegister" type="button" class="text-emerald-400 hover:text-emerald-300 font-bold underline cursor-pointer">Register as a driver &rarr;</button>
                 </div>
-                <div class="p-2.5 rounded-xl bg-slate-950 border border-cyan-500/30 flex items-center justify-between text-xs">
-                  <div class="flex items-center gap-2">
-                    <span class="text-lg">🚛</span>
+
+                <div class="p-3 rounded-2xl bg-slate-950/70 border border-cyan-500/25 hover:border-cyan-500/40 flex items-center justify-between text-xs transition-all shadow-sm">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 text-base">
+                      🚛
+                    </div>
                     <div>
-                      <strong class="text-white font-bold block text-[11px]">Fleet Owner Registration</strong>
-                      <span class="text-[10px] text-cyan-300">Register commercial vehicle fleets</span>
+                      <strong class="text-white font-bold block text-xs">Commercial Fleet Owner?</strong>
+                      <span class="text-[10px] text-cyan-400/80">Manage multiple trucks &amp; drivers</span>
                     </div>
                   </div>
-                  <button id="btnOpenFleetRegister" type="button" class="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/40 rounded-lg text-[10px] font-bold font-mono transition cursor-pointer">
+                  <button id="btnOpenFleetRegister" type="button" class="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-xl text-[11px] font-bold font-mono transition active:scale-95 cursor-pointer">
                     Fleet Portal &rarr;
                   </button>
                 </div>
