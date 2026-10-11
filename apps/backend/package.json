@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node src/server_production.js",
     "test": "node --test test/unit/security.test.js test/unit/otp.test.js",
+    "test:all": "node scripts/run-all-tests.js",
     "start": "node src/server_production.js",
     "db:seed": "node src/db/seedPostgres.js"
   },

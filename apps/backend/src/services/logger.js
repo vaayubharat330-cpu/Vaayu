@@ -26,15 +26,23 @@ class Logger {
       'password',
       'jwt',
       'token',
+      'refreshtoken',
+      'refresh_token',
       'authorization',
+      'bearer',
       'otp',
       'deliveryotp',
+      'pickupotp',
+      'code',
       'secret',
       'apikey',
       'api_key',
       'creditcard',
       'cvv',
-      'auth'
+      'auth',
+      'phone',
+      'phonenumber',
+      'mobile'
     ]);
   }
 

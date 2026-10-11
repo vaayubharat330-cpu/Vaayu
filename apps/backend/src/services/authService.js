@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const envPath = fs.existsSync(path.resolve(__dirname, '../../.env'))
-  ? path.resolve(__dirname, '../../.env')
-  : path.resolve(process.cwd(), '.env');
+const envPath = fs.existsSync(path.resolve(__dirname, '../../../.env'))
+  ? path.resolve(__dirname, '../../../.env')
+  : fs.existsSync(path.resolve(__dirname, '../../.env'))
+    ? path.resolve(__dirname, '../../.env')
+    : path.resolve(process.cwd(), '.env');
 require('dotenv').config({ path: envPath });
 
 const jwt = require('jsonwebtoken');
