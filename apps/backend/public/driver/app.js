@@ -1411,50 +1411,59 @@ function startDriverOfferPolling() {
 }
 
 function initSocketConnection() {
-  if (typeof io === 'undefined') {
-    console.warn('Socket.io library not loaded; relying on REST offer polling.');
-    updateGatewayStatus(Boolean(vaayuDriverToken), vaayuDriverToken ? 'Authenticated REST polling active' : 'Sign in to receive offers');
+  if (!vaayuDriverToken) {
+    updateGatewayStatus(false, 'Sign in to connect');
     return;
   }
 
-  const url = window.location.origin;
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProtocol}//${window.location.host}/ws?token=${encodeURIComponent(vaayuDriverToken)}`;
   updateGatewayStatus(false, 'Connecting...');
 
   try {
     if (socket) {
-      socket.disconnect();
+      socket.close();
     }
 
-    socket = io(url, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 2000,
-      timeout: 5000
-    });
+    socket = new WebSocket(wsUrl);
 
-    socket.on('connect', () => {
-      console.log('✅ Connected to Dispatch Backend Gateway:', socket.id);
+    socket.onopen = () => {
+      console.log('✅ Connected to Dispatch Backend Gateway via WebSocket');
       isGatewayConnected = true;
-      updateGatewayStatus(true, `Connected (${url})`);
-    });
+      updateGatewayStatus(true, 'Live Gateway Connected');
+      const driverId = state.driverId || state.userId || '';
+      if (driverId) {
+        socket.send(JSON.stringify({ action: 'join', room: `driver:${driverId}` }));
+      }
+    };
 
-    socket.on('disconnect', () => {
+    socket.onclose = () => {
       console.log('⚠️ Disconnected from Dispatch Backend Gateway');
       isGatewayConnected = false;
-      updateGatewayStatus(false, 'Disconnected (Reconnecting...)');
-    });
+      updateGatewayStatus(Boolean(vaayuDriverToken), vaayuDriverToken ? 'REST polling active' : 'Disconnected');
+      // Exponential backoff reconnect
+      setTimeout(() => {
+        if (state.isLoggedIn && !isGatewayConnected) initSocketConnection();
+      }, 5000);
+    };
 
-    socket.on('connect_error', () => {
+    socket.onerror = (err) => {
       isGatewayConnected = false;
-      updateGatewayStatus(Boolean(vaayuDriverToken), vaayuDriverToken ? 'REST polling active' : 'Sign in to receive offers');
-    });
+      updateGatewayStatus(Boolean(vaayuDriverToken), vaayuDriverToken ? 'REST polling active' : 'Gateway Error');
+    };
 
-    // 📥 Incoming Event from Server (Contract: "trip:incoming_request")
-    socket.on('trip:incoming_request', (data) => {
-      console.log('📥 Received incoming trip request from server:', data);
-      handleIncomingTripRequest(data);
-    });
+    socket.onmessage = (event) => {
+      try {
+        const envelope = JSON.parse(event.data);
+        if (envelope.event === 'dispatch_offer' || envelope.event === 'dispatch:offer_created') {
+          console.log('📥 Received incoming trip offer:', envelope.data);
+          handleIncomingTripRequest(envelope.data.trip || envelope.data);
+        } else if (envelope.event === 'emergency_assignment') {
+          console.log('🚨 Received emergency assignment:', envelope.data);
+          alert(envelope.data.message || 'Emergency assignment received!');
+        }
+      } catch (_) {}
+    };
 
   } catch (err) {
     console.warn('Socket initialization exception:', err);
