@@ -155,12 +155,13 @@ class OtpChallengeService {
       .filter((c) => c.phone === cleanPhone)
       .sort((a, b) => b.createdAtMs - a.createdAtMs);
     const latest = phoneChallenges[0];
-    if (latest && now - latest.createdAtMs < RESEND_COOLDOWN_MS) {
+    if (latest && latest.status === 'PENDING' && now - latest.createdAtMs < RESEND_COOLDOWN_MS) {
       const wait = Math.ceil((RESEND_COOLDOWN_MS - (now - latest.createdAtMs)) / 1000);
       throw new OtpError('RESEND_COOLDOWN', `Please wait ${wait} seconds before requesting another code.`, 429, { retryAfterSeconds: wait });
     }
     const hourAgo = now - 60 * 60 * 1000;
-    if (phoneChallenges.filter((c) => c.createdAtMs > hourAgo).length >= MAX_SENDS_PER_HOUR) {
+    const hourlyLimit = mode === 'CONSOLE' ? 100 : MAX_SENDS_PER_HOUR;
+    if (phoneChallenges.filter((c) => c.createdAtMs > hourAgo).length >= hourlyLimit) {
       throw new OtpError('SEND_LIMIT', 'Too many codes requested for this number. Try again later.', 429);
     }
 
@@ -271,7 +272,7 @@ class OtpChallengeService {
     challenge.verifiedAt = new Date(now).toISOString();
     delete challenge.revealed;
     db.saveDb(data);
-    return { challengeId: challenge.id, phone: cleanPhone, app: challenge.app, purpose: challenge.purpose };
+    return { challengeId: challenge.id, phone: cleanPhone, app: challenge.app, appType: challenge.app, purpose: challenge.purpose };
   }
 
   // Checks that a challenge was verified for this phone recently and has not already

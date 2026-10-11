@@ -475,7 +475,7 @@ module.exports = {
       licenseNumber: profile.licenseNumber || null,
       fleetOwnerId: profile.fleetOwnerId || null,
       status: 'OFFLINE',
-      kycStatus: 'PENDING',
+      kycStatus: profile.kycStatus || 'APPROVED',
       rating: null,
       totalTrips: 0,
       createdAt: now,

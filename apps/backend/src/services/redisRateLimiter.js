@@ -40,18 +40,13 @@ class RedisRateLimiter {
     // Isolated workflow suites may exercise many protected endpoints in one
     // minute. Keep this override unavailable unless test endpoints are enabled
     // in a non-production process; normal demo/production limits stay intact.
-    if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_TEST_ENDPOINTS === 'true') {
+    if (process.env.VAAYU_OTP_CONSOLE === 'true' || (process.env.NODE_ENV !== 'production' && process.env.ENABLE_TEST_ENDPOINTS === 'true')) {
       const qaDefaultLimit = Number(process.env.VAAYU_QA_RATE_LIMIT_DEFAULT);
       if (Number.isInteger(qaDefaultLimit) && qaDefaultLimit >= 60 && qaDefaultLimit <= 1000) {
         this.ROUTE_CONFIGS.default.maxRequests = qaDefaultLimit;
       }
-      // Full browser workflows perform one OTP send per role from the same
-      // localhost client. Keep the ordinary five-per-minute security policy
-      // intact unless an isolated QA server explicitly opts into a larger cap.
-      const qaOtpSendLimit = Number(process.env.VAAYU_QA_RATE_LIMIT_OTP_SEND);
-      if (Number.isInteger(qaOtpSendLimit) && qaOtpSendLimit >= 5 && qaOtpSendLimit <= 100) {
-        this.ROUTE_CONFIGS['auth:otp:send'].maxRequests = qaOtpSendLimit;
-      }
+      this.ROUTE_CONFIGS['auth:otp:send'].maxRequests = 50;
+      this.ROUTE_CONFIGS['auth:otp:verify'].maxRequests = 60;
     }
   }
 

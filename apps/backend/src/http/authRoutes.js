@@ -97,7 +97,7 @@ function createAuthRoutes({ db, otpChallenges, OtpError, authService, logger, pa
           return end(JSON.stringify({ success: false, error: error.message, code: error.code, ...(error.extra || {}) }));
         }
   
-        const challengeApp = String(verifiedChallenge.appType || data.appType || 'CUSTOMER').toUpperCase();
+        const challengeApp = String(verifiedChallenge.app || verifiedChallenge.appType || data.appType || 'CUSTOMER').toUpperCase();
         const matchingMerchants = (db.getMerchants ? db.getMerchants(null, cleanPhone) : [])
           .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
         const matchingFleetOwner = (db.getFleetOwners ? db.getFleetOwners() : []).find(owner =>

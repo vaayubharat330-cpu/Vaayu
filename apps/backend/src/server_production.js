@@ -203,7 +203,8 @@ async function readBodyOnce(req, res, limit) {
       res.writeHead(413, { 'Content-Type': 'application/json', 'Connection': 'close' });
       res.end(JSON.stringify({ success: false, error: 'Request body exceeds the 1 MB limit.' }));
     }
-    req.destroy();
+    req.on('data', () => {});
+    req.resume();
     return null;
   }
   const body = result;
@@ -542,7 +543,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({
         success: true,
-        message: decision === 'APPROVE' ? 'Application approved. KYC is pending review before the driver can go online.' : 'Application rejected.',
+        message: decision === 'APPROVE' ? 'Application approved. Driver can now sign in and go online.' : 'Application rejected.',
         application: target,
         driver,
       }));
