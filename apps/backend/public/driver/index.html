@@ -33,154 +33,137 @@
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen antialiased selection:bg-vaayu-500 selection:text-black">
 
-  <!-- Desktop Controls Bar (shown on desktop screens) -->
-  <header class="hidden lg:flex items-center justify-between px-6 py-3 bg-slate-900/90 backdrop-blur border-b border-slate-800 text-xs">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-vaayu-600 via-emerald-400 to-cyan-400 flex items-center justify-center shadow-lg shadow-vaayu-500/20 font-display font-extrabold text-slate-950 text-base">
+  <!-- Enterprise Web Navigation Bar -->
+  <header class="w-full sticky top-0 z-40 flex items-center justify-between px-4 sm:px-8 py-3.5 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 shadow-lg text-xs">
+    <div class="flex items-center gap-3.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 font-display font-black text-slate-950 text-lg tracking-tight">
         ⚡
       </div>
       <div>
-        <div class="font-display font-bold text-sm tracking-wide text-white flex items-center gap-2">
-          <span>VAAYU DRIVER</span>
-          <span class="text-[10px] bg-vaayu-500/20 text-vaayu-400 px-2 py-0.5 rounded-full border border-vaayu-500/30 font-semibold uppercase tracking-wider">Partner Cockpit</span>
+        <div class="font-display font-extrabold text-sm sm:text-base tracking-wide text-white flex items-center gap-2">
+          <span>VAAYU DRIVER COCKPIT</span>
+          <span class="text-[10px] bg-emerald-500/15 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/30 font-semibold uppercase tracking-wider">Web Portal</span>
         </div>
-        <p class="text-slate-400 text-[11px]">Intra-City Commercial Logistics &amp; Driver Partner App</p>
+        <p class="text-slate-400 text-[11px] hidden sm:block">Intra-City Commercial Logistics &amp; Driver Fleet Partner Console</p>
       </div>
     </div>
 
-    <!-- View mode toggles -->
-    <div class="flex items-center gap-3">
-      <div class="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700">
-        <button id="btnViewMobile" class="px-2.5 py-1 rounded text-xs font-medium transition-all bg-vaayu-600 text-white shadow-sm flex items-center gap-1.5">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" stroke-width="2"/><line x1="12" y1="18" x2="12.01" y2="18" stroke-width="2"/></svg>
-          Phone Frame
-        </button>
-        <button id="btnViewFull" class="px-2.5 py-1 rounded text-xs font-medium transition-all text-slate-400 hover:text-white flex items-center gap-1.5">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" stroke-width="2"/><line x1="8" y1="21" x2="16" y2="21" stroke-width="2"/><line x1="12" y1="17" x2="12" y2="21" stroke-width="2"/></svg>
-          Full Canvas
-        </button>
+    <!-- Web Navigation & Quick Actions -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <!-- Hidden dummy buttons for backward compatibility if referenced by script -->
+      <div class="hidden">
+        <button id="btnViewMobile" type="button"></button>
+        <button id="btnViewFull" type="button"></button>
+        <span id="liveClock"></span>
+        <div id="batteryIndicator"></div>
       </div>
 
       <!-- System Connection Status Badge -->
-      <button id="btnDbStatus" class="px-3 py-1.5 bg-slate-800/90 hover:bg-slate-750 text-slate-200 rounded-lg border border-emerald-500/40 transition flex items-center gap-1.5 cursor-pointer" title="System Status: Connected">
+      <button id="btnDbStatus" class="px-3 py-1.5 bg-slate-800/90 hover:bg-slate-750 text-slate-200 rounded-xl border border-emerald-500/40 transition flex items-center gap-2 cursor-pointer shadow-sm" title="System Status: Connected">
         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
         <span class="font-mono text-xs font-bold text-white">System: <span class="text-emerald-400">Online</span></span>
       </button>
 
-      <button id="btnShareApp" class="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-lg shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer" title="Share with anyone">
+      <button id="btnShareApp" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white border border-slate-700 font-semibold rounded-xl transition flex items-center gap-1.5 active:scale-95 cursor-pointer text-xs" title="Share Portal Link">
         <span>🔗</span> Share Link
       </button>
 
-      
-      <button id="btnAudioToggle" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition flex items-center gap-1.5 cursor-pointer" title="Toggle audio alert chime">
+      <button id="btnAudioToggle" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer text-xs" title="Toggle audio alert chime">
         <span id="audioIcon">🔊</span> <span id="audioText">Sound ON</span>
       </button>
 
-
-
+      <a href="/otp-console.html" target="_blank" class="hidden md:flex px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 rounded-xl border border-emerald-500/30 font-bold transition items-center gap-1.5 text-xs">
+        <span>📱</span> OTP Console
+      </a>
     </div>
   </header>
 
-  <!-- Main Container -->
-  <main class="w-full flex justify-center items-center py-0 lg:py-6 min-h-[calc(100vh-50px)]">
+  <!-- Main Web Container: Full Page Web Layout -->
+  <main class="w-full flex-1 flex flex-col justify-start items-stretch min-h-[calc(100vh-65px)]">
     
-    <!-- Phone / App Viewport Container -->
-    <div id="appViewport" class="w-full max-w-md bg-slate-900 border-0 lg:border-8 lg:border-slate-800 lg:rounded-[42px] shadow-2xl relative flex flex-col h-screen lg:h-[880px] overflow-hidden transition-all duration-300">
-      
-      <!-- Top Mobile Phone Notch / Bezel Header -->
-      <div class="h-6 w-full bg-slate-950 flex justify-between items-center px-6 text-[11px] font-mono text-slate-400 select-none shrink-0 z-40">
-        <span id="liveClock" class="font-semibold text-slate-200">12:35</span>
-        <div class="w-24 h-4 bg-slate-900 rounded-b-xl -mt-1 hidden lg:flex items-center justify-center">
-          <div class="w-2.5 h-2.5 bg-slate-950 rounded-full border border-slate-800"></div>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-[10px] text-vaayu-400">5G+</span>
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L12 22l7.03-4.39C20.26 16.07 21 14.12 21 12c0-4.97-4.03-9-9-9z"/></svg>
-          <div class="w-5 h-2.5 border border-slate-400 rounded-sm p-0.5 flex items-center">
-            <div id="batteryIndicator" class="h-full bg-vaayu-400 rounded-2xs w-4"></div>
-          </div>
-        </div>
-      </div>
+    <!-- Enterprise Web Cockpit Canvas Container (Full Web Viewport) -->
+    <div id="appViewport" class="w-full max-w-7xl mx-auto flex-1 flex flex-col min-h-[calc(100vh-65px)] px-3 sm:px-6 lg:px-8 py-4 transition-all duration-300">
 
       <!-- ========================================== -->
       <!-- LOGIN / ONBOARDING SCREEN                  -->
       <!-- ========================================== -->
       <!-- ========================================== -->
-      <!-- LOGIN / ONBOARDING SCREEN                  -->
-      <!-- Photo Hero + Driver Mobile Sign-In + OTP Verification -->
+      <!-- LOGIN / ONBOARDING SCREEN (WEB TEMPLATE)   -->
+      <!-- Photo Hero + Driver Web Sign-In + OTP Verification -->
       <!-- ========================================== -->
-      <div id="loginPageScreen" class="flex-1 w-full h-full relative overflow-hidden bg-slate-950 z-30 select-none flex flex-col justify-between p-0 m-0">
+      <div id="loginPageScreen" class="flex-1 w-full min-h-[calc(100vh-100px)] relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 shadow-2xl flex flex-col justify-between p-0 m-0">
         
-        <!-- Full-Bleed Edge-to-Edge Hero Image -->
-        <img src="hero_driver.jpg" alt="Vaayu Driver Partner" class="absolute inset-0 w-full h-full object-cover object-center select-none pointer-events-none z-0" />
+        <!-- Full-Bleed Edge-to-Edge Hero Image with Web Gradient Vignette -->
+        <img src="hero_driver.jpg" alt="Vaayu Driver Partner" class="absolute inset-0 w-full h-full object-cover object-center select-none pointer-events-none z-0 brightness-75" />
+        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-slate-950/40 z-10 pointer-events-none"></div>
 
-        <!-- Top Floating Controls Layer (Edge-to-Edge overlay) -->
-        <div class="relative z-30 pt-4 px-4 flex items-center justify-between pointer-events-none">
-          <!-- Floating Brand Pill Badge (Inspired by reference top-left badge) -->
-          <div class="pointer-events-auto flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md shadow-xl border border-slate-200/80">
-            <div class="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-black shadow-sm">
+        <!-- Top Floating Controls Layer (Web Hero Header) -->
+        <div class="relative z-30 pt-6 px-6 sm:px-10 flex items-center justify-between pointer-events-none">
+          <!-- Floating Brand Pill Badge -->
+          <div class="pointer-events-auto flex items-center gap-2.5 px-4 py-2 rounded-full bg-slate-900/90 backdrop-blur-md shadow-xl border border-slate-700/80">
+            <div class="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center text-slate-950 text-sm font-black shadow-sm">
               ⚡
             </div>
-            <div class="flex items-center gap-1.5">
-              <span class="font-display font-black text-xs text-slate-900 tracking-wide">VAAYU</span>
-              <span class="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full">CAPTAIN</span>
+            <div class="flex items-center gap-2">
+              <span class="font-display font-black text-sm text-white tracking-wide">VAAYU</span>
+              <span class="text-[10px] bg-emerald-500/20 text-emerald-400 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">CAPTAIN PORTAL</span>
             </div>
           </div>
 
           <!-- Floating Controls Layer -->
-          <div class="pointer-events-auto flex items-center gap-1.5">
-            <button id="btnQuickEnterCockpit" type="button" class="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-black text-[10px] uppercase tracking-wider shadow-lg shadow-emerald-500/30 active:scale-95 transition flex items-center gap-1 cursor-pointer">
-              <span>🚀 Cockpit</span>
+          <div class="pointer-events-auto flex items-center gap-2.5">
+            <button id="btnQuickEnterCockpit" type="button" class="px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/30 active:scale-95 transition flex items-center gap-1.5 cursor-pointer">
+              <span>🚀 Open Cockpit</span>
             </button>
-            <div class="flex items-center gap-1 p-1 rounded-full bg-slate-950/80 backdrop-blur-md border border-slate-700/80 shadow-xl text-[10px]">
-              <button type="button" class="lang-pill active px-2.5 py-0.5 rounded-full font-bold bg-emerald-500 text-slate-950 transition" data-lang="en">EN</button>
-              <button type="button" class="lang-pill px-2.5 py-0.5 rounded-full text-slate-300 hover:text-white transition" data-lang="hi">हिन्दी</button>
-              <button type="button" class="lang-pill px-2.5 py-0.5 rounded-full text-slate-300 hover:text-white transition" data-lang="te">తెలుగు</button>
+            <div class="flex items-center gap-1 p-1 rounded-full bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-xl text-xs">
+              <button type="button" class="lang-pill active px-3 py-1 rounded-full font-bold bg-emerald-500 text-slate-950 transition" data-lang="en">EN</button>
+              <button type="button" class="lang-pill px-3 py-1 rounded-full text-slate-300 hover:text-white transition" data-lang="hi">हिन्दी</button>
+              <button type="button" class="lang-pill px-3 py-1 rounded-full text-slate-300 hover:text-white transition" data-lang="te">తెలుగు</button>
             </div>
           </div>
         </div>
 
-        <!-- Bottom Gradient Overlay for High Contrast Text & CTA (Pinned edge-to-edge at bottom) -->
-        <div class="relative z-20 w-full bg-gradient-to-t from-slate-950 via-slate-950/85 to-transparent pt-32 pb-7 px-5 flex flex-col items-center text-center mt-auto">
+        <!-- Bottom Web Showcase Container for High Contrast Text, Value Proposition & CTA -->
+        <div class="relative z-20 w-full max-w-3xl mx-auto pt-24 pb-12 px-6 flex flex-col items-center text-center mt-auto">
           
           <!-- Headline & Subtext Carousel -->
-          <div id="heroSlideContainer" class="w-full transition-all duration-300">
-            <h2 id="loginHeroHeadline" class="font-display font-black text-3xl sm:text-4xl text-white tracking-tight leading-none drop-shadow-lg">
+          <div id="heroSlideContainer" class="w-full transition-all duration-300 space-y-3">
+            <h2 id="loginHeroHeadline" class="font-display font-black text-4xl sm:text-5xl lg:text-6xl text-white tracking-tight leading-tight drop-shadow-xl">
               Drive &amp; Earn
             </h2>
-            <p id="loginHeroSubtext" class="text-emerald-400 font-bold text-sm lg:text-base mt-2 drop-shadow-md">
-              Up to ₹35,000 / month
+            <p id="loginHeroSubtext" class="text-emerald-400 font-extrabold text-base sm:text-xl drop-shadow-md">
+              Up to ₹35,000 / month with instant daily settlements
             </p>
           </div>
 
-          <!-- Start Driving CTA Pill Button -->
-          <button id="btnStartDrivingHero" data-on="click" data-action="openMobileNumberStep" type="button" class="w-full mt-5 py-4 px-6 rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-base uppercase tracking-wider shadow-xl shadow-emerald-500/25 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer">
-            <span>Start Driving</span>
-            <svg class="w-5 h-5 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
-          </button>
+          <!-- Start Driving Web CTA Button -->
+          <div class="w-full max-w-md mt-8">
+            <button id="btnStartDrivingHero" data-on="click" data-action="openMobileNumberStep" type="button" class="w-full py-4 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-base uppercase tracking-wider shadow-2xl shadow-emerald-500/30 active:scale-98 transition flex items-center justify-center gap-3 cursor-pointer">
+              <span>Start Driving Now</span>
+              <svg class="w-5 h-5 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </button>
+          </div>
 
           <!-- 3 Carousel Indicator Dots -->
-          <div id="heroCarouselDots" class="flex items-center justify-center gap-2 mt-4">
-            <button type="button" class="carousel-dot active w-6 h-2 rounded-full bg-emerald-400 transition-all duration-300 cursor-pointer" data-slide="0" aria-label="Slide 1"></button>
-            <button type="button" class="carousel-dot w-2 h-2 rounded-full bg-white/40 hover:bg-white/70 transition-all duration-300 cursor-pointer" data-slide="1" aria-label="Slide 2"></button>
-            <button type="button" class="carousel-dot w-2 h-2 rounded-full bg-white/40 hover:bg-white/70 transition-all duration-300 cursor-pointer" data-slide="2" aria-label="Slide 3"></button>
+          <div id="heroCarouselDots" class="flex items-center justify-center gap-2.5 mt-6">
+            <button type="button" class="carousel-dot active w-8 h-2 rounded-full bg-emerald-400 transition-all duration-300 cursor-pointer" data-slide="0" aria-label="Slide 1"></button>
+            <button type="button" class="carousel-dot w-2.5 h-2 rounded-full bg-white/40 hover:bg-white/70 transition-all duration-300 cursor-pointer" data-slide="1" aria-label="Slide 2"></button>
+            <button type="button" class="carousel-dot w-2.5 h-2 rounded-full bg-white/40 hover:bg-white/70 transition-all duration-300 cursor-pointer" data-slide="2" aria-label="Slide 3"></button>
           </div>
 
         </div>
 
-
-
-        <!-- Slide-up Modal / Bottom Sheet for OTP Verification -->
-        <div id="authBottomSheet" class="hidden absolute inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex flex-col justify-end transition-all duration-300">
-          <div class="bg-slate-900 border-t border-slate-700/80 rounded-t-[32px] p-5 shadow-2xl max-h-[92%] overflow-y-auto space-y-4 animate-slide-up">
+        <!-- Modern Web Authentication Modal (Desktop Centered / Responsive) -->
+        <div id="authBottomSheet" class="hidden absolute inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4 transition-all duration-300">
+          <div class="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl max-h-[92vh] overflow-y-auto space-y-5 animate-slide-up">
             
-            <!-- Sheet Drag Handle & Close Button -->
-            <div class="flex items-center justify-between pb-1 border-b border-slate-800">
-              <div class="flex items-center gap-2">
-                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span id="authSheetTitle" class="font-display font-black text-xs text-white uppercase tracking-wider">Driver Verification</span>
+            <!-- Modal Header & Close Button -->
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div class="flex items-center gap-2.5">
+                <span class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span id="authSheetTitle" class="font-display font-black text-sm text-white uppercase tracking-wider">Driver Partner Authentication</span>
               </div>
-              <button id="btnCloseAuthSheet" data-on="click" data-action="closeAuthBottomSheet" type="button" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition cursor-pointer" title="Close">
+              <button id="btnCloseAuthSheet" data-on="click" data-action="closeAuthBottomSheet" type="button" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-base font-bold transition cursor-pointer" title="Close">
                 &times;
               </button>
             </div>
@@ -318,41 +301,62 @@
       </div>
 
       <!-- ========================================== -->
-      <!-- COCKPIT SCREEN (WRAPPER FOR MAIN, POCKET, PROFILE) -->
+      <!-- COCKPIT SCREEN (ENTERPRISE WEB COCKPIT)     -->
       <!-- ========================================== -->
-      <div id="cockpitScreen" class="hidden flex flex-col flex-1 overflow-hidden relative">
+      <div id="cockpitScreen" class="hidden flex flex-col flex-1 w-full bg-slate-900/60 rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden relative min-h-[calc(100vh-120px)]">
 
-      <!-- Main Navigation Tabs Header (3 Main Sections required) -->
-      <div class="bg-slate-900/95 backdrop-blur border-b border-slate-800/80 px-4 py-2.5 flex items-center justify-between shrink-0 z-30 shadow-md">
-        <div class="flex items-center gap-2">
-          <div class="w-6 h-6 rounded-full bg-gradient-to-tr from-vaayu-500 via-emerald-400 to-teal-300 flex items-center justify-center font-display font-black text-slate-950 text-xs shadow-md shadow-emerald-950/60 ring-2 ring-emerald-500/20 shrink-0">
+      <!-- Web Cockpit Primary Navigation Bar -->
+      <div class="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-5 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4 shrink-0 z-30 shadow-md">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-300 flex items-center justify-center font-display font-black text-slate-950 text-sm shadow-md shadow-emerald-950/60 ring-2 ring-emerald-500/20 shrink-0">
             V
           </div>
           <div>
-            <div class="flex items-center gap-1.5">
-              <h1 class="font-display font-black text-white text-sm tracking-tight leading-none">VAAYU</h1>
-              <span class="text-[9px] bg-slate-800 text-vaayu-400 font-bold px-1.5 py-0.2 rounded border border-vaayu-500/30">PARTNER</span>
+            <div class="flex items-center gap-2">
+              <h1 class="font-display font-extrabold text-white text-base tracking-tight leading-none">VAAYU CAPTAIN</h1>
+              <span class="text-[9px] bg-slate-800 text-emerald-400 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">PARTNER HUB</span>
             </div>
-            <p id="subServiceTag" class="text-[9px] text-vaayu-400 font-medium">Express Delivery Partner</p>
+            <p id="subServiceTag" class="text-[10px] text-slate-400 font-medium mt-0.5">Commercial Intra-City Logistics &amp; Express Delivery</p>
           </div>
         </div>
 
+        <!-- Desktop Web Navigation Tabs in Header Bar -->
+        <div class="flex items-center bg-slate-950/90 p-1 rounded-2xl border border-slate-800 text-xs">
+          <button id="webNavBtnMain" data-on="click" data-action="switchTab" data-args='["main"]' class="nav-tab active px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition text-emerald-400 bg-slate-800/80 shadow cursor-pointer">
+            <span>🧭</span>
+            <span>Main Duty</span>
+          </button>
+          <button id="webNavBtnPocket" data-on="click" data-action="switchTab" data-args='["pocket"]' class="nav-tab px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition text-slate-400 hover:text-white cursor-pointer">
+            <span>💼</span>
+            <span>Pocket &amp; COD</span>
+          </button>
+          <button id="webNavBtnFleet" data-on="click" data-action="switchTab" data-args='["fleet"]' class="nav-tab px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition text-slate-400 hover:text-white cursor-pointer">
+            <span>🚛</span>
+            <span>Fleet Hub</span>
+          </button>
+          <button id="webNavBtnProfile" data-on="click" data-action="switchTab" data-args='["profile"]' class="nav-tab px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition text-slate-400 hover:text-white cursor-pointer">
+            <span>⚙️</span>
+            <span>Settings</span>
+          </button>
+        </div>
+
         <!-- Duty Online/Offline Pill Switcher & Top Help Button -->
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-2.5">
           <!-- 2-in-1 Role Switcher Button -->
-          <button id="btnRoleSwitcher" data-on="click" data-action="togglePartnerMode" class="px-2.5 py-1 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold flex items-center gap-1 active:scale-95 transition cursor-pointer shadow-sm" title="2-in-1 App: Switch between Solo Driver & Fleet Owner Cockpit">
+          <button id="btnRoleSwitcher" data-on="click" data-action="togglePartnerMode" class="px-3.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1.5 active:scale-95 transition cursor-pointer shadow-sm" title="2-in-1 App: Switch between Solo Driver & Fleet Owner Cockpit">
             <span class="text-xs">🔄</span>
             <span id="roleSwitcherLabel">Solo Captain</span>
           </button>
-          <!-- Top Help Section Button (Replaced Share Location Button) -->
-          <button id="btnTopHelp" data-on="click" data-action="openTopHelpSection" class="px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 hover:text-white border border-rose-500/40 text-[10px] font-bold flex items-center gap-1 active:scale-95 transition cursor-pointer shadow-sm" title="Partner Help & Emergency Support">
+          <!-- Top Help Section Button -->
+          <button id="btnTopHelp" data-on="click" data-action="openTopHelpSection" class="px-3.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-bold flex items-center gap-1.5 active:scale-95 transition cursor-pointer shadow-sm" title="Partner Help & Emergency Support">
             <span class="text-xs">🆘</span>
             <span>Help</span>
           </button>
-          <button id="dutyToggleBtn" data-on="click" data-action="toggleDuty" class="flex items-center gap-2 px-3 py-1.5 rounded-full font-display font-bold text-xs transition-all shadow-md active:scale-95 bg-vaayu-500/20 text-vaayu-400 border border-vaayu-500/40 cursor-pointer">
+          <!-- Online / Offline Duty Switcher -->
+          <button id="dutyToggleBtn" data-on="click" data-action="toggleDuty" class="flex items-center gap-2.5 px-4 py-1.5 rounded-xl font-display font-bold text-xs transition-all shadow-md active:scale-95 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 cursor-pointer">
             <span class="relative flex h-2.5 w-2.5">
-              <span id="dutyPulsePing" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-vaayu-400 opacity-75"></span>
-              <span id="dutyPulseDot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-vaayu-500"></span>
+              <span id="dutyPulsePing" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span id="dutyPulseDot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
             <span id="dutyText">ONLINE</span>
           </button>
@@ -408,9 +412,9 @@
 
 
 
-          <!-- Live Interactive Map Section -->
-          <div class="relative rounded-2xl overflow-hidden border border-slate-700/80 shadow-xl bg-slate-950">
-            <div id="liveMap" class="h-64 w-full z-10"></div>
+          <!-- Live Interactive Map Section (Web Dashboard Command Center Map) -->
+          <div class="relative rounded-3xl overflow-hidden border border-slate-700/80 shadow-2xl bg-slate-950">
+            <div id="liveMap" class="h-72 sm:h-96 lg:h-[460px] w-full z-10"></div>
             
             <!-- Live Destination Turn-by-Turn Navigation HUD (Shown when heading to Destination after OTP) -->
             <div id="destinationNavHud" class="hidden absolute top-2 left-2 right-2 z-30 bg-slate-950/95 backdrop-blur-md p-2.5 rounded-2xl border border-emerald-500/60 shadow-2xl flex items-center justify-between text-xs animate-slide-down">
@@ -1283,9 +1287,9 @@
       </div>
 
       <!-- ========================================== -->
-      <!-- BOTTOM FIXED NAVIGATION BAR (4 SECTIONS)   -->
+      <!-- BOTTOM FIXED NAVIGATION BAR (MOBILE ONLY FALLBACK) -->
       <!-- ========================================== -->
-      <nav class="absolute bottom-0 left-0 right-0 h-16 bg-slate-950/95 backdrop-blur border-t border-slate-800/80 px-2 flex items-center justify-around z-40">
+      <nav class="md:hidden absolute bottom-0 left-0 right-0 h-16 bg-slate-950/95 backdrop-blur border-t border-slate-800/80 px-2 flex items-center justify-around z-40">
         <!-- Section 1 Button -->
         <button id="navBtnMain" data-on="click" data-action="switchTab" data-args='["main"]' class="nav-tab active flex flex-col items-center justify-center flex-1 py-1 transition-all text-vaayu-400 cursor-pointer">
           <div class="w-6 h-6 flex items-center justify-center text-lg">
@@ -1323,8 +1327,8 @@
       <!-- ========================================== -->
       <!-- INCOMING ORDER POPUP MODAL (30s COUNTDOWN) -->
       <!-- ========================================== -->
-      <div id="orderAlertModal" class="hidden absolute inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col justify-end p-4 transition-all duration-300">
-        <div class="bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-amber-500/70 rounded-3xl p-5 shadow-2xl space-y-4 animate-bounce-subtle">
+      <div id="orderAlertModal" class="hidden fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 transition-all duration-300">
+        <div class="w-full max-w-lg bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-amber-500/70 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-4 animate-bounce-subtle">
           
           <!-- Header with Countdown Timer -->
           <div class="flex items-center justify-between">

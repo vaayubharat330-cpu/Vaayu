@@ -108,12 +108,37 @@
   background: #475569;
 }
 
+/* Responsive Web Layout overrides */
+#appViewport {
+  width: 100% !important;
+  max-width: 1380px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  min-height: calc(100vh - 80px) !important;
+  height: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+#cockpitScreen {
+  min-height: calc(100vh - 110px) !important;
+  height: auto !important;
+}
+
+#sectionContainer {
+  height: auto !important;
+  min-height: calc(100vh - 180px) !important;
+  padding-bottom: 2rem !important;
+}
+
 /* Fullscreen expanded mode transition */
 .full-canvas-mode {
-  max-width: 900px !important;
-  height: calc(100vh - 70px) !important;
-  border-radius: 18px !important;
-  border-width: 1px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  border-radius: 0 !important;
+  border-width: 0 !important;
 }
 
 /* Star rating & Feedback tags */

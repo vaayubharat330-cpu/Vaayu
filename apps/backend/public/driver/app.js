@@ -5385,12 +5385,17 @@ function initApplication() {
   const navMain = document.getElementById('navBtnMain');
   const navPocket = document.getElementById('navBtnPocket');
   const navProfile = document.getElementById('navBtnProfile');
+  const navFleet = document.getElementById('navBtnFleet');
+
+  const webNavMain = document.getElementById('webNavBtnMain');
+  const webNavPocket = document.getElementById('webNavBtnPocket');
+  const webNavProfile = document.getElementById('webNavBtnProfile');
+  const webNavFleet = document.getElementById('webNavBtnFleet');
 
   const secMain = document.getElementById('sectionMain');
   const secPocket = document.getElementById('sectionPocket');
   const secProfile = document.getElementById('sectionProfile');
   const secFleet = document.getElementById('sectionFleet');
-  const navFleet = document.getElementById('navBtnFleet');
 
   function renderFleetRoster() {
     const container = document.getElementById('fleetDriversRosterContainer');
@@ -5573,27 +5578,57 @@ function initApplication() {
         btn.classList.add('text-slate-400');
       }
     });
+
+    [webNavMain, webNavPocket, webNavProfile, webNavFleet].forEach(btn => {
+      if (btn) {
+        btn.classList.remove('active', 'text-emerald-400', 'bg-slate-800/80', 'shadow');
+        btn.classList.add('text-slate-400');
+      }
+    });
+
     [secMain, secPocket, secProfile, secFleet].forEach(s => { if (s) s.classList.add('hidden'); });
 
     if (target === 'main') {
-      navMain.classList.add('active', 'text-vaayu-400');
-      navMain.classList.remove('text-slate-400');
+      if (navMain) {
+        navMain.classList.add('active', 'text-vaayu-400');
+        navMain.classList.remove('text-slate-400');
+      }
+      if (webNavMain) {
+        webNavMain.classList.add('active', 'text-emerald-400', 'bg-slate-800/80', 'shadow');
+        webNavMain.classList.remove('text-slate-400');
+      }
       secMain.classList.remove('hidden');
       if (map) setTimeout(() => map.invalidateSize(), 150);
     } else if (target === 'pocket') {
-      navPocket.classList.add('active', 'text-vaayu-400');
-      navPocket.classList.remove('text-slate-400');
+      if (navPocket) {
+        navPocket.classList.add('active', 'text-vaayu-400');
+        navPocket.classList.remove('text-slate-400');
+      }
+      if (webNavPocket) {
+        webNavPocket.classList.add('active', 'text-emerald-400', 'bg-slate-800/80', 'shadow');
+        webNavPocket.classList.remove('text-slate-400');
+      }
       secPocket.classList.remove('hidden');
       renderAttendanceCalendar();
       renderDailyBreakdown();
     } else if (target === 'profile') {
-      navProfile.classList.add('active', 'text-vaayu-400');
-      navProfile.classList.remove('text-slate-400');
+      if (navProfile) {
+        navProfile.classList.add('active', 'text-vaayu-400');
+        navProfile.classList.remove('text-slate-400');
+      }
+      if (webNavProfile) {
+        webNavProfile.classList.add('active', 'text-emerald-400', 'bg-slate-800/80', 'shadow');
+        webNavProfile.classList.remove('text-slate-400');
+      }
       secProfile.classList.remove('hidden');
     } else if (target === 'fleet') {
       if (navFleet) {
         navFleet.classList.add('active', 'text-vaayu-400');
         navFleet.classList.remove('text-slate-400');
+      }
+      if (webNavFleet) {
+        webNavFleet.classList.add('active', 'text-emerald-400', 'bg-slate-800/80', 'shadow');
+        webNavFleet.classList.remove('text-slate-400');
       }
       if (secFleet) secFleet.classList.remove('hidden');
       refreshFleetOwnerData();
@@ -5602,10 +5637,15 @@ function initApplication() {
     saveState();
   }
 
-  navMain.addEventListener('click', () => switchTab('main'));
-  navPocket.addEventListener('click', () => switchTab('pocket'));
-  navProfile.addEventListener('click', () => switchTab('profile'));
+  if (navMain) navMain.addEventListener('click', () => switchTab('main'));
+  if (navPocket) navPocket.addEventListener('click', () => switchTab('pocket'));
+  if (navProfile) navProfile.addEventListener('click', () => switchTab('profile'));
   if (navFleet) navFleet.addEventListener('click', () => switchTab('fleet'));
+
+  if (webNavMain) webNavMain.addEventListener('click', () => switchTab('main'));
+  if (webNavPocket) webNavPocket.addEventListener('click', () => switchTab('pocket'));
+  if (webNavProfile) webNavProfile.addEventListener('click', () => switchTab('profile'));
+  if (webNavFleet) webNavFleet.addEventListener('click', () => switchTab('fleet'));
 
   // Duty Online / Offline Toggle (Persisted to storage)
   const dutyToggleBtnEl = document.getElementById('dutyToggleBtn');
