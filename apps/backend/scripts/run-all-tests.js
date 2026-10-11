@@ -28,10 +28,22 @@ console.log(`Base URL: ${base}`);
 console.log(`JWT Secret: ${jwtSecret ? 'Loaded (' + jwtSecret.length + ' chars)' : 'MISSING'}`);
 console.log('----------------------------------------------------\n');
 
-let failed = 0;
-for (const suite of suites) {
-  process.stdout.write(`Running ${suite} ... `);
-  try {
+(async () => {
+  const redisUrl = process.env.REDIS_URL || parsed.REDIS_URL;
+  if (redisUrl) {
+    try {
+      const Redis = require('ioredis');
+      const redis = new Redis(redisUrl, { maxRetriesPerRequest: 1 });
+      const keys = await redis.keys('rate:limiter:*');
+      if (keys.length) await redis.del(keys);
+      await redis.quit();
+    } catch (e) {}
+  }
+
+  let failed = 0;
+  for (const suite of suites) {
+    process.stdout.write(`Running ${suite} ... `);
+    try {
     execSync(`node ${suite}`, {
       cwd: path.resolve(__dirname, '..'),
       env: { ...process.env, VAAYU_TEST_JWT_SECRET: jwtSecret, VAAYU_TEST_BASE: base },
@@ -46,10 +58,15 @@ for (const suite of suites) {
 }
 
 console.log('\n----------------------------------------------------');
-if (failed === 0) {
-  console.log(`ALL ${suites.length} TEST SUITES PASSED (62/62 Tests Verified) ✓`);
-  process.exit(0);
-} else {
-  console.error(`${failed} SUITES FAILED ✗`);
-  process.exit(1);
-}
+  if (failed === 0) {
+    console.log(`ALL ${suites.length} TEST SUITES PASSED (62/62 Tests Verified) ✓`);
+    try {
+      execSync('node src/db/seedPostgres.js --force', { cwd: path.resolve(__dirname, '..'), stdio: 'pipe' });
+      console.log('Postgres clean baseline restored.');
+    } catch (e) {}
+    process.exit(0);
+  } else {
+    console.error(`${failed} SUITES FAILED ✗`);
+    process.exit(1);
+  }
+})();

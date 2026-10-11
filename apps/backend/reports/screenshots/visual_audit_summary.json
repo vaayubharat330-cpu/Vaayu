@@ -1,0 +1,62 @@
+[
+  {
+    "name": "01_customer_portal_desktop",
+    "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\01_customer_portal_desktop.png",
+    "errors": [],
+    "success": true
+  },
+  {
+    "name": "02_customer_portal_mobile",
+    "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\02_customer_portal_mobile.png",
+    "errors": [],
+    "success": true
+  },
+  {
+    "name": "03_merchant_b2b_cockpit_desktop",
+    "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\03_merchant_b2b_cockpit_desktop.png",
+    "errors": [],
+    "success": true
+  },
+  {
+    "name": "04_fleet_owner_portal_desktop",
+    "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\04_fleet_owner_portal_desktop.png",
+    "errors": [
+      "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    ],
+    "success": true
+  },
+  {
+    "name": "05_operations_admin_control_tower",
+    "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\05_operations_admin_control_tower.png",
+    "errors": [],
+    "success": true
+  },
+  {
+    "name": "06_driver_partner_cockpit_phone",
+    "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\06_driver_partner_cockpit_phone.png",
+    "errors": [
+      "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    ],
+    "success": true
+  },
+  {
+    "name": "07_driver_partner_desktop_canvas",
+    "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\07_driver_partner_desktop_canvas.png",
+    "errors": [
+      "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    ],
+    "success": true
+  },
+  {
+    "name": "08_public_live_tracking_mobile",
+    "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\08_public_live_tracking_mobile.png",
+    "errors": [],
+    "success": true
+  },
+  {
+    "name": "09_otp_console_secure_admin",
+    "path": "C:\\Users\\suraj\\.gemini\\antigravity\\scratch\\vaayu_app\\apps\\backend\\reports\\screenshots\\09_otp_console_secure_admin.png",
+    "errors": [],
+    "success": true
+  }
+]

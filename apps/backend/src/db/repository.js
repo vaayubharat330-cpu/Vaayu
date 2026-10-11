@@ -75,7 +75,14 @@ class JsonDatabaseRepository extends DatabaseRepository {
 
   getVehicles() {
     const db = this.readDb();
-    const categories = db.vehicle_categories || [];
+    const categories = (db.vehicle_categories || []).map(cat => {
+      const def = this.defaultData.vehicle_categories.find(d => d.id === cat.id);
+      const isCorrupted = typeof cat.icon === 'string' && (cat.icon.includes('ð') || !cat.icon.trim());
+      return {
+        ...cat,
+        icon: isCorrupted && def ? def.icon : (cat.icon || (def ? def.icon : '🚚'))
+      };
+    });
     this.defaultData.vehicle_categories.forEach(defV => {
       if (!categories.some(c => c.id === defV.id)) {
         categories.push(defV);

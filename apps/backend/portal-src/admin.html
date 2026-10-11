@@ -63,7 +63,7 @@
     function AdminApp() {
       // Admin RBAC User Authentication State
       const [adminUser, setAdminUser] = useState(null);
-      const [loginEmail, setLoginEmail] = useState('admin@vaayu.in');
+      const [loginEmail, setLoginEmail] = useState('');
       const [loginPassword, setLoginPassword] = useState('');
       const [selectedLoginRole, setSelectedLoginRole] = useState(null);
       const [loginError, setLoginError] = useState('');
@@ -243,7 +243,7 @@
             fetch(`${baseUrl}/api/admin/payouts`).then(r => r.json()).catch(() => ({ success: false })),
             fetch(`${baseUrl}/api/admin/kyc-audit`).then(r => r.json()).catch(() => ({ success: false })),
             fetch(`${baseUrl}/api/admin/fleet/live`).then(r => r.json()).catch(() => ({ success: false })),
-            fetch(`${baseUrl}/api/otp/inbox`).then(r => r.json()).catch(() => ({ success: false }))
+            fetch(`${baseUrl}/api/admin/otp/requests`).then(r => r.json()).catch(() => ({ success: false }))
           ]);
 
           if (resAnalytics.success) setAnalyticsData(resAnalytics.analytics);
@@ -262,7 +262,18 @@
           if (resPayouts.success) setPayouts(resPayouts.payouts || []);
           if (resKyc.success) setKycDocs(resKyc.documents || []);
           if (resFleetLive.success) setFleetLive({ drivers: resFleetLive.drivers || resFleetLive.fleet || [], summary: resFleetLive.summary || {} });
-          if (resSms && resSms.success) setSmsInbox(resSms.inbox || []);
+          if (resSms && resSms.success) {
+            const normalizedSms = (resSms.requests || []).map(r => ({
+              id: r.id,
+              phone: r.maskedPhone || r.phone,
+              appType: r.app,
+              code: r.code || '••••••',
+              status: r.status === 'PENDING' ? 'ACTIVE' : r.status,
+              remainingSeconds: r.remainingSeconds || 0,
+              createdAt: r.createdAt
+            }));
+            setSmsInbox(normalizedSms);
+          }
         } catch (e) {
           console.error('Failed to load admin data:', e);
         } finally {
@@ -450,7 +461,7 @@
               <form onSubmit={handleAdminLogin} className="space-y-4">
                 <div>
                   <label className="text-xs font-semibold text-slate-400 block mb-1">WORK EMAIL / USERNAME</label>
-                  <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-cyan-500" placeholder="admin@vaayu.in" />
+                  <input type="email" value={loginEmail} onChange={(e) => { setLoginEmail(e.target.value); setSelectedLoginRole(null); }} required className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-cyan-500" placeholder="admin@vaayu.in" />
                 </div>
 
                 <div>
@@ -463,6 +474,25 @@
                   <i className="fa-solid fa-right-to-bracket"></i>
                 </button>
               </form>
+
+              {/* QUICK ACCOUNT PRESETS */}
+              <div className="pt-2 border-t border-slate-800/80">
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">Quick Select Role Account</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button type="button" onClick={() => { setLoginEmail('admin@vaayu.in'); setSelectedLoginRole('SUPER_ADMIN'); }} className={`p-2.5 rounded-xl border text-left transition ${loginEmail === 'admin@vaayu.in' ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-300' : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'}`}>
+                    <div className="font-bold text-xs text-white">Super Admin</div>
+                    <div className="text-[10px] text-slate-500 font-mono truncate">admin@vaayu.in</div>
+                  </button>
+                  <button type="button" onClick={() => { setLoginEmail('support@vaayu.in'); setSelectedLoginRole('SUPPORT_AGENT'); }} className={`p-2.5 rounded-xl border text-left transition ${loginEmail === 'support@vaayu.in' ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-300' : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'}`}>
+                    <div className="font-bold text-xs text-white">Support</div>
+                    <div className="text-[10px] text-slate-500 font-mono truncate">support@vaayu.in</div>
+                  </button>
+                  <button type="button" onClick={() => { setLoginEmail('dispatch@vaayu.in'); setSelectedLoginRole('DISPATCH_OPERATOR'); }} className={`p-2.5 rounded-xl border text-left transition ${loginEmail === 'dispatch@vaayu.in' ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-300' : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'}`}>
+                    <div className="font-bold text-xs text-white">Dispatch</div>
+                    <div className="text-[10px] text-slate-500 font-mono truncate">dispatch@vaayu.in</div>
+                  </button>
+                </div>
+              </div>
 
               
 
@@ -750,10 +780,10 @@
                             />
                             <div className="flex space-x-2">
                               <button onClick={() => handleApplicationDecision(app.id, 'APPROVE')} className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl transition">
-                                âœ“ Approve
+                                ✓ Approve
                               </button>
                               <button onClick={() => handleApplicationDecision(app.id, 'REJECT')} className="flex-1 py-2 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 font-bold rounded-xl transition">
-                                âœ• Reject
+                                ✕ Reject
                               </button>
                             </div>
                           </div>

@@ -739,13 +739,13 @@ const server = http.createServer(async (req, res) => {
       });
     } else {
       let ext = path.extname(filePath).toLowerCase();
-      let contentType = 'text/html';
-      if (ext === '.js') contentType = 'text/javascript';
-      if (ext === '.css') contentType = 'text/css';
-      if (ext === '.json') contentType = 'application/json';
+      let contentType = 'text/html; charset=utf-8';
+      if (ext === '.js') contentType = 'text/javascript; charset=utf-8';
+      if (ext === '.css') contentType = 'text/css; charset=utf-8';
+      if (ext === '.json') contentType = 'application/json; charset=utf-8';
       if (ext === '.png') contentType = 'image/png';
       if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
-      if (ext === '.svg') contentType = 'image/svg+xml';
+      if (ext === '.svg') contentType = 'image/svg+xml; charset=utf-8';
       if (ext === '.webm') contentType = 'video/webm';
       if (ext === '.mp4') contentType = 'video/mp4';
 
