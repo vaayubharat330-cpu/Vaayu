@@ -489,6 +489,13 @@ function initDriverRegistration() {
     showStep('DETAILS');
   });
 
+  const btnLandingRegister = document.getElementById('btnLandingRegisterHero');
+  if (btnLandingRegister) btnLandingRegister.addEventListener('click', () => {
+    openAuthBottomSheet();
+    loadVehicles();
+    showStep('DETAILS');
+  });
+
   // Open Fleet Registration
   const btnOpenFleet = document.getElementById('btnOpenFleetRegister');
   if (btnOpenFleet) btnOpenFleet.addEventListener('click', () => {

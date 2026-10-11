@@ -94,8 +94,8 @@
       <div id="loginPageScreen" class="flex-1 w-full min-h-[calc(100vh-100px)] relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 shadow-2xl flex flex-col justify-between p-0 m-0">
         
         <!-- Full-Bleed Edge-to-Edge Hero Image with Web Gradient Vignette -->
-        <img src="hero_driver.jpg" alt="Vaayu Driver Partner" class="absolute inset-0 w-full h-full object-cover object-center select-none pointer-events-none z-0 brightness-75" />
-        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-slate-950/40 z-10 pointer-events-none"></div>
+        <img src="hero_driver.jpg" alt="Vaayu Driver Partner" class="absolute inset-0 w-full h-full object-cover object-center select-none pointer-events-none z-0 brightness-[0.55]" />
+        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-slate-950/50 z-10 pointer-events-none"></div>
 
         <!-- Top Floating Controls Layer (Web Hero Header) -->
         <div class="relative z-30 pt-6 px-6 sm:px-10 flex items-center justify-between pointer-events-none">
@@ -123,29 +123,55 @@
           </div>
         </div>
 
-        <!-- Bottom Web Showcase Container for High Contrast Text, Value Proposition & CTA -->
-        <div class="relative z-20 w-full max-w-3xl mx-auto pt-24 pb-12 px-6 flex flex-col items-center text-center mt-auto">
+        <!-- Center / Bottom Web Showcase Container: Brand Proposition & Features -->
+        <div class="relative z-20 w-full max-w-5xl mx-auto pt-16 pb-12 px-6 flex flex-col items-center text-center mt-auto space-y-6">
           
           <!-- Headline & Subtext Carousel -->
           <div id="heroSlideContainer" class="w-full transition-all duration-300 space-y-3">
+            <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider">
+              <span>🇮🇳</span> Hyderabad's #1 Commercial Logistics Platform
+            </span>
             <h2 id="loginHeroHeadline" class="font-display font-black text-4xl sm:text-5xl lg:text-6xl text-white tracking-tight leading-tight drop-shadow-xl">
-              Drive &amp; Earn
+              Drive &amp; Earn with Freedom
             </h2>
-            <p id="loginHeroSubtext" class="text-emerald-400 font-extrabold text-base sm:text-xl drop-shadow-md">
-              Up to ₹35,000 / month with instant daily settlements
+            <p id="loginHeroSubtext" class="text-emerald-400 font-extrabold text-base sm:text-xl drop-shadow-md max-w-2xl mx-auto">
+              Up to ₹35,000 / month with instant daily UPI settlements &amp; zero commission surge.
             </p>
           </div>
 
-          <!-- Start Driving Web CTA Button -->
-          <div class="w-full max-w-md mt-8">
-            <button id="btnStartDrivingHero" data-on="click" data-action="openMobileNumberStep" type="button" class="w-full py-4 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-base uppercase tracking-wider shadow-2xl shadow-emerald-500/30 active:scale-98 transition flex items-center justify-center gap-3 cursor-pointer">
-              <span>Start Driving Now</span>
-              <svg class="w-5 h-5 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+          <!-- Feature Highlights Grid (New Modern Template Cards) -->
+          <div class="w-full grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2 max-w-4xl text-left">
+            <div class="p-4 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-800 shadow-xl space-y-1">
+              <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-base">💰</div>
+              <strong class="text-white font-bold text-sm block">Daily Instant Payouts</strong>
+              <p class="text-[11px] text-slate-400 leading-snug">Withdraw your earnings directly to any UPI ID instantly after completing trips.</p>
+            </div>
+            <div class="p-4 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-800 shadow-xl space-y-1">
+              <div class="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-base">🚚</div>
+              <strong class="text-white font-bold text-sm block">Multi-Vehicle Support</strong>
+              <p class="text-[11px] text-slate-400 leading-snug">Attach 2-wheelers, 3-wheelers, Tata Ace, or large commercial pickup trucks.</p>
+            </div>
+            <div class="p-4 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-800 shadow-xl space-y-1">
+              <div class="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-base">🛡️</div>
+              <strong class="text-white font-bold text-sm block">Accidental Cover &amp; SOS</strong>
+              <p class="text-[11px] text-slate-400 leading-snug">Comprehensive 24/7 on-duty insurance and one-tap emergency control tower.</p>
+            </div>
+          </div>
+
+          <!-- Dual Call to Action Buttons -->
+          <div class="w-full max-w-lg flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            <button id="btnStartDrivingHero" data-on="click" data-action="openMobileNumberStep" type="button" class="w-full sm:flex-1 py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-black text-sm uppercase tracking-wider shadow-2xl shadow-emerald-500/30 active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer">
+              <span>Sign In with Mobile</span>
+              <svg class="w-4 h-4 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </button>
+            <button id="btnLandingRegisterHero" type="button" class="w-full sm:flex-1 py-4 px-6 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-emerald-400 border border-emerald-500/40 font-display font-black text-sm uppercase tracking-wider shadow-xl active:scale-98 transition flex items-center justify-center gap-2 cursor-pointer">
+              <span>Register as Driver</span>
+              <span>📝</span>
             </button>
           </div>
 
           <!-- 3 Carousel Indicator Dots -->
-          <div id="heroCarouselDots" class="flex items-center justify-center gap-2.5 mt-6">
+          <div id="heroCarouselDots" class="flex items-center justify-center gap-2.5 pt-1">
             <button type="button" class="carousel-dot active w-8 h-2 rounded-full bg-emerald-400 transition-all duration-300 cursor-pointer" data-slide="0" aria-label="Slide 1"></button>
             <button type="button" class="carousel-dot w-2.5 h-2 rounded-full bg-white/40 hover:bg-white/70 transition-all duration-300 cursor-pointer" data-slide="1" aria-label="Slide 2"></button>
             <button type="button" class="carousel-dot w-2.5 h-2 rounded-full bg-white/40 hover:bg-white/70 transition-all duration-300 cursor-pointer" data-slide="2" aria-label="Slide 3"></button>
@@ -672,48 +698,82 @@
         <!-- ========================================== -->
         <!-- SECTION 1: MAIN INTERFACE (Cockpit & Orders) -->
         <!-- ========================================== -->
-        <section id="sectionMain" class="space-y-3 p-3">
+        <section id="sectionMain" class="space-y-3.5 p-3 sm:p-4">
           
-          <!-- Duty Status Alert Bar -->
-          <div id="dutyStatusBar" class="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-2xl p-3 shadow-lg flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-xl">
+          <!-- Duty Status & Operations HUD Banner (Enterprise Web Template) -->
+          <div id="dutyStatusBar" class="bg-gradient-to-r from-emerald-950/70 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-3xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3.5">
+              <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500/20 to-teal-500/20 border border-emerald-500/40 flex items-center justify-center text-2xl shadow-inner">
                 🚀
               </div>
               <div>
-                <div class="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
-                  <span>Receiving High Surge Orders</span>
-                  <span class="text-[9px] bg-emerald-500 text-slate-950 font-black px-1.5 rounded">1.4x</span>
+                <div class="text-sm font-bold text-white flex items-center gap-2">
+                  <span>Duty Operational &bull; Matching Active</span>
+                  <span class="text-[10px] bg-emerald-500 text-slate-950 font-black px-2 py-0.5 rounded-full uppercase tracking-wider">1.4x Surge</span>
                 </div>
-                <p class="text-[11px] text-slate-300">Surge zones update from live dispatch</p>
+                <p class="text-xs text-slate-300 mt-0.5">Automated dispatch is prioritizing high-value commercial orders nearby.</p>
               </div>
             </div>
-            <div class="text-right">
-              <div class="text-[10px] text-slate-400 uppercase font-mono">Shift Time</div>
-              <div id="shiftTimer" class="font-mono text-sm font-bold text-emerald-300">03:42:15</div>
+            
+            <div class="flex items-center gap-3 bg-slate-950/70 px-4 py-2.5 rounded-2xl border border-slate-800">
+              <div class="text-left">
+                <span class="text-[9px] text-slate-400 uppercase font-mono font-bold block">Current Session</span>
+                <span id="shiftTimer" class="font-mono text-base font-bold text-emerald-400">03:42:15</span>
+              </div>
+              <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse ml-2"></div>
             </div>
           </div>
 
-          <!-- Quick Metrics Bar (Orders today, hours, surge earnings) -->
-          <div class="grid grid-cols-3 gap-2">
-            <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-2.5 text-center">
-              <span class="text-[10px] uppercase font-semibold text-slate-400 block">Orders</span>
-              <span id="todayOrderCount" class="font-display font-extrabold text-lg text-white">9</span>
-              <span class="text-[9px] text-emerald-400 block font-medium">+3 vs yesterday</span>
+          <!-- Modern Operations Metrics Dashboard (4 Cards Grid) -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-lg space-y-1 hover:border-slate-700 transition">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Today's Orders</span>
+                <span class="text-sm">📦</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="todayOrderCount" class="font-display font-extrabold text-2xl text-white">9</span>
+                <span class="text-[10px] font-bold text-emerald-400">+3 vs yesterday</span>
+              </div>
+              <span class="text-[10px] text-slate-400 block">Avg 18m delivery speed</span>
             </div>
-            <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-2.5 text-center">
-              <span class="text-[10px] uppercase font-semibold text-slate-400 block">Today's Pay</span>
-              <span id="todayEarningsTop" class="font-display font-extrabold text-lg text-emerald-400">₹1,480</span>
-              <span class="text-[9px] text-amber-300 block font-medium">₹320 bonus incl.</span>
+
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-lg space-y-1 hover:border-slate-700 transition">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Today's Pay</span>
+                <span class="text-sm">💵</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="todayEarningsTop" class="font-display font-extrabold text-2xl text-emerald-400">₹1,480</span>
+                <span class="text-[10px] font-bold text-amber-300">₹320 bonus</span>
+              </div>
+              <span class="text-[10px] text-slate-400 block font-mono">Instant UPI Eligible</span>
             </div>
-            <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-2.5 text-center">
-              <span class="text-[10px] uppercase font-semibold text-slate-400 block">Acceptance</span>
-              <span class="font-display font-extrabold text-lg text-sky-400">96.8%</span>
-              <span class="text-[9px] text-slate-400 block font-medium">Diamond Tier</span>
+
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-lg space-y-1 hover:border-slate-700 transition">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Acceptance Rate</span>
+                <span class="text-sm">⚡</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span class="font-display font-extrabold text-2xl text-sky-400">96.8%</span>
+                <span class="text-[10px] font-bold text-sky-300">Top 5%</span>
+              </div>
+              <span class="text-[10px] text-slate-400 block">Diamond Tier Captain</span>
+            </div>
+
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-lg space-y-1 hover:border-slate-700 transition">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Driver Rating</span>
+                <span class="text-sm">⭐</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span class="font-display font-extrabold text-2xl text-amber-400">4.92★</span>
+                <span class="text-[10px] font-bold text-emerald-400 font-mono">1,420 trips</span>
+              </div>
+              <span class="text-[10px] text-slate-400 block">Zero customer penalties</span>
             </div>
           </div>
-
-
 
           <!-- Live Interactive Map Section (Web Dashboard Command Center Map) -->
           <div class="relative rounded-3xl overflow-hidden border border-slate-700/80 shadow-2xl bg-slate-950">
