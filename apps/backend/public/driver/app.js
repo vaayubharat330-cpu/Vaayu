@@ -108,7 +108,7 @@ const DEFAULT_STATE = {
 };
 
 // Clean reset check: Wipe previous obsolete browser test data to match fresh vaayu database
-const FRESH_DATA_RESET_KEY = 'vaayu_fresh_v3_reset_2026';
+const FRESH_DATA_RESET_KEY = 'vaayu_fresh_v4_dynamic_data_2026';
 if (localStorage.getItem('vaayu_reset_version') !== FRESH_DATA_RESET_KEY) {
   try {
     localStorage.removeItem('vaayu_partner_state');
@@ -153,12 +153,12 @@ state.isLoggedIn = sessionActive;
 if (fleetEntryMode && !sessionActive && !vaayuDriverToken) state.status = 'OFFLINE';
 if (!state.userRole) state.userRole = 'driver';
 
-if (!state.driverRating) state.driverRating = '4.94';
-if (!state.driverHub || state.driverHub === 'Bengaluru South Hub') state.driverHub = 'Hyderabad West Hub';
+if (state.driverRating === undefined) state.driverRating = null;
+if (!state.driverHub) state.driverHub = 'Hyderabad West Hub';
 if (!state.language) state.language = 'en';
-if (state.availableCashLimit === undefined) state.availableCashLimit = 500.0;
-if (state.codCashInHand === undefined) state.codCashInHand = 620.0;
-if (!state.dailyLogs || !state.dailyLogs.length) state.dailyLogs = DEFAULT_STATE.dailyLogs;
+if (state.availableCashLimit === undefined) state.availableCashLimit = 1500.0;
+if (state.codCashInHand === undefined) state.codCashInHand = 0.0;
+if (!state.dailyLogs) state.dailyLogs = [];
 
 // ==========================================
 // 1B. HERO VALUE PROPOSITIONS CAROUSEL
@@ -1202,7 +1202,7 @@ function quickStartDriving(customProfile) {
     phone: state.phone || '',
     vehicleId: state.vehicleId || 'v_ace',
     partnerId: state.driverPartnerId || '',
-    rating: state.driverRating || '4.94',
+    rating: state.driverRating || null,
     hub: state.driverHub || 'Hyderabad West Hub',
     avatar: '👨‍✈️',
     ...(customProfile || {})
@@ -3051,23 +3051,55 @@ function formatDecimalHours(decimalHours) {
   return `${h}h ${m > 0 ? (m < 10 ? '0' + m : m) + 'm' : '00m'}`;
 }
 
+function getCurrentWeekRangeString() {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const diffToMonday = (dayOfWeek + 6) % 7;
+  const start = new Date(now);
+  start.setDate(now.getDate() - diffToMonday);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const startStr = `${start.getDate()} ${months[start.getMonth()]}`;
+  const endStr = `${end.getDate()} ${months[end.getMonth()]}`;
+  return {
+    rangeLabel: `${startStr} - ${endStr} (7 Days)`,
+    fullRangeLabel: `${startStr} - ${endStr} ${end.getFullYear()}`
+  };
+}
+
 function renderDailyBreakdown() {
   const container = document.getElementById('dailyEarningsList');
-  if (!state.dailyLogs || !state.dailyLogs.length) return;
+  const weekInfo = getCurrentWeekRangeString();
+  const weeklyCycleSubtitle = document.getElementById('weeklyCycleSubtitle');
+  if (weeklyCycleSubtitle) {
+    weeklyCycleSubtitle.innerText = `Past 7 Days (${weekInfo.fullRangeLabel})`;
+  }
+
+  const earningsWeekRange = document.getElementById('earningsWeekRange');
+  if (earningsWeekRange) {
+    earningsWeekRange.innerText = `Earnings: ${weekInfo.rangeLabel}`;
+  }
+
+  const logs = Array.isArray(state.dailyLogs) ? [...state.dailyLogs] : [];
 
   // Sync today's log entry with live state
-  const todayEntry = state.dailyLogs.find(d => d.isToday) || state.dailyLogs[0];
+  const todayEntry = logs.find(d => d.isToday) || logs[0];
   if (todayEntry) {
-    if (state.todayEarnings > todayEntry.earnings) {
-      const diff = state.todayEarnings - todayEntry.earnings;
+    if (state.todayEarnings > (todayEntry.earnings || 0)) {
+      const diff = state.todayEarnings - (todayEntry.earnings || 0);
       todayEntry.earnings = state.todayEarnings;
       if (!todayEntry.breakdown) todayEntry.breakdown = { basePay: 0, surge: 0, incentive: 0, codCollected: 0 };
       todayEntry.breakdown.basePay = (todayEntry.breakdown.basePay || 0) + diff;
     }
-    todayEntry.orders = Math.max(todayEntry.orders, state.todayTrips);
+    todayEntry.orders = Math.max(todayEntry.orders || 0, state.todayTrips || 0);
     if (state.shiftSeconds > 0) {
       const liveHours = +(state.shiftSeconds / 3600).toFixed(2);
-      todayEntry.hours = Math.max(todayEntry.hours || 7.42, liveHours);
+      todayEntry.hours = Math.max(todayEntry.hours || 0, liveHours);
     }
   }
 
@@ -3075,14 +3107,20 @@ function renderDailyBreakdown() {
   let totalHours = 0;
   let totalTrips = 0;
 
-  state.dailyLogs.forEach(d => {
-    totalEarnings += Number(d.earnings) || 0;
-    totalHours += Number(d.hours) || 0;
-    totalTrips += Number(d.orders) || 0;
-  });
+  if (logs.length > 0) {
+    logs.forEach(d => {
+      totalEarnings += Number(d.earnings) || 0;
+      totalHours += Number(d.hours) || 0;
+      totalTrips += Number(d.orders) || 0;
+    });
+  } else {
+    totalEarnings = Number(state.todayEarnings || 0);
+    totalTrips = Number(state.totalTrips || state.todayTrips || 0);
+    totalHours = state.shiftSeconds > 0 ? +(state.shiftSeconds / 3600).toFixed(2) : 0;
+  }
 
   const avgPerHour = totalHours > 0 ? (totalEarnings / totalHours) : 0;
-  const avgDayHours = state.dailyLogs.length > 0 ? (totalHours / state.dailyLogs.length) : 0;
+  const avgDayHours = logs.length > 0 ? (totalHours / logs.length) : 0;
 
   // Update summary header card elements
   const weeklyModalTotal = document.getElementById('weeklyModalTotal');
@@ -3122,17 +3160,26 @@ function renderDailyBreakdown() {
 
   const pocketWeeklyTarget = document.getElementById('pocketWeeklyTarget');
   if (pocketWeeklyTarget) {
-    pocketWeeklyTarget.innerText = `₹${Math.round(totalEarnings).toLocaleString('en-IN')} / ₹12,000`;
+    pocketWeeklyTarget.innerText = `₹${Math.round(totalEarnings).toLocaleString('en-IN')} / ₹10,000`;
   }
 
   if (!container) return;
   container.innerHTML = '';
 
-  state.dailyLogs.forEach(day => {
-    const dayHoursStr = formatDecimalHours(day.hours);
-    const hourlyRate = day.hours > 0 ? Math.round(day.earnings / day.hours) : 0;
-    const shiftPercent = Math.min(100, Math.round((day.hours / 8.0) * 100));
-    const breakdown = day.breakdown || { basePay: day.earnings * 0.7, surge: 0, incentive: 0, codCollected: 0 };
+  if (logs.length === 0 || (logs.length === 1 && !logs[0].earnings && !logs[0].orders)) {
+    container.innerHTML = `
+      <div class="p-6 text-center text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
+        No trip logs recorded yet in this cycle. Complete deliveries to see daily stats!
+      </div>
+    `;
+    return;
+  }
+
+  logs.forEach(day => {
+    const dayHoursStr = formatDecimalHours(day.hours || 0);
+    const hourlyRate = (day.hours || 0) > 0 ? Math.round((day.earnings || 0) / day.hours) : 0;
+    const shiftPercent = Math.min(100, Math.round(((day.hours || 0) / 8.0) * 100));
+    const breakdown = day.breakdown || { basePay: (day.earnings || 0) * 0.7, surge: 0, incentive: 0, codCollected: 0 };
 
     const card = document.createElement('div');
     card.className = `p-3.5 rounded-2xl bg-slate-950/70 border ${
@@ -4442,11 +4489,31 @@ function syncUI() {
   const availLimitEl = document.getElementById('availableCashLimit');
   if (availLimitEl) availLimitEl.innerText = `₹${Math.round(state.availableCashLimit).toLocaleString('en-IN')}`;
 
+  const codCashInHandSub = document.getElementById('codCashInHandSub');
+  if (codCashInHandSub) codCashInHandSub.innerText = `Cash in hand: ₹${state.codCashInHand.toFixed(2)}`;
+
+  const excess = Math.max(0, state.codCashInHand - state.availableCashLimit);
+  const codExcessBadge = document.getElementById('codExcessBadge');
+  if (codExcessBadge) {
+    if (excess > 0) {
+      codExcessBadge.innerText = `₹${Math.round(excess)} Excess`;
+      codExcessBadge.className = 'text-[9px] text-rose-400 font-bold block';
+    } else {
+      codExcessBadge.innerText = 'Within Limit';
+      codExcessBadge.className = 'text-[9px] text-emerald-400 font-bold block';
+    }
+  }
+
   const codLedgerAmount = document.getElementById('codLedgerAmount');
   if (codLedgerAmount) codLedgerAmount.innerText = `₹${state.codCashInHand.toFixed(2)}`;
 
   const ledgerCashAmount = document.getElementById('ledgerCashAmount');
   if (ledgerCashAmount) ledgerCashAmount.innerText = `₹${state.codCashInHand.toFixed(2)}`;
+
+  const ledgerCashLimitSubtitle = document.getElementById('ledgerCashLimitSubtitle');
+  if (ledgerCashLimitSubtitle) {
+    ledgerCashLimitSubtitle.innerText = `Collected from customers • Limit: ₹${state.availableCashLimit.toFixed(2)}`;
+  }
 
   const payoutModalCashInHand = document.getElementById('payoutModalCashInHand');
   if (payoutModalCashInHand) payoutModalCashInHand.innerText = `₹${state.codCashInHand.toFixed(2)}`;
@@ -4454,29 +4521,66 @@ function syncUI() {
   const payoutModalPocketBal = document.getElementById('payoutModalPocketBal');
   if (payoutModalPocketBal) payoutModalPocketBal.innerText = `₹${state.pocketBalance.toFixed(2)}`;
 
-  const pocketWeeklyEl = document.getElementById('pocketWeeklyAmount');
-  if (pocketWeeklyEl) pocketWeeklyEl.innerText = `₹${Math.round(state.todayEarnings).toLocaleString('en-IN')}`;
+  const payoutOffsetDesc = document.getElementById('payoutOffsetDesc');
+  if (payoutOffsetDesc) {
+    payoutOffsetDesc.innerText = `Deduct ₹${state.codCashInHand.toFixed(2)} from your digital pocket balance so your physical cash in hand is officially kept as your take-home payout. No bank delay, no ATM visits.`;
+  }
 
-  const weeklyModalTotalEl = document.getElementById('weeklyModalTotal');
-  if (weeklyModalTotalEl) weeklyModalTotalEl.innerText = `₹${state.todayEarnings.toFixed(2)}`;
+  const btnSettleCashLabel = document.getElementById('btnSettleCashLabel');
+  if (btnSettleCashLabel) {
+    btnSettleCashLabel.innerText = `Keep Cash as Payout (Offset ₹${Math.round(state.codCashInHand)})`;
+  }
 
   const modalCashInHand = document.getElementById('modalCashInHand');
   if (modalCashInHand) modalCashInHand.innerText = `₹${state.codCashInHand.toFixed(2)}`;
+
+  const modalCashLimit = document.getElementById('modalCashLimit');
+  if (modalCashLimit) modalCashLimit.innerText = `₹${state.availableCashLimit.toFixed(2)}`;
+
+  const modalLimitBanner = document.getElementById('modalLimitBanner');
+  if (modalLimitBanner) {
+    if (excess > 0) {
+      modalLimitBanner.innerHTML = `⚠️ <strong>₹${excess.toFixed(2)} over limit.</strong> Deposit excess to keep receiving cash orders!`;
+      modalLimitBanner.className = 'text-[11px] text-amber-200 font-medium bg-amber-500/10 p-2 rounded-xl border border-amber-500/20';
+    } else {
+      modalLimitBanner.innerHTML = `✅ <strong>Within limit.</strong> Cash in hand is within available cash limit.`;
+      modalLimitBanner.className = 'text-[11px] text-emerald-300 font-medium bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/20';
+    }
+  }
+
+  const modalPocketAvailableText = document.getElementById('modalPocketAvailableText');
+  if (modalPocketAvailableText) modalPocketAvailableText.innerText = `₹${state.pocketBalance.toFixed(2)} available in pocket`;
+
+  const btnDepositExcess = document.getElementById('btnDepositExcess');
+  if (btnDepositExcess) {
+    btnDepositExcess.innerText = excess > 0 ? `Deposit ₹${Math.round(excess)} (Excess)` : 'Deposit Excess (₹0)';
+  }
+
+  const btnDepositFull = document.getElementById('btnDepositFull');
+  if (btnDepositFull) {
+    btnDepositFull.innerText = `Deposit Full ₹${Math.round(state.codCashInHand)}`;
+  }
+
+  const deductionCycleMonth = document.getElementById('deductionCycleMonth');
+  if (deductionCycleMonth) {
+    const curMonthYear = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    deductionCycleMonth.innerText = `${curMonthYear} Billing Cycle`;
+  }
 
   const streakPocket = document.getElementById('streakCountPocket');
   if (streakPocket) streakPocket.innerText = `${state.workingDaysMonth} Days`;
 
   // Profile data sync in Settings
   const drvNameEl = document.getElementById('driverName');
-  if (drvNameEl) drvNameEl.innerText = state.driverName;
+  if (drvNameEl) drvNameEl.innerText = state.driverName || 'Partner';
   const drvPartnerEl = document.getElementById('driverPartnerId');
-  if (drvPartnerEl) drvPartnerEl.innerText = state.driverPartnerId;
+  if (drvPartnerEl) drvPartnerEl.innerText = state.driverPartnerId || '—';
   const drvRatingEl = document.getElementById('driverRatingDisplay');
-  if (drvRatingEl) drvRatingEl.innerText = `⭐ ${state.driverRating}`;
+  if (drvRatingEl) drvRatingEl.innerText = `⭐ ${state.driverRating || '—'}`;
   const drvPhoneEl = document.getElementById('driverPhoneDisplay');
-  if (drvPhoneEl) drvPhoneEl.innerText = `📱 ${state.phone}`;
+  if (drvPhoneEl) drvPhoneEl.innerText = `📱 ${state.phone || '—'}`;
   const drvHubEl = document.getElementById('driverHubDisplay');
-  if (drvHubEl) drvHubEl.innerText = state.driverHub;
+  if (drvHubEl) drvHubEl.innerText = state.driverHub || '—';
   const refCodeEl = document.getElementById('mainReferralCode');
   if (refCodeEl) {
     refCodeEl.innerText = state.driverId ? String(state.driverId).slice(-8).toUpperCase() : '-';
@@ -6289,6 +6393,36 @@ function initApplication() {
   const btnClosePocketStatement = document.getElementById('btnClosePocketStatement');
   function openPocketStatement() {
     audioSynth.playClick();
+    const list = document.getElementById('statementItemsList');
+    if (list) {
+      if (Array.isArray(state.payouts) && state.payouts.length > 0) {
+        list.innerHTML = state.payouts.map(p => `
+          <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
+            <div>
+              <strong class="text-white block font-bold">${p.method || 'Payout Transfer'}</strong>
+              <span class="text-[10px] text-slate-400">${p.date || 'Recent'} &bull; ${p.status || 'PROCESSED'}</span>
+            </div>
+            <span class="font-mono font-black ${p.status === 'REJECTED' ? 'text-amber-400' : 'text-emerald-400'} text-sm">₹${Number(p.amount).toFixed(2)}</span>
+          </div>
+        `).join('');
+      } else if (state.pocketBalance > 0 || state.todayEarnings > 0) {
+        list.innerHTML = `
+          <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
+            <div>
+              <strong class="text-white block font-bold">Today's Delivery Earnings</strong>
+              <span class="text-[10px] text-slate-400">Live &bull; Earned digital trip fare</span>
+            </div>
+            <span class="font-mono font-black text-emerald-400 text-sm">+₹${state.todayEarnings.toFixed(2)}</span>
+          </div>
+        `;
+      } else {
+        list.innerHTML = `
+          <div class="p-4 text-center text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
+            No recent transactions recorded.
+          </div>
+        `;
+      }
+    }
     if (pocketStatementModal) pocketStatementModal.classList.remove('hidden');
   }
   if (cardPocketStatement) cardPocketStatement.addEventListener('click', openPocketStatement);
@@ -6306,6 +6440,7 @@ function initApplication() {
   if (cardDeductionStatement) {
     cardDeductionStatement.addEventListener('click', () => {
       audioSynth.playClick();
+      syncUI();
       if (deductionStatementModal) deductionStatementModal.classList.remove('hidden');
     });
   }
@@ -6362,6 +6497,26 @@ function initApplication() {
   if (cardCodLedger) {
     cardCodLedger.addEventListener('click', () => {
       audioSynth.playClick();
+      const list = document.getElementById('codLedgerList');
+      if (list) {
+        if (state.codCashInHand > 0) {
+          list.innerHTML = `
+            <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
+              <div>
+                <strong class="text-white block font-bold">COD Cash Collected</strong>
+                <span class="text-[10px] text-slate-400">Current Shift &bull; Cash in Hand</span>
+              </div>
+              <span class="font-mono font-black text-amber-400 text-sm">+₹${state.codCashInHand.toFixed(2)}</span>
+            </div>
+          `;
+        } else {
+          list.innerHTML = `
+            <div class="p-4 text-center text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
+              No recent COD cash collections.
+            </div>
+          `;
+        }
+      }
       if (codLedgerModal) codLedgerModal.classList.remove('hidden');
       syncUI();
     });

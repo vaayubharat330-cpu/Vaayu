@@ -1100,7 +1100,7 @@
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span id="earningsWeekRange" class="text-xs font-semibold text-slate-300">Earnings: 23 Sep - 29 Sep (7 Days)</span>
+                <span id="earningsWeekRange" class="text-xs font-semibold text-slate-300">Earnings (7 Days)</span>
               </div>
               <span class="text-xs font-bold text-emerald-400 group-hover:translate-x-1 transition-transform flex items-center gap-0.5">
                 Breakdown &rarr;
@@ -1109,14 +1109,14 @@
 
             <div class="mt-3 flex items-baseline justify-between">
               <div>
-                <div id="pocketWeeklyAmount" class="font-display font-black text-3xl text-white tracking-tight">₹1,480</div>
+                <div id="pocketWeeklyAmount" class="font-display font-black text-3xl text-white tracking-tight">₹0</div>
                 <div id="pocketWeeklySubtext" class="text-[11px] text-slate-400 mt-0.5 font-medium flex items-center gap-1.5">
-                  <span class="text-emerald-400 font-bold">9 trips completed</span> &bull; <span class="text-sky-300 font-mono font-bold">⏱️ 7h 25m logged</span>
+                  <span class="text-emerald-400 font-bold">0 trips completed</span> &bull; <span class="text-sky-300 font-mono font-bold">⏱️ 0h 00m logged</span>
                 </div>
               </div>
               <div class="text-right">
                 <span class="text-[10px] uppercase font-bold text-slate-500 block">Weekly Target</span>
-                <span id="pocketWeeklyTarget" class="text-xs font-bold text-amber-400 font-mono">₹1,480 / ₹12,000</span>
+                <span id="pocketWeeklyTarget" class="text-xs font-bold text-amber-400 font-mono">₹0 / ₹10,000</span>
               </div>
             </div>
           </div>
@@ -1145,7 +1145,7 @@
                 </div>
               </div>
               <div class="flex items-center gap-2">
-                <span id="pocketBalanceMain" class="font-display font-black text-lg text-emerald-400 font-mono">₹3,840.50</span>
+                <span id="pocketBalanceMain" class="font-display font-black text-lg text-emerald-400 font-mono">₹0.00</span>
                 <span class="text-slate-500 group-hover:text-slate-300 text-sm font-bold">&rsaquo;</span>
               </div>
             </div>
@@ -1164,13 +1164,13 @@
                     <span class="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition">Available Cash Limit</span>
                     <span class="text-[9px] bg-amber-500/20 text-amber-300 font-mono font-bold px-1.5 py-0.2 rounded border border-amber-500/30">COD</span>
                   </div>
-                  <span id="codCashInHandSub" class="block text-[10px] text-amber-400 font-medium">Cash in hand: ₹620.00</span>
+                  <span id="codCashInHandSub" class="block text-[10px] text-amber-400 font-medium">Cash in hand: ₹0.00</span>
                 </div>
               </div>
               <div class="flex items-center gap-2">
                 <div class="text-right">
-                  <span id="availableCashLimit" class="font-display font-black text-lg text-white font-mono block">₹500</span>
-                  <span class="text-[9px] text-rose-400 font-bold block">₹120 Excess</span>
+                  <span id="availableCashLimit" class="font-display font-black text-lg text-white font-mono block">₹0</span>
+                  <span id="codExcessBadge" class="text-[9px] text-emerald-400 font-bold block">Within Limit</span>
                 </div>
                 <span class="text-slate-500 group-hover:text-slate-300 text-sm font-bold">&rsaquo;</span>
               </div>
@@ -1226,7 +1226,7 @@
             <!-- Block 1: COD Cash Ledger & Settlements -->
             <div id="cardCodLedger" class="bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-3xl p-4 shadow-sm flex flex-col justify-between h-32 cursor-pointer active:scale-98 transition group">
               <div class="flex items-center justify-between">
-                <span id="codLedgerAmount" class="font-display font-black text-lg text-amber-400 font-mono">₹620.00</span>
+                <span id="codLedgerAmount" class="font-display font-black text-lg text-amber-400 font-mono">₹0.00</span>
                 <span class="w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 flex items-center justify-center text-xs font-bold">💵</span>
               </div>
               <div>
@@ -3258,14 +3258,14 @@
 
           <div class="bg-slate-950 p-3 rounded-2xl border border-slate-800">
             <span class="text-[10px] text-slate-400 uppercase font-semibold">Displayed wallet balance</span>
-            <div id="modalAvailableBal" class="font-display font-black text-2xl text-emerald-400 mt-0.5">₹3,840.50</div>
+            <div id="modalAvailableBal" class="font-display font-black text-2xl text-emerald-400 mt-0.5">₹0.00</div>
             <div class="text-[10px] text-slate-400 mt-1">Payout requests require admin review. This screen does not transfer funds.</div>
           </div>
 
           <div class="space-y-2 text-xs">
             <div>
               <label class="text-[11px] text-slate-400 block mb-1">Enter Amount to Withdraw (₹)</label>
-              <input type="number" id="inputWithdrawAmount" value="3840" min="1" max="10000" step="1" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold focus:border-vaayu-500 focus:outline-none" />
+              <input type="number" id="inputWithdrawAmount" value="" placeholder="500" min="1" max="10000" step="1" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold focus:border-vaayu-500 focus:outline-none" />
             </div>
             <div>
               <label class="text-[11px] text-slate-400 block mb-1" for="inputPayoutUpiId">Payout UPI ID</label>
@@ -3666,15 +3666,15 @@
             <div class="flex justify-between items-center">
               <div>
                 <span class="text-[10px] uppercase font-bold text-amber-300 tracking-wider">Cash in Hand (COD)</span>
-                <div id="modalCashInHand" class="font-display font-black text-2xl text-amber-400 font-mono">₹620.00</div>
+                <div id="modalCashInHand" class="font-display font-black text-2xl text-amber-400 font-mono">₹0.00</div>
               </div>
               <div class="text-right">
                 <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Cash Limit</span>
-                <div class="font-display font-black text-lg text-white font-mono">₹500.00</div>
+                <div id="modalCashLimit" class="font-display font-black text-lg text-white font-mono">₹1,500.00</div>
               </div>
             </div>
-            <div class="text-[11px] text-amber-200 font-medium bg-amber-500/10 p-2 rounded-xl border border-amber-500/20">
-              ⚠️ <strong>₹120.00 over limit.</strong> Deposit excess to keep receiving cash orders!
+            <div id="modalLimitBanner" class="text-[11px] text-amber-200 font-medium bg-amber-500/10 p-2 rounded-xl border border-amber-500/20">
+              Cash in hand is within available limit.
             </div>
           </div>
 
@@ -3700,7 +3700,7 @@
                 <input type="radio" name="codMethod" value="pocket" class="text-emerald-500 focus:ring-0 bg-slate-900 border-slate-700" />
                 <div>
                   <strong class="text-white block font-bold">Deduct from Pocket Balance</strong>
-                  <span class="text-[10px] text-slate-400">₹3,840.50 available in pocket</span>
+                  <span id="modalPocketAvailableText" class="text-[10px] text-slate-400">₹0.00 available in pocket</span>
                 </div>
               </div>
               <span class="text-xs font-bold text-slate-400">Auto 💼</span>
@@ -3712,7 +3712,7 @@
                 <input type="radio" name="codMethod" value="hub" class="text-emerald-500 focus:ring-0 bg-slate-900 border-slate-700" />
                 <div>
                   <strong class="text-white block font-bold">Cash Deposit at Hub</strong>
-                  <span class="text-[10px] text-slate-400">Token code: #HUB-9912</span>
+                  <span class="text-[10px] text-slate-400">Hub Cashier counter settlement</span>
                 </div>
               </div>
               <span class="text-xs font-bold text-slate-400">Offline 🏢</span>
@@ -3722,10 +3722,10 @@
           <!-- Action Buttons -->
           <div class="grid grid-cols-2 gap-2 pt-1">
             <button id="btnDepositExcess" class="py-3 px-3 bg-slate-800 hover:bg-slate-750 text-amber-300 border border-amber-500/40 rounded-2xl font-display font-bold text-xs active:scale-95 transition">
-              Deposit ₹120 (Excess)
+              Deposit Excess
             </button>
             <button id="btnDepositFull" class="py-3 px-3 bg-gradient-to-r from-vaayu-600 to-emerald-600 hover:from-vaayu-500 hover:to-emerald-500 text-white rounded-2xl font-display font-black text-xs active:scale-95 transition shadow-lg shadow-emerald-950/40">
-              Deposit Full ₹620
+              Deposit Full
             </button>
           </div>
         </div>
@@ -3741,7 +3741,7 @@
           <div class="flex justify-between items-center">
             <div>
               <h3 class="font-display font-black text-base text-white">Daily Earnings &amp; Working Hours</h3>
-              <span id="weeklyCycleSubtitle" class="text-[11px] text-slate-400">Past 7 Days (23 Sep - 29 Sep 2026)</span>
+              <span id="weeklyCycleSubtitle" class="text-[11px] text-slate-400">Past 7 Days</span>
             </div>
             <button id="btnCloseWeeklyEarnings" class="text-slate-400 hover:text-white text-xl font-bold p-1">&times;</button>
           </div>
@@ -3751,11 +3751,11 @@
             <div class="flex justify-between items-center">
               <div>
                 <span class="text-[10px] uppercase font-bold text-slate-400">Total Week Earnings</span>
-                <div id="weeklyModalTotal" class="font-display font-black text-2xl text-emerald-400 font-mono mt-0.5">₹2,600.00</div>
+                <div id="weeklyModalTotal" class="font-display font-black text-2xl text-emerald-400 font-mono mt-0.5">₹0.00</div>
               </div>
               <div class="text-right">
                 <span class="text-[10px] uppercase font-bold text-slate-400">Total Working Hours</span>
-                <div id="weeklyModalTotalHours" class="font-display font-black text-xl text-sky-400 font-mono mt-0.5">13h 40m</div>
+                <div id="weeklyModalTotalHours" class="font-display font-black text-xl text-sky-400 font-mono mt-0.5">0h 00m</div>
               </div>
             </div>
 
@@ -3804,26 +3804,8 @@
           </div>
 
           <div class="space-y-2 text-xs" id="statementItemsList">
-            <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
-              <div>
-                <strong class="text-white block font-bold">Trip Earnings</strong>
-                <span class="text-[10px] text-slate-400">29 Sep 2026, 03:45 PM &bull; Trip Fare</span>
-              </div>
-              <span class="font-mono font-black text-emerald-400 text-sm">+₹381.65</span>
-            </div>
-            <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
-              <div>
-                <strong class="text-white block font-bold">COD Cash Payout Offset</strong>
-                <span class="text-[10px] text-slate-400">29 Sep 2026, 02:10 PM &bull; Direct Cash</span>
-              </div>
-              <span class="font-mono font-black text-emerald-400 text-sm">+₹50.00</span>
-            </div>
-            <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
-              <div>
-                <strong class="text-white block font-bold">Instant Payout to UPI</strong>
-                <span class="text-[10px] text-slate-400">28 Sep 2026, 06:15 AM &bull; IMPS</span>
-              </div>
-              <span class="font-mono font-black text-rose-400 text-sm">-₹2,450.00</span>
+            <div class="p-4 text-center text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
+              No recent transactions recorded.
             </div>
           </div>
         </div>
@@ -3839,7 +3821,7 @@
           </div>
           <div>
             <h3 class="font-display font-black text-lg text-white">Deduction Statement</h3>
-            <p class="text-xs text-slate-400 mt-1">September 2026 Billing Cycle</p>
+            <p id="deductionCycleMonth" class="text-xs text-slate-400 mt-1">Current Billing Cycle</p>
           </div>
           <div class="bg-slate-950/70 p-4 rounded-2xl border border-slate-800">
             <span class="text-[10px] uppercase font-bold text-slate-400">Total Deductions</span>
@@ -3879,12 +3861,12 @@
           <div class="grid grid-cols-2 gap-2 text-xs">
             <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800">
               <span class="text-[10px] uppercase font-bold text-slate-400 block">Cash in Hand</span>
-              <span id="payoutModalCashInHand" class="font-display font-black text-xl text-amber-400 font-mono mt-0.5">₹620.00</span>
+              <span id="payoutModalCashInHand" class="font-display font-black text-xl text-amber-400 font-mono mt-0.5">₹0.00</span>
               <span class="text-[9px] text-slate-500 block mt-0.5">Physical COD cash</span>
             </div>
             <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800">
               <span class="text-[10px] uppercase font-bold text-slate-400 block">Pocket Balance</span>
-              <span id="payoutModalPocketBal" class="font-display font-black text-xl text-emerald-400 font-mono mt-0.5">₹3,840.50</span>
+              <span id="payoutModalPocketBal" class="font-display font-black text-xl text-emerald-400 font-mono mt-0.5">₹0.00</span>
               <span class="text-[9px] text-slate-500 block mt-0.5">Earned digital fare</span>
             </div>
           </div>
@@ -3895,12 +3877,12 @@
               <span class="font-bold text-slate-200">Settle Cash as Daily Payout</span>
               <span class="text-[10px] text-emerald-400 font-bold font-mono">Zero Fee</span>
             </div>
-            <p class="text-[10px] text-slate-400">
-              Deduct ₹620.00 from your digital pocket balance so your physical cash in hand is officially kept as your take-home payout. No bank delay, no ATM visits.
+            <p id="payoutOffsetDesc" class="text-[10px] text-slate-400">
+              Deduct cash in hand from your digital pocket balance so your physical cash in hand is officially kept as your take-home payout. No bank delay, no ATM visits.
             </p>
             <button id="btnSettleCashAsPayout" class="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-display font-black text-xs rounded-xl shadow-lg shadow-amber-950/50 active:scale-95 transition flex items-center justify-center gap-1.5">
               <span>⚡</span>
-              <span>Keep Cash as Payout (Offset ₹620)</span>
+              <span id="btnSettleCashLabel">Keep Cash as Payout</span>
             </button>
           </div>
 
@@ -3941,40 +3923,17 @@
 
           <div class="bg-amber-950/30 border border-amber-500/20 p-4 rounded-2xl text-center">
             <span class="text-xs text-amber-300 font-medium">Physical Cash In Hand</span>
-            <div id="ledgerCashAmount" class="font-display font-black text-3xl text-amber-400 font-mono mt-1">₹620.00</div>
-            <p class="text-[10px] text-slate-400 mt-0.5">Collected from customers &bull; Limit: ₹500.00</p>
+            <div id="ledgerCashAmount" class="font-display font-black text-3xl text-amber-400 font-mono mt-1">₹0.00</div>
+            <p id="ledgerCashLimitSubtitle" class="text-[10px] text-slate-400 mt-0.5">Collected from customers &bull; Limit: ₹1,500.00</p>
           </div>
 
-          <div class="space-y-2 text-xs">
-            <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
-              <div>
-                <strong class="text-white block font-bold">COD Order</strong>
-                <span class="text-[10px] text-slate-400">29 Sep 2026, 03:45 PM &bull; Cash Collected</span>
-              </div>
-              <span class="font-mono font-black text-amber-400 text-sm">+₹250.00</span>
-            </div>
-            <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
-              <div>
-                <strong class="text-white block font-bold">COD Order #TRIP_77192</strong>
-                <span class="text-[10px] text-slate-400">29 Sep 2026, 01:20 PM &bull; Cash Collected</span>
-              </div>
-              <span class="font-mono font-black text-amber-400 text-sm">+₹200.00</span>
-            </div>
-            <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
-              <div>
-                <strong class="text-white block font-bold">COD Order #TRIP_64019</strong>
-                <span class="text-[10px] text-slate-400">28 Sep 2026, 05:10 PM &bull; Cash Collected</span>
-              </div>
-              <span class="font-mono font-black text-amber-400 text-sm">+₹170.00</span>
-            </div>
-            <div class="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex justify-between items-center">
-              <div>
-                <strong class="text-white block font-bold">COD Payout Offset</strong>
-                <span class="text-[10px] text-slate-400">28 Sep 2026, 08:30 PM &bull; Adjusted vs Pocket</span>
-              </div>
-              <span class="font-mono font-black text-emerald-400 text-sm">-₹400.00 Settled</span>
+          <div class="space-y-2 text-xs" id="codLedgerList">
+            <div class="p-4 text-center text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
+              No recent COD cash collections.
             </div>
           </div>
+        </div>
+      </div>
         </div>
       </div>
 
