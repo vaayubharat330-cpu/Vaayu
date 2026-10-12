@@ -1526,16 +1526,16 @@ async function loadDriverFromDatabase(driverId) {
       state.driverName = dbDriver.name;
       state.phone = dbDriver.phone;
       state.driverPartnerId = dbDriver.partner_id || dbDriver.userId || dbDriver.id;
-      state.driverRating = String(dbDriver.rating || '4.92');
+      state.driverRating = dbDriver.rating ? String(dbDriver.rating) : (dbDriver.rating === 0 ? '0.0' : null);
       state.driverHub = dbDriver.hub;
       state.pocketBalance = Number(dbDriver.pocket_balance ?? dbDriver.pocketBalance ?? state.pocketBalance ?? 0);
       state.todayEarnings = Number(dbDriver.today_earnings ?? dbDriver.todayEarnings ?? 0);
       state.todayTrips = Number(dbDriver.today_trips ?? dbDriver.todayTrips ?? 0);
       state.totalTrips = Number(dbDriver.total_trips ?? dbDriver.totalTrips ?? 0);
-      state.acceptanceRate = dbDriver.acceptance_rate || (dbDriver.acceptanceRate ? `${dbDriver.acceptanceRate}%` : '96.8%');
-      state.todayBonus = Number(dbDriver.today_bonus ?? 320);
-      state.yesterdayDiffTrips = Number(dbDriver.yesterday_diff_trips ?? 3);
-      state.avgDeliveryMins = Number(dbDriver.avg_delivery_mins ?? 18);
+      state.acceptanceRate = dbDriver.acceptance_rate || (dbDriver.acceptanceRate ? `${dbDriver.acceptanceRate}%` : null);
+      state.todayBonus = Number(dbDriver.today_bonus ?? 0);
+      state.yesterdayDiffTrips = dbDriver.yesterday_diff_trips !== undefined && dbDriver.yesterday_diff_trips !== null ? Number(dbDriver.yesterday_diff_trips) : 0;
+      state.avgDeliveryMins = dbDriver.avg_delivery_mins ? Number(dbDriver.avg_delivery_mins) : 18;
       state.shiftSeconds = Number(dbDriver.shift_seconds ?? dbDriver.shiftSeconds ?? 0);
       state.availableCashLimit = Number(dbDriver.available_cash_limit ?? dbDriver.availableCashLimit ?? 0);
       state.codCashInHand = Number(dbDriver.cod_cash_in_hand ?? dbDriver.codCashInHand ?? 0);
@@ -4385,7 +4385,7 @@ function syncUI() {
 
   const avgSpeedEl = document.getElementById('todayAvgDeliverySpeed');
   if (avgSpeedEl) {
-    avgSpeedEl.innerText = `Avg ${state.avgDeliveryMins || 18}m delivery speed`;
+    avgSpeedEl.innerText = state.totalTrips > 0 ? `Avg ${state.avgDeliveryMins || 18}m delivery speed` : 'Live delivery speed sync';
   }
 
   const topEarnEl = document.getElementById('todayEarningsTop');
@@ -4398,12 +4398,22 @@ function syncUI() {
 
   const acceptanceEl = document.getElementById('todayAcceptanceRate');
   if (acceptanceEl) {
-    acceptanceEl.innerText = state.acceptanceRate || '96.8%';
+    acceptanceEl.innerText = state.acceptanceRate ? state.acceptanceRate : '—';
+  }
+
+  const tierBadgeEl = document.getElementById('todayTierBadge');
+  if (tierBadgeEl) {
+    tierBadgeEl.innerText = state.totalTrips >= 50 ? 'Top 5%' : 'Active';
+  }
+
+  const tierLabelEl = document.getElementById('todayTierLabel');
+  if (tierLabelEl) {
+    tierLabelEl.innerText = state.totalTrips >= 50 ? 'Diamond Tier Captain' : 'Captain Partner';
   }
 
   const ratingEl = document.getElementById('todayDriverRating');
   if (ratingEl) {
-    ratingEl.innerText = `${state.driverRating || '4.92'}★`;
+    ratingEl.innerText = state.driverRating ? `${state.driverRating}★` : '—';
   }
 
   const totalTripsBadgeEl = document.getElementById('todayTotalTripsBadge');

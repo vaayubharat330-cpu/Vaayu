@@ -36,14 +36,27 @@ function createDriverPartnerRoutes({
         const todayTripsCount = Number(driver.todayTrips ?? (daily_logs.find(l => l.isToday)?.trips ?? completedTrips.length));
         const todayEarningsVal = Number(driver.todayEarnings ?? (daily_logs.find(l => l.isToday)?.earnings ?? 0));
 
-        // Rating calculation from customer feedback
-        const allFeedback = (db.readDb ? (db.readDb().feedback || []) : []).filter(f => String(f.driverId) === String(driver.id));
-        const avgRating = allFeedback.length
-          ? (allFeedback.reduce((sum, f) => sum + Number(f.rating || 5), 0) / allFeedback.length).toFixed(2)
-          : (driver.rating ? Number(driver.rating).toFixed(2) : '4.92');
+        // Real dynamic rating calculation from customer feedback or driver profile
+        const allFeedback = (db.readDb ? (db.readDb().feedback || []) : []).filter(f => String(f.driverId) === String(driver.id) || String(f.driverId) === String(driver.userId));
+        let computedRating = null;
+        if (allFeedback.length > 0) {
+          computedRating = (allFeedback.reduce((sum, f) => sum + Number(f.rating || 5), 0) / allFeedback.length).toFixed(2);
+        } else if (driver.rating !== null && driver.rating !== undefined && driver.rating !== '') {
+          computedRating = Number(driver.rating).toFixed(2);
+        }
 
-        // Acceptance rate calculation
-        const acceptanceRateVal = Number(driver.acceptanceRate || 96.8).toFixed(1);
+        // Real dynamic acceptance rate calculation from completed/accepted trips vs rejections
+        const rejections = (db.readDb ? (db.readDb().order_rejections || []) : []).filter(r => String(r.driverId) === String(driver.id) || String(r.driverId) === String(driver.userId));
+        const totalOfferInteractions = driverTrips.length + rejections.length;
+        let computedAcceptanceRate = null;
+        if (totalOfferInteractions > 0) {
+          const rate = (driverTrips.length / totalOfferInteractions) * 100;
+          computedAcceptanceRate = `${rate.toFixed(1)}%`;
+        } else if (driver.acceptanceRate !== null && driver.acceptanceRate !== undefined && driver.acceptanceRate !== '') {
+          computedAcceptanceRate = `${Number(driver.acceptanceRate).toFixed(1)}%`;
+        } else if (totalTripsCount > 0) {
+          computedAcceptanceRate = '100.0%';
+        }
 
         const activeTrips = driverTrips.filter(trip =>
           !['CREATED', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED', 'DELIVERED', 'CANCELLED', 'FAILED'].includes(trip.status)
@@ -60,12 +73,12 @@ function createDriverPartnerRoutes({
           partner_id: driver.userId || driver.id,
           today_earnings: todayEarningsVal,
           today_trips: todayTripsCount,
-          today_bonus: Number(driver.todayBonus ?? 320),
+          today_bonus: Number(driver.todayBonus ?? 0),
           total_trips: totalTripsCount,
-          rating: avgRating,
-          acceptance_rate: `${acceptanceRateVal}%`,
-          avg_delivery_mins: Number(driver.avgDeliveryMins || 18),
-          yesterday_diff_trips: Number(driver.yesterdayDiffTrips || 3),
+          rating: computedRating,
+          acceptance_rate: computedAcceptanceRate,
+          avg_delivery_mins: driver.avgDeliveryMins ? Number(driver.avgDeliveryMins) : null,
+          yesterday_diff_trips: driver.yesterdayDiffTrips !== undefined ? Number(driver.yesterdayDiffTrips) : null,
           vehicle_id: driver.vehicleId,
           payouts,
           daily_logs,
