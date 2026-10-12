@@ -1260,12 +1260,12 @@
             <!-- Block 4: Linked Payout Accounts (Replaced Customer Tips) -->
             <div id="cardPayoutAccounts" class="bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-3xl p-4 shadow-sm flex flex-col justify-between h-32 cursor-pointer active:scale-98 transition group">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-mono font-bold text-slate-300">HDFC Bank **8821</span>
-                <span class="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-xs font-bold">✓</span>
+                <span id="linkedPayoutAccountLabel" class="text-xs font-mono font-bold text-slate-400">Not Connected</span>
+                <span id="linkedPayoutStatusBadge" class="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 flex items-center justify-center text-xs font-bold">+</span>
               </div>
               <div>
                 <div class="font-bold text-xs text-slate-200 group-hover:text-white leading-tight">Linked Payout Method</div>
-                <div class="text-[10px] text-slate-400 mt-0.5">UPI &bull; IMPS Instant transfer</div>
+                <div id="linkedPayoutSubtitle" class="text-[10px] text-slate-400 mt-0.5">Tap to connect UPI / Bank</div>
               </div>
             </div>
 
@@ -1279,7 +1279,7 @@
               </div>
               <div>
                 <span class="font-bold text-xs text-white block">Attendance Streak</span>
-                <span class="text-[11px] text-slate-400"><strong id="streakCountPocket" class="text-amber-400">22 Days</strong> active this month</span>
+                <span class="text-[11px] text-slate-400"><strong id="streakCountPocket" class="text-amber-400">0 Days</strong> active this month</span>
               </div>
             </div>
             <button id="btnViewCalendarPocket" class="text-xs font-bold text-vaayu-400 hover:text-vaayu-300 hover:underline">

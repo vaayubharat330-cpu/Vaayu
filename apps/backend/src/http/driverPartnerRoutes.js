@@ -80,6 +80,8 @@ function createDriverPartnerRoutes({
           pocket_balance: Number(driver.pocketBalance ?? 0),
           available_cash_limit: Number(driver.availableCashLimit ?? 1500),
           cod_cash_in_hand: Number(driver.codCashInHand ?? 0),
+          payout_upi_id: driver.payoutUpiId || driver.upiId || (payouts[0] ? payouts[0].upiId : null),
+          bank_account: driver.bankAccount || null,
           avg_delivery_mins: driver.avgDeliveryMins ? Number(driver.avgDeliveryMins) : null,
           yesterday_diff_trips: driver.yesterdayDiffTrips !== undefined ? Number(driver.yesterdayDiffTrips) : null,
           vehicle_id: driver.vehicleId,

@@ -103,6 +103,8 @@ const DEFAULT_STATE = {
   },
   permissionsGranted: false,
   floatingOverlayEnabled: true,
+  payoutUpiId: '',
+  bankAccount: null,
   payouts: [],
   dailyLogs: []
 };
@@ -1542,6 +1544,8 @@ async function loadDriverFromDatabase(driverId) {
       state.customerTipsBalance = Number(dbDriver.customer_tips_balance ?? dbDriver.customerTipsBalance ?? 0);
       state.workingDaysMonth = Number(dbDriver.working_days_month ?? dbDriver.workingDaysMonth ?? 0);
       state.vehicleId = dbDriver.vehicle_id || dbDriver.vehicleId || 'v_ace';
+      state.payoutUpiId = dbDriver.payout_upi_id || dbDriver.payoutUpiId || dbDriver.upi_id || dbDriver.upiId || state.payoutUpiId || '';
+      state.bankAccount = dbDriver.bank_account || dbDriver.bankAccount || state.bankAccount || null;
       if (Array.isArray(dbDriver.activeTrips) && dbDriver.activeTrips.length && !currentTrip) {
         const trip = dbDriver.activeTrips[0];
         currentTrip = { ...trip, tripId: trip.id || trip.tripId, estimatedEarnings: trip.totalFare || trip.estimatedEarnings };
@@ -2931,8 +2935,14 @@ window.skipCustomerFeedback = skipCustomerFeedback;
 // 7. POCKET & WITHDRAWAL CONTROLLER
 // ==========================================
 function openPayoutModal() {
-  document.getElementById('payoutModal').classList.remove('hidden');
-  document.getElementById('inputWithdrawAmount').value = Math.floor(state.pocketBalance);
+  const modal = document.getElementById('payoutModal');
+  if (modal) modal.classList.remove('hidden');
+  const amountInput = document.getElementById('inputWithdrawAmount');
+  if (amountInput) amountInput.value = state.pocketBalance > 0 ? Math.floor(state.pocketBalance) : '';
+  const upiInput = document.getElementById('inputPayoutUpiId');
+  if (upiInput && state.payoutUpiId) {
+    upiInput.value = state.payoutUpiId;
+  }
 }
 
 function closePayoutModal() {
@@ -2972,6 +2982,7 @@ async function confirmPayoutTransfer() {
     });
     const result = await res.json();
     if (result.success && result.payout) {
+      state.payoutUpiId = upiId;
       state.payouts.unshift({
         id: result.payout.id,
         date: result.payout.date_str || result.payout.requestedAt,
@@ -2980,10 +2991,11 @@ async function confirmPayoutTransfer() {
         status: result.payout.status,
         utr: result.payout.utr || null
       });
+      saveState();
       closePayoutModal();
       syncUI();
       checkDatabaseHealth();
-      alert(`Payout request for ₹${amount.toFixed(2)} submitted for admin review. No money has been transferred yet.`);
+      alert(`Payout request for ₹${amount.toFixed(2)} submitted for admin review. Linked UPI account updated.`);
       return;
     }
     alert(result.error || 'Could not submit payout request. Please try again.');
@@ -4569,6 +4581,35 @@ function syncUI() {
 
   const streakPocket = document.getElementById('streakCountPocket');
   if (streakPocket) streakPocket.innerText = `${state.workingDaysMonth} Days`;
+
+  // Linked Payout Method Card sync (Dynamic Bank / UPI / Not Connected)
+  const linkedPayoutAccountLabel = document.getElementById('linkedPayoutAccountLabel');
+  const linkedPayoutStatusBadge = document.getElementById('linkedPayoutStatusBadge');
+  const linkedPayoutSubtitle = document.getElementById('linkedPayoutSubtitle');
+
+  if (linkedPayoutAccountLabel && linkedPayoutStatusBadge && linkedPayoutSubtitle) {
+    if (state.bankAccount && state.bankAccount.accountNumber) {
+      const bankName = state.bankAccount.bankName || 'Bank';
+      const last4 = String(state.bankAccount.accountNumber).slice(-4);
+      linkedPayoutAccountLabel.innerText = `${bankName} **${last4}`;
+      linkedPayoutAccountLabel.className = 'text-xs font-mono font-bold text-slate-200';
+      linkedPayoutStatusBadge.innerText = '✓';
+      linkedPayoutStatusBadge.className = 'w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-xs font-bold';
+      linkedPayoutSubtitle.innerText = 'Bank Account • IMPS / NEFT';
+    } else if (state.payoutUpiId) {
+      linkedPayoutAccountLabel.innerText = state.payoutUpiId;
+      linkedPayoutAccountLabel.className = 'text-xs font-mono font-bold text-slate-200 truncate max-w-[130px]';
+      linkedPayoutStatusBadge.innerText = '✓';
+      linkedPayoutStatusBadge.className = 'w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-xs font-bold';
+      linkedPayoutSubtitle.innerText = 'UPI • Instant transfer';
+    } else {
+      linkedPayoutAccountLabel.innerText = 'Not Connected';
+      linkedPayoutAccountLabel.className = 'text-xs font-mono font-bold text-slate-400';
+      linkedPayoutStatusBadge.innerText = '+';
+      linkedPayoutStatusBadge.className = 'w-5 h-5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 flex items-center justify-center text-xs font-bold';
+      linkedPayoutSubtitle.innerText = 'Tap to connect UPI / Bank';
+    }
+  }
 
   // Profile data sync in Settings
   const drvNameEl = document.getElementById('driverName');

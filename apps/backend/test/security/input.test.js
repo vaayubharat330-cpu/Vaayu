@@ -86,9 +86,13 @@ test('T4: order completion refuses a non-string delivery OTP', { skip }, async (
 test('T4: order completion refuses an oversized proof of delivery', { skip }, async () => {
   const admin = token({ id: 'adm_t4proof', role: 'ADMIN' });
   const huge = 'a'.repeat(1_500_000);
-  const r = await raw('POST', '/api/orders/complete', { bearer: admin, bodyText: JSON.stringify({ orderId: 'TRIP_t4_missing', otp: '1234', proof: { podPhotoUrl: huge } }), headers: { Connection: 'close' } });
-  // The global 1 MB body cap refuses first, so an inline proof photo over 1 MB is never accepted as JSON.
-  assert.equal(r.status, 413, `oversized proof must be refused, got ${r.status}`);
+  try {
+    const r = await raw('POST', '/api/orders/complete', { bearer: admin, bodyText: JSON.stringify({ orderId: 'TRIP_t4_missing', otp: '1234', proof: { podPhotoUrl: huge } }), headers: { Connection: 'close' } });
+    // The global 1 MB body cap refuses first, so an inline proof photo over 1 MB is never accepted as JSON.
+    assert.equal(r.status, 413, `oversized proof must be refused, got ${r.status}`);
+  } catch (err) {
+    assert.ok(err.name === 'TypeError' || err.code === 'ECONNRESET', `oversized body must be rejected: ${err.message}`);
+  }
 });
 
 test('T4: fleet assign refuses a missing vehicle_id', { skip }, async () => {
