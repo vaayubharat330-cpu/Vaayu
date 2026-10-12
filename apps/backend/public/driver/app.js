@@ -79,6 +79,9 @@ const DEFAULT_STATE = {
   language: 'en',
   status: 'OFFLINE', // "OFFLINE" | "ONLINE" | "ON_TRIP"
   vehicleId: '',
+  vehicleNumber: '',
+  licenseNumber: '',
+  kycStatus: 'APPROVED',
   shiftSeconds: 0,
   todayTrips: 0,
   todayEarnings: 0,
@@ -1544,6 +1547,9 @@ async function loadDriverFromDatabase(driverId) {
       state.customerTipsBalance = Number(dbDriver.customer_tips_balance ?? dbDriver.customerTipsBalance ?? 0);
       state.workingDaysMonth = Number(dbDriver.working_days_month ?? dbDriver.workingDaysMonth ?? 0);
       state.vehicleId = dbDriver.vehicle_id || dbDriver.vehicleId || 'v_ace';
+      state.vehicleNumber = dbDriver.vehicle_number || dbDriver.vehicleNumber || dbDriver.vehicle_plate || dbDriver.vehiclePlate || state.vehicleNumber || '';
+      state.licenseNumber = dbDriver.license_number || dbDriver.licenseNumber || state.licenseNumber || '';
+      state.kycStatus = dbDriver.kyc_status || dbDriver.kycStatus || state.kycStatus || 'APPROVED';
       state.payoutUpiId = dbDriver.payout_upi_id || dbDriver.payoutUpiId || dbDriver.upi_id || dbDriver.upiId || state.payoutUpiId || '';
       state.bankAccount = dbDriver.bank_account || dbDriver.bankAccount || state.bankAccount || null;
       if (Array.isArray(dbDriver.activeTrips) && dbDriver.activeTrips.length && !currentTrip) {
@@ -3523,6 +3529,136 @@ function closeOwnerDetailsModal() {
 window.closeOwnerDetailsModal = closeOwnerDetailsModal;
 
 // ==========================================
+// CHANGE REGISTERED VEHICLE MODAL (Settings)
+// ==========================================
+let tempSelectedVehicleId = 'v_ace';
+
+function openChangeVehicleModal() {
+  tempSelectedVehicleId = state.vehicleId || 'v_ace';
+  const modal = document.getElementById('changeVehicleModal');
+  if (!modal) return;
+  const plateInput = document.getElementById('changeVehiclePlateInput');
+  if (plateInput) {
+    const curPlate = state.vehicleNumber || state.vehiclePlate || (VEHICLE_CATALOG[tempSelectedVehicleId] ? VEHICLE_CATALOG[tempSelectedVehicleId].plate : '');
+    plateInput.value = curPlate;
+  }
+  const errEl = document.getElementById('changeVehicleError');
+  if (errEl) {
+    errEl.innerText = '';
+    errEl.classList.add('hidden');
+  }
+  updateChangeVehicleGridHighlight();
+  modal.classList.remove('hidden');
+  if (typeof audioSynth !== 'undefined' && audioSynth) {
+    try { audioSynth.playClick(); } catch (e) {}
+  }
+}
+window.openChangeVehicleModal = openChangeVehicleModal;
+
+function closeChangeVehicleModal() {
+  const modal = document.getElementById('changeVehicleModal');
+  if (modal) modal.classList.add('hidden');
+}
+window.closeChangeVehicleModal = closeChangeVehicleModal;
+
+function selectChangeVehicleType(vehId) {
+  if (VEHICLE_CATALOG[vehId]) {
+    tempSelectedVehicleId = vehId;
+    updateChangeVehicleGridHighlight();
+    const plateInput = document.getElementById('changeVehiclePlateInput');
+    if (plateInput && !plateInput.value.trim()) {
+      plateInput.value = VEHICLE_CATALOG[vehId].plate || '';
+    }
+    if (typeof audioSynth !== 'undefined' && audioSynth) {
+      try { audioSynth.playClick(); } catch (e) {}
+    }
+  }
+}
+window.selectChangeVehicleType = selectChangeVehicleType;
+
+function updateChangeVehicleGridHighlight() {
+  ['v_ace', 'v_bolero', 'v_3w', 'v_2w'].forEach(id => {
+    const btn = document.getElementById(`optVeh_${id}`);
+    if (!btn) return;
+    if (id === tempSelectedVehicleId) {
+      btn.className = 'change-veh-card p-3 rounded-xl border-2 border-emerald-400 bg-emerald-500/15 flex flex-col items-center gap-1.5 transition cursor-pointer text-left w-full shadow-md shadow-emerald-500/20';
+    } else {
+      btn.className = 'change-veh-card p-3 rounded-xl border border-slate-700 bg-slate-950/70 hover:border-slate-600 flex flex-col items-center gap-1.5 transition cursor-pointer text-left w-full';
+    }
+  });
+}
+
+async function saveChangeVehicle() {
+  const plateInput = document.getElementById('changeVehiclePlateInput');
+  const errEl = document.getElementById('changeVehicleError');
+  const rawPlate = plateInput ? plateInput.value.trim().toUpperCase() : '';
+  const cleanPlate = rawPlate.replace(/\s+/g, '');
+
+  if (!cleanPlate) {
+    if (errEl) {
+      errEl.innerText = 'Please enter a vehicle registration plate number.';
+      errEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  let formattedPlate = rawPlate;
+  const match = cleanPlate.match(/^([A-Z]{2})(\d{1,2})([A-Z]{1,3})(\d{4})$/);
+  if (match) {
+    formattedPlate = `${match[1]} ${match[2]} ${match[3]} ${match[4]}`;
+  }
+
+  const vehConfig = VEHICLE_CATALOG[tempSelectedVehicleId] || VEHICLE_CATALOG.v_ace;
+
+  try {
+    const saveBtn = document.getElementById('btnSaveChangeVehicle');
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerText = 'Saving...';
+    }
+
+    if (state.driverId) {
+      await fetch('/api/driver/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          driver_id: state.driverId,
+          vehicle_id: tempSelectedVehicleId,
+          vehicle_number: formattedPlate
+        })
+      });
+    }
+
+    state.vehicleId = tempSelectedVehicleId;
+    state.vehicleNumber = formattedPlate;
+    state.vehiclePlate = formattedPlate;
+    saveState();
+    syncUI();
+
+    closeChangeVehicleModal();
+    if (typeof showToast === 'function') {
+      showToast('Vehicle Updated', `Active vehicle updated to ${vehConfig.name} (${formattedPlate})`, '🚚');
+    }
+    if (typeof audioSynth !== 'undefined' && audioSynth) {
+      try { audioSynth.playSuccess(); } catch (e) {}
+    }
+  } catch (err) {
+    console.error('Error saving vehicle changes:', err);
+    if (errEl) {
+      errEl.innerText = 'Failed to update vehicle. Please try again.';
+      errEl.classList.remove('hidden');
+    }
+  } finally {
+    const saveBtn = document.getElementById('btnSaveChangeVehicle');
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerText = 'Save Vehicle';
+    }
+  }
+}
+window.saveChangeVehicle = saveChangeVehicle;
+
+// ==========================================
 // STEP 2 & 3: VEHICLE, FUEL & DRIVER DETAILS
 // Matches media_1790786725059.png, media_1790786694395.jpg & media_1790786694394.jpg
 // ==========================================
@@ -4416,13 +4552,32 @@ function syncUI() {
 
   // Active Vehicle label & Buttons
   const activeVeh = VEHICLE_CATALOG[state.vehicleId] || VEHICLE_CATALOG.v_ace;
+  const displayPlate = state.vehicleNumber || state.vehiclePlate || activeVeh.plate;
   const vehLbl = document.getElementById('activeVehicleLabel');
   if (vehLbl) vehLbl.innerText = activeVeh.name;
 
   const setVehName = document.getElementById('settingsVehicleName');
   if (setVehName) setVehName.innerText = activeVeh.name;
   const setVehPlate = document.getElementById('settingsVehiclePlate');
-  if (setVehPlate) setVehPlate.innerText = `Plate: ${activeVeh.plate}`;
+  if (setVehPlate) setVehPlate.innerText = `Plate: ${displayPlate}`;
+
+  const kycRcLabel = document.getElementById('kycRcLabel');
+  if (kycRcLabel) kycRcLabel.innerText = `Vehicle RC (${displayPlate})`;
+
+  const kycDlLabel = document.getElementById('kycLicenseLabel');
+  if (kycDlLabel) kycDlLabel.innerText = state.licenseNumber ? `Driving License (${state.licenseNumber})` : 'Driving License (Verified)';
+
+  const settingsDlStatusVal = document.getElementById('settingsDlStatusVal');
+  if (settingsDlStatusVal) settingsDlStatusVal.innerText = state.licenseNumber ? `${state.licenseNumber} (Approved)` : 'Verified & Approved';
+
+  const settingsRcStatusVal = document.getElementById('settingsRcStatusVal');
+  if (settingsRcStatusVal) settingsRcStatusVal.innerText = `${displayPlate} (Approved)`;
+
+  const rejectionModalVeh = document.getElementById('rejectionModalVehicle');
+  if (rejectionModalVeh) rejectionModalVeh.innerText = `${activeVeh.name} (${displayPlate})`;
+
+  const rejectionHudPlate = document.getElementById('rejectionHudPlate');
+  if (rejectionHudPlate) rejectionHudPlate.innerText = displayPlate;
 
   document.querySelectorAll('.vehicle-btn').forEach(btn => {
     if (btn.dataset.mode === state.vehicleId) {

@@ -65,6 +65,12 @@ function createDriverPartnerRoutes({
           return safeTrip;
         });
 
+        const cleanPhone = String(driver.phone || '').replace(/\D/g, '').slice(-10);
+        const driverApp = (db.getDb().driver_applications || []).find(a => String(a.phone || '').replace(/\D/g, '').slice(-10) === cleanPhone);
+        const resolvedVehicleNumber = driver.vehicleNumber || driver.vehiclePlate || (driverApp ? driverApp.vehicleNumber : null);
+        const resolvedLicenseNumber = driver.licenseNumber || (driverApp ? driverApp.licenseNumber : null);
+        const resolvedKycStatus = driver.kycStatus || (driverApp ? (driverApp.status === 'APPROVED' ? 'APPROVED' : driverApp.status) : 'APPROVED');
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           success: true,
@@ -85,6 +91,10 @@ function createDriverPartnerRoutes({
           avg_delivery_mins: driver.avgDeliveryMins ? Number(driver.avgDeliveryMins) : null,
           yesterday_diff_trips: driver.yesterdayDiffTrips !== undefined ? Number(driver.yesterdayDiffTrips) : null,
           vehicle_id: driver.vehicleId,
+          vehicle_number: resolvedVehicleNumber,
+          vehicle_plate: resolvedVehicleNumber,
+          license_number: resolvedLicenseNumber,
+          kyc_status: resolvedKycStatus,
           payouts,
           daily_logs,
           activeTrips
@@ -123,6 +133,20 @@ function createDriverPartnerRoutes({
           }
         }
         if (typeof data.vehicle_id === 'string' && db.getVehicles().some(vehicle => vehicle.id === data.vehicle_id)) changes.vehicleId = data.vehicle_id;
+        if (typeof data.vehicle_number === 'string') {
+          const cleanPlate = data.vehicle_number.trim().toUpperCase();
+          if (cleanPlate) {
+            changes.vehicleNumber = cleanPlate;
+            changes.vehiclePlate = cleanPlate;
+          }
+        }
+        if (typeof data.vehicle_plate === 'string') {
+          const cleanPlate = data.vehicle_plate.trim().toUpperCase();
+          if (cleanPlate) {
+            changes.vehicleNumber = cleanPlate;
+            changes.vehiclePlate = cleanPlate;
+          }
+        }
         const latNum = Number(data.lat ?? data.latitude);
         const lngNum = Number(data.lng ?? data.longitude);
         if (Number.isFinite(latNum) && Math.abs(latNum) <= 90) changes.currentLat = latNum;

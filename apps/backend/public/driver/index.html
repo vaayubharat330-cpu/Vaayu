@@ -1314,10 +1314,10 @@
                     <h2 id="driverName" class="font-display font-extrabold text-base text-white truncate"></h2>
                   </div>
                   <div class="flex items-center gap-1.5 shrink-0">
-                    <button id="profileKycBadge" data-on="click" data-action="openOwnerDetailsModal" type="button" class="flex items-center gap-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm active:scale-95 transition cursor-pointer shrink-0" title="Document Verification & KYC Approved">
+                    <div id="profileKycBadge" class="flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm shrink-0" title="Document Verification & KYC Approved">
                       <span id="profileKycDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                       <span id="profileKycBadgeText">KYC ✓</span>
-                    </button>
+                    </div>
                     <span class="flex items-center gap-1 bg-amber-500/20 text-amber-300 font-bold text-xs px-2 py-0.5 rounded-full border border-amber-500/30 shrink-0">
                       <span id="driverRatingDisplay">⭐ 4.94</span>
                     </span>
@@ -1336,23 +1336,23 @@
             <div class="bg-slate-950/70 p-3 rounded-2xl border border-slate-800 space-y-2">
               <div class="flex justify-between items-center text-[11px]">
                 <span class="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Verification & Documents</span>
-                <span class="text-emerald-400 font-bold flex items-center gap-1">
+                <span id="kycStatusHeaderBadge" class="text-emerald-400 font-bold flex items-center gap-1">
                   <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-                  100% Verified
+                  <span id="kycStatusHeaderBadgeText">100% Verified</span>
                 </span>
               </div>
               <div class="grid grid-cols-2 gap-1.5 text-[10px]">
                 <div class="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-900 border border-slate-800/80 text-slate-300">
-                  <span class="text-emerald-400 font-bold">✓</span> Driving License (Valid: 2032)
+                  <span class="text-emerald-400 font-bold">✓</span> <span id="kycLicenseLabel">Driving License (Verified)</span>
                 </div>
                 <div class="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-900 border border-slate-800/80 text-slate-300">
-                  <span class="text-emerald-400 font-bold">✓</span> Aadhaar & PAN Card
+                  <span class="text-emerald-400 font-bold">✓</span> <span id="kycAadhaarLabel">Aadhaar &amp; PAN Card</span>
                 </div>
                 <div class="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-900 border border-slate-800/80 text-slate-300">
-                  <span class="text-emerald-400 font-bold">✓</span> Vehicle RC (TS 09 EA 4589)
+                  <span class="text-emerald-400 font-bold">✓</span> <span id="kycRcLabel">Vehicle RC</span>
                 </div>
                 <div class="flex items-center gap-1.5 p-1.5 rounded-lg bg-slate-900 border border-slate-800/80 text-slate-300">
-                  <span class="text-emerald-400 font-bold">✓</span> Commercial Insurance
+                  <span class="text-emerald-400 font-bold">✓</span> <span id="kycInsuranceLabel">Commercial Insurance</span>
                 </div>
               </div>
             </div>
@@ -1448,32 +1448,36 @@
                 <div>
                   <div class="text-[10px] uppercase font-semibold text-slate-400">Registered Vehicle</div>
                   <div class="text-xs font-bold text-white mt-0.5" id="settingsVehicleName">VAAYU Ace (Tata Ace 7ft)</div>
-                  <span class="text-[10px] font-mono text-emerald-400" id="settingsVehiclePlate">Plate: TS 09 EA 4589</span>
+                  <span class="text-[10px] font-mono text-emerald-400" id="settingsVehiclePlate">Plate: —</span>
                 </div>
-                <button id="btnSwitchVehicleModal" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700">
+                <button id="btnSwitchVehicleModal" data-on="click" data-action="openChangeVehicleModal" type="button" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg border border-slate-700 transition cursor-pointer">
                   Edit
                 </button>
               </div>
 
-              <!-- Document Verification & KYC Status (Owner, Vehicle, Driver) -->
-              <div class="p-3 rounded-2xl bg-gradient-to-r from-blue-950/60 via-slate-900 to-slate-900 border border-blue-500/40 space-y-2">
+              <!-- Document Verification & KYC Status (Verified at Registration) -->
+              <div class="p-3 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/40 space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <span class="text-base">📋</span>
                     <div>
                       <div class="font-bold text-xs text-white">Document Verification &amp; KYC</div>
-                      <span id="settingsKycSub" class="text-[10px] text-slate-400">Step 1: Owner Details • Aadhaar, PAN, Selfie</span>
+                      <span id="settingsKycSub" class="text-[10px] text-emerald-400 font-medium">Completed during Driver Registration</span>
                     </div>
                   </div>
-                  <button id="btnOpenKycFromSettings" data-on="click" data-action="openOwnerDetailsModal" type="button" class="px-2.5 py-1 text-[11px] bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow active:scale-95 transition cursor-pointer">
-                    Manage &amp; Upload
-                  </button>
-                </div>
-                <div class="flex items-center justify-between pt-1 border-t border-slate-800 text-[10px]">
-                  <span class="text-slate-400">Owner Verification:</span>
-                  <span id="settingsKycBadge" class="text-emerald-400 font-mono font-bold flex items-center gap-1">
-                    <span>✅</span> <span id="settingsKycCountText">3/3 Verified</span>
+                  <span id="settingsKycBadge" class="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                    <span>✅</span> <span id="settingsKycCountText">Verified &amp; Active</span>
                   </span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-800/80 text-[10px]">
+                  <div class="flex flex-col p-1.5 rounded-lg bg-slate-950/70 border border-slate-800">
+                    <span class="text-slate-400">Driving License:</span>
+                    <span id="settingsDlStatusVal" class="text-emerald-400 font-mono font-bold truncate">Verified</span>
+                  </div>
+                  <div class="flex flex-col p-1.5 rounded-lg bg-slate-950/70 border border-slate-800">
+                    <span class="text-slate-400">RC Registration:</span>
+                    <span id="settingsRcStatusVal" class="text-emerald-400 font-mono font-bold truncate">Verified</span>
+                  </div>
                 </div>
               </div>
 
@@ -1648,6 +1652,89 @@
 
 
       </div> <!-- end #cockpitScreen -->
+
+      <!-- ========================================== -->
+      <!-- CHANGE REGISTERED VEHICLE MODAL           -->
+      <!-- ========================================== -->
+      <div id="changeVehicleModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 select-none">
+        <div class="w-full max-w-sm bg-slate-900/98 backdrop-blur-2xl rounded-3xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-slate-100 border border-slate-800 shadow-emerald-950/40 animate-slide-up">
+          
+          <!-- Modal Header -->
+          <div class="px-5 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/95 sticky top-0 z-10">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 text-sm font-black shadow-sm">🚚</span>
+              <h2 class="font-display font-bold text-base text-white tracking-wide">Change Vehicle</h2>
+            </div>
+            <button data-on="click" data-action="closeChangeVehicleModal" type="button" class="w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700/60 flex items-center justify-center text-sm font-bold transition active:scale-90 cursor-pointer">
+              ✕
+            </button>
+          </div>
+
+          <!-- Modal Scrollable Content -->
+          <div class="p-5 overflow-y-auto space-y-4 flex-1 bg-slate-900/40">
+            <div class="text-xs text-slate-400">
+              Select your vehicle category and update your registration plate number.
+            </div>
+
+            <!-- Vehicle Selection Grid -->
+            <div class="space-y-2">
+              <label class="text-xs font-bold text-slate-300 flex items-center gap-1">
+                <span>Select Vehicle Type</span>
+                <span class="text-emerald-400 font-bold">*</span>
+              </label>
+              <div class="grid grid-cols-2 gap-2" id="changeVehicleGrid">
+                <!-- v_ace -->
+                <button type="button" data-on="click" data-action="selectChangeVehicleType" data-args='["v_ace"]' id="optVeh_v_ace" class="change-veh-card p-3 rounded-xl border border-slate-700 bg-slate-950/70 hover:border-emerald-500/60 flex flex-col items-center gap-1.5 transition cursor-pointer text-left w-full">
+                  <span class="text-2xl">🚛</span>
+                  <div class="font-bold text-xs text-white text-center">VAAYU Ace</div>
+                  <div class="text-[10px] text-slate-400 text-center">Tata Ace 7ft • 850kg</div>
+                </button>
+                <!-- v_bolero -->
+                <button type="button" data-on="click" data-action="selectChangeVehicleType" data-args='["v_bolero"]' id="optVeh_v_bolero" class="change-veh-card p-3 rounded-xl border border-slate-700 bg-slate-950/70 hover:border-emerald-500/60 flex flex-col items-center gap-1.5 transition cursor-pointer text-left w-full">
+                  <span class="text-2xl">🚚</span>
+                  <div class="font-bold text-xs text-white text-center">Bolero Maxi</div>
+                  <div class="text-[10px] text-slate-400 text-center">Bolero 8ft • 1200kg</div>
+                </button>
+                <!-- v_3w -->
+                <button type="button" data-on="click" data-action="selectChangeVehicleType" data-args='["v_3w"]' id="optVeh_v_3w" class="change-veh-card p-3 rounded-xl border border-slate-700 bg-slate-950/70 hover:border-emerald-500/60 flex flex-col items-center gap-1.5 transition cursor-pointer text-left w-full">
+                  <span class="text-2xl">🛺</span>
+                  <div class="font-bold text-xs text-white text-center">3W Auto Cargo</div>
+                  <div class="text-[10px] text-slate-400 text-center">Piaggio Ape • 500kg</div>
+                </button>
+                <!-- v_2w -->
+                <button type="button" data-on="click" data-action="selectChangeVehicleType" data-args='["v_2w"]' id="optVeh_v_2w" class="change-veh-card p-3 rounded-xl border border-slate-700 bg-slate-950/70 hover:border-emerald-500/60 flex flex-col items-center gap-1.5 transition cursor-pointer text-left w-full">
+                  <span class="text-2xl">🛵</span>
+                  <div class="font-bold text-xs text-white text-center">2W Bike Express</div>
+                  <div class="text-[10px] text-slate-400 text-center">Bike/Scooter • 20kg</div>
+                </button>
+              </div>
+            </div>
+
+            <!-- Vehicle Number Plate Input -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-bold text-slate-300 flex items-center justify-between">
+                <span>Registration Plate Number</span>
+                <span class="text-[10px] text-slate-400 font-mono">e.g. TS09EA4589</span>
+              </label>
+              <div class="relative">
+                <input type="text" id="changeVehiclePlateInput" maxlength="15" placeholder="TS 09 EA 4589" class="w-full uppercase font-mono tracking-wider font-bold bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-400 focus:outline-none transition shadow-inner placeholder-slate-600" />
+              </div>
+              <div id="changeVehicleError" class="text-[11px] text-rose-400 font-medium hidden"></div>
+            </div>
+          </div>
+
+          <!-- Modal Action Buttons -->
+          <div class="p-4 border-t border-slate-800 bg-slate-900/90 flex items-center gap-2.5">
+            <button data-on="click" data-action="closeChangeVehicleModal" type="button" class="w-1/3 py-2.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs transition active:scale-95 cursor-pointer">
+              Cancel
+            </button>
+            <button id="btnSaveChangeVehicle" data-on="click" data-action="saveChangeVehicle" type="button" class="w-2/3 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/20">
+              Save Vehicle
+            </button>
+          </div>
+
+        </div>
+      </div>
 
       <!-- ========================================== -->
       <!-- INCOMING ORDER POPUP MODAL (30s COUNTDOWN) -->
@@ -1995,7 +2082,7 @@
             </div>
             <div class="flex items-center justify-between pt-1 border-t border-slate-850 text-[10px] text-slate-400 font-mono">
               <span>Status: <strong class="text-amber-400">ACCEPTED / IN TRANSIT</strong></span>
-              <span>Vehicle: <strong class="text-slate-300">Tata Ace (TS 09 EA 4589)</strong></span>
+              <span>Vehicle: <strong id="rejectionModalVehicle" class="text-slate-300">VAAYU Ace</strong></span>
             </div>
           </div>
 
@@ -2109,7 +2196,7 @@
                   </span>
                 </div>
                 <div class="bg-black/70 p-1.5 rounded-lg border border-slate-700 text-[9px] font-mono text-slate-300 flex justify-between">
-                  <span>TS 09 EA 4589</span>
+                  <span id="rejectionHudPlate">TS 09 EA 4589</span>
                   <span>17.4850° N, 78.4041° E</span>
                   <span id="rejectionHudReason">VEHICLE BREAKDOWN</span>
                 </div>

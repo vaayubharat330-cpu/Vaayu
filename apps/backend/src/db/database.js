@@ -514,9 +514,11 @@ module.exports = {
     const db = readDb();
     const driver = (db.driver_profiles || []).find(d => d.id === driverId || d.userId === driverId);
     if (!driver) return null;
-    for (const key of ['status', 'vehicleId', 'currentLat', 'currentLng']) {
+    for (const key of ['status', 'vehicleId', 'vehicleNumber', 'vehiclePlate', 'currentLat', 'currentLng']) {
       if (changes[key] !== undefined) driver[key] = changes[key];
     }
+    if (changes.vehicleNumber) driver.vehiclePlate = changes.vehicleNumber;
+    if (changes.vehiclePlate) driver.vehicleNumber = changes.vehiclePlate;
     driver.updatedAt = new Date().toISOString();
     writeDb(db);
     return driver;
