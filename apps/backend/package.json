@@ -9,6 +9,7 @@
     "test:psm": "node --test test/unit/paymentStateMachine.test.js test/unit/paymentStep3_4.test.js test/unit/paymentApiContract.test.js test/unit/tripPaymentLifecycle.test.js test/unit/adminFinancialApi.test.js",
     "test:ledger": "node test/payment_simulator/ledger_core.test.js",
     "test:ledger-pg": "node --test test/unit/postgresLedger.test.js",
+    "test:postgres-transition": "node --test test/unit/postgresTransitionAtomicity.test.js",
     "test:cluster": "node --test test/unit/clusterConcurrency.test.js",
     "test:outbox": "node --test test/unit/outboxDispatcher.test.js",
     "test:ingest": "node --test test/unit/providerIngestion.test.js",
