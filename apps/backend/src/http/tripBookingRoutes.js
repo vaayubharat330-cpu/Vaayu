@@ -79,192 +79,213 @@ function createTripBookingRoutes({
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
-        const secPassed = await enforceSecurityChecks(req, res, { routeName: 'trips:create', requiredRoles: ['CUSTOMER', 'ADMIN', 'SUPER_ADMIN'] });
-        if (!secPassed) return;
-        const data = parseJsonBody(res, body);
-        if (!data) return;
-        data.customerId = req.user.id;
+        // Once the distributed idempotency lock is acquired, every exit path must release it
+        // unless saveResponse() has durably recorded the command. This prevents validation,
+        // payment, dispatch, or unexpected exceptions from pinning the key until lease expiry.
+        let idempotencyOwned = false;
+        let idempotencyFinalized = false;
+        let effKey = null;
 
-        if (data.isOutstation && !isAdminFeatureEnabled('enableOutstation')) {
-          res.writeHead(403, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Outstation bookings are currently disabled.' }));
-        }
-        if (data.vehicleId === 'v_17ft' && !isAdminFeatureEnabled('enable17ftTruck')) {
-          res.writeHead(403, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'The 17ft truck category is currently disabled.' }));
-        }
+        try {
+          const secPassed = await enforceSecurityChecks(req, res, { routeName: 'trips:create', requiredRoles: ['CUSTOMER', 'ADMIN', 'SUPER_ADMIN'] });
+          if (!secPassed) return;
+          const data = parseJsonBody(res, body);
+          if (!data) return;
+          data.customerId = req.user.id;
 
-        // Durable idempotency: a repeated request with the same key returns the first response.
-        const effKey = data.idempotencyKey || (req.headers ? req.headers['x-idempotency-key'] : null);
-        if (effKey) {
-          const existing = await idempotencyService.findExistingResponse(effKey);
-          if (existing.found) {
-            res.writeHead(existing.statusCode, { 'Content-Type': 'application/json' });
-            return res.end(typeof existing.body === 'string' ? existing.body : JSON.stringify(existing.body));
+          if (data.isOutstation && !isAdminFeatureEnabled('enableOutstation')) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: 'Outstation bookings are currently disabled.' }));
           }
-        }
+          if (data.vehicleId === 'v_17ft' && !isAdminFeatureEnabled('enable17ftTruck')) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: 'The 17ft truck category is currently disabled.' }));
+          }
 
-        // Coordinates are required and must be valid. A missing or bad coordinate is refused, never replaced by a default place.
-        const coord = v => (typeof v === 'string' && v.trim() !== '' ? Number(v) : v);
-        const pLat = coord(data.pickupLat), pLng = coord(data.pickupLng);
-        const dLat = coord(data.dropLat), dLng = coord(data.dropLng);
-        if (!validateFields(res, [
-          [isLatitude(pLat), 'pickupLat must be a valid latitude'],
-          [isLongitude(pLng), 'pickupLng must be a valid longitude'],
-          [isLatitude(dLat), 'dropLat must be a valid latitude'],
-          [isLongitude(dLng), 'dropLng must be a valid longitude'],
-        ])) return;
+          // Durable idempotency: a repeated request with the same key returns the first response.
+          effKey = data.idempotencyKey || (req.headers ? req.headers['x-idempotency-key'] : null);
+          if (effKey) {
+            const existing = await idempotencyService.findExistingResponse(effKey);
+            if (existing.found) {
+              res.writeHead(existing.statusCode, { 'Content-Type': 'application/json' });
+              return res.end(typeof existing.body === 'string' ? existing.body : JSON.stringify(existing.body));
+            }
+            idempotencyOwned = true;
+          }
 
-        const vehicleId = data.vehicleId || 'v_ace';
-        const helperCount = parseInt(data.helperCount || 0, 10);
-        const extraDropsCount = parseInt(data.extraDropsCount || 0, 10);
-        const waitingTimeMinutes = isAdminFeatureEnabled('enableWaitingTimeBilling') ? parseInt(data.waitingTimeMinutes || 0, 10) : 0;
-        const driverTip = Math.max(0, parseInt(data.driverTip || 0, 10));
-        const isOutstation = Boolean(data.isOutstation);
-        const intermediateStops = Array.isArray(data.intermediateStops) ? data.intermediateStops : [];
+          // Coordinates are required and must be valid. A missing or bad coordinate is refused, never replaced by a default place.
+          const coord = v => (typeof v === 'string' && v.trim() !== '' ? Number(v) : v);
+          const pLat = coord(data.pickupLat), pLng = coord(data.pickupLng);
+          const dLat = coord(data.dropLat), dLng = coord(data.dropLng);
+          if (!validateFields(res, [
+            [isLatitude(pLat), 'pickupLat must be a valid latitude'],
+            [isLongitude(pLng), 'pickupLng must be a valid longitude'],
+            [isLatitude(dLat), 'dropLat must be a valid latitude'],
+            [isLongitude(dLng), 'dropLng must be a valid longitude'],
+          ])) return;
 
-        const goodsCategory = data.goodsCategory || 'House Furniture & Appliances';
-        const isFragile = Boolean(data.isFragile);
-        const goodsNotes = data.goodsNotes || '';
-        const dispatchMode = data.dispatchMode || 'NOW';
-        const scheduledDate = data.scheduledDate || new Date().toISOString().split('T')[0];
-        const scheduledTimeSlot = data.scheduledTimeSlot || '09:00 AM - 10:00 AM';
+          const vehicleId = data.vehicleId || 'v_ace';
+          const helperCount = parseInt(data.helperCount || 0, 10);
+          const extraDropsCount = parseInt(data.extraDropsCount || 0, 10);
+          const waitingTimeMinutes = isAdminFeatureEnabled('enableWaitingTimeBilling') ? parseInt(data.waitingTimeMinutes || 0, 10) : 0;
+          const driverTip = Math.max(0, parseInt(data.driverTip || 0, 10));
+          const isOutstation = Boolean(data.isOutstation);
+          const intermediateStops = Array.isArray(data.intermediateStops) ? data.intermediateStops : [];
 
-        const quoteRes = await fareQuoteProvider.getFareQuote(pLat, pLng, dLat, dLng, {
-          vehicleId,
-          helperCount,
-          extraDropsCount,
-          isOutstation,
-          intermediateStops,
-          waitingTimeMinutes
-        });
+          const goodsCategory = data.goodsCategory || 'House Furniture & Appliances';
+          const isFragile = Boolean(data.isFragile);
+          const goodsNotes = data.goodsNotes || '';
+          const dispatchMode = data.dispatchMode || 'NOW';
+          const scheduledDate = data.scheduledDate || new Date().toISOString().split('T')[0];
+          const scheduledTimeSlot = data.scheduledTimeSlot || '09:00 AM - 10:00 AM';
 
-        if (!quoteRes.success) {
-          res.writeHead(403, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify(quoteRes));
-        }
-
-        const vehicleEstimate = quoteRes.selectedEstimate;
-        const pickupOtp = crypto.randomInt(1000, 10000).toString();
-        const deliveryOtp = crypto.randomInt(1000, 10000).toString();
-
-        const finalFareBreakdown = {
-          ...vehicleEstimate.fareBreakdown,
-          driverTip
-        };
-        const finalTotalFare = vehicleEstimate.totalFare + driverTip;
-
-        // A booking is always made for a signed-in customer. No fixed customer ID is ever substituted.
-        const customerId = req.user && req.user.id;
-        if (!customerId) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Sign in to book a trip.' }));
-        }
-        const portalContext = req.portalContext || portalContextService.extractPortalContext(req);
-        const tempOrderId = orderIdService.generateOrderId({
-          portal: portalContext.portalId,
-          category: data.isRecurring ? 'RECURRING' : (data.isEmergency ? 'EMERGENCY' : 'EXPRESS'),
-          region: 'HYD'
-        });
-        const paymentMethod = String(data.paymentMethod || 'CASH_ON_DELIVERY').toUpperCase();
-        let paymentInfo;
-        if (paymentMethod === 'WALLET') {
-          const farePaise = Math.round(Number(finalTotalFare) * 100);
-          const escrowResult = await paymentService.reserveEscrow({
-            tripId: tempOrderId,
-            orderId: tempOrderId,
-            customerId,
-            amountPaise: farePaise,
-            idempotencyKey: effKey ? `VAAYU:${effKey}:ESCROW` : `VAAYU:${tempOrderId}:ESCROW`
+          const quoteRes = await fareQuoteProvider.getFareQuote(pLat, pLng, dLat, dLng, {
+            vehicleId,
+            helperCount,
+            extraDropsCount,
+            isOutstation,
+            intermediateStops,
+            waitingTimeMinutes
           });
 
-          if (!escrowResult.success) {
-            res.writeHead(402, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ success: false, error: escrowResult.error?.message || 'Wallet payment could not be completed.' }));
+          if (!quoteRes.success) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(quoteRes));
           }
 
-          paymentInfo = {
-            success: true,
-            provider: 'VAAYU_WALLET',
-            status: 'PAID',
-            requiresPayment: false,
-            isPaid: true,
-            deferred: false,
-            orderId: tempOrderId,
-            amount: finalTotalFare,
-            paymentMethod,
-            timestamp: new Date().toISOString(),
-            escrow: escrowResult
+          const vehicleEstimate = quoteRes.selectedEstimate;
+          const pickupOtp = crypto.randomInt(1000, 10000).toString();
+          const deliveryOtp = crypto.randomInt(1000, 10000).toString();
+
+          const finalFareBreakdown = {
+            ...vehicleEstimate.fareBreakdown,
+            driverTip
           };
-        } else {
-          paymentInfo = await paymentProvider.processPayment(tempOrderId, finalTotalFare, paymentMethod);
+          const finalTotalFare = vehicleEstimate.totalFare + driverTip;
+
+          // A booking is always made for a signed-in customer. No fixed customer ID is ever substituted.
+          const customerId = req.user && req.user.id;
+          if (!customerId) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: 'Sign in to book a trip.' }));
+          }
+          const portalContext = req.portalContext || portalContextService.extractPortalContext(req);
+          const tempOrderId = orderIdService.generateOrderId({
+            portal: portalContext.portalId,
+            category: data.isRecurring ? 'RECURRING' : (data.isEmergency ? 'EMERGENCY' : 'EXPRESS'),
+            region: 'HYD'
+          });
+          const paymentMethod = String(data.paymentMethod || 'CASH_ON_DELIVERY').toUpperCase();
+          let paymentInfo;
+          if (paymentMethod === 'WALLET') {
+            const farePaise = Math.round(Number(finalTotalFare) * 100);
+            const escrowResult = await paymentService.reserveEscrow({
+              tripId: tempOrderId,
+              orderId: tempOrderId,
+              customerId,
+              amountPaise: farePaise,
+              idempotencyKey: effKey ? `VAAYU:${effKey}:ESCROW` : `VAAYU:${tempOrderId}:ESCROW`
+            });
+
+            if (!escrowResult.success) {
+              res.writeHead(402, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({ success: false, error: escrowResult.error?.message || 'Wallet payment could not be completed.' }));
+            }
+
+            paymentInfo = {
+              success: true,
+              provider: 'VAAYU_WALLET',
+              status: 'PAID',
+              requiresPayment: false,
+              isPaid: true,
+              deferred: false,
+              orderId: tempOrderId,
+              amount: finalTotalFare,
+              paymentMethod,
+              timestamp: new Date().toISOString(),
+              escrow: escrowResult
+            };
+          } else {
+            paymentInfo = await paymentProvider.processPayment(tempOrderId, finalTotalFare, paymentMethod);
+          }
+
+          const newTrip = {
+            id: tempOrderId,
+            tripId: tempOrderId,
+            customerId,
+            customerName: data.senderName || (req.user ? req.user.name : null),
+            customerPhone: data.senderPhone || (req.user ? req.user.phone : null),
+            vehicleId,
+            vehicleName: vehicleEstimate.vehicleName,
+            isOutstation,
+            goodsCategory,
+            isFragile,
+            goodsNotes,
+            dispatchMode,
+            scheduledDate,
+            scheduledTimeSlot,
+            pickupAddress: data.pickupAddress || 'Custom Pickup Location',
+            pickupLat: pLat,
+            pickupLng: pLng,
+            dropAddress: data.dropAddress || 'Custom Drop Location',
+            dropLat: dLat,
+            dropLng: dLng,
+            intermediateStops,
+            distanceKm: quoteRes.distanceKm,
+            durationMin: quoteRes.durationMin,
+            fareBreakdown: finalFareBreakdown,
+            totalFare: finalTotalFare,
+            fareProvider: quoteRes.provider,
+            paymentInfo,
+            pickupOtp,
+            deliveryOtp,
+            trackingToken: crypto.randomBytes(32).toString('base64url'),
+            version: 1,
+            status: DELIVERY_STATES.CREATED,
+            // DispatchService attaches a driver only after it reserves a matching
+            // eligible driver and transitions the trip to DRIVER_ASSIGNED.
+            driver: null,
+            createdAt: new Date().toISOString()
+          };
+
+          orderIdService.attachInternalValues(newTrip, portalContext);
+          db.createTrip(newTrip);
+          try {
+            const customerPhone = req.user?.phone || newTrip.customerPhone || null;
+            otpService.recordDeliveryOtp(customerPhone, deliveryOtp, newTrip.id, 'TRIP_DELIVERY');
+          } catch (_) {}
+          metricsService.increment('orders_created_total');
+          logger.info('order_created', `New trip order created ${newTrip.id}`, { orderId: newTrip.id, customerId: newTrip.customerId });
+
+          // Trigger deterministic dispatch matcher.
+          const dispatchRes = await dispatchService.findAndOfferDriver(newTrip.id);
+
+          const createdTrip = db.getTripById(newTrip.id);
+
+          const responsePayload = {
+            success: true,
+            trip: createdTrip || newTrip,
+            dispatch: dispatchRes
+          };
+
+          if (effKey) {
+            await idempotencyService.saveResponse(effKey, newTrip.id, 200, responsePayload);
+            idempotencyFinalized = true;
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify(responsePayload));
+        } catch (err) {
+          logger.error('trip_booking_failed', err.message, { idempotencyKey: effKey });
+          if (!res.writableEnded) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ success: false, error: 'Trip booking could not be completed.' }));
+          }
+        } finally {
+          if (effKey && idempotencyOwned && !idempotencyFinalized) {
+            try { await idempotencyService.abortResponse(effKey); } catch (_) {}
+          }
         }
-
-        const newTrip = {
-          id: tempOrderId,
-          tripId: tempOrderId,
-          customerId,
-          customerName: data.senderName || (req.user ? req.user.name : null),
-          customerPhone: data.senderPhone || (req.user ? req.user.phone : null),
-          vehicleId,
-          vehicleName: vehicleEstimate.vehicleName,
-          isOutstation,
-          goodsCategory,
-          isFragile,
-          goodsNotes,
-          dispatchMode,
-          scheduledDate,
-          scheduledTimeSlot,
-          pickupAddress: data.pickupAddress || 'Custom Pickup Location',
-          pickupLat: pLat,
-          pickupLng: pLng,
-          dropAddress: data.dropAddress || 'Custom Drop Location',
-          dropLat: dLat,
-          dropLng: dLng,
-          intermediateStops,
-          distanceKm: quoteRes.distanceKm,
-          durationMin: quoteRes.durationMin,
-          fareBreakdown: finalFareBreakdown,
-          totalFare: finalTotalFare,
-          fareProvider: quoteRes.provider,
-          paymentInfo,
-          pickupOtp,
-          deliveryOtp,
-          trackingToken: crypto.randomBytes(32).toString('base64url'),
-          version: 1,
-          status: DELIVERY_STATES.CREATED,
-          // DispatchService attaches a driver only after it reserves a matching
-          // eligible driver and transitions the trip to DRIVER_ASSIGNED.
-          driver: null,
-          createdAt: new Date().toISOString()
-        };
-
-        orderIdService.attachInternalValues(newTrip, portalContext);
-        db.createTrip(newTrip);
-        try {
-          const customerPhone = req.user?.phone || newTrip.customerPhone || null;
-          otpService.recordDeliveryOtp(customerPhone, deliveryOtp, newTrip.id, 'TRIP_DELIVERY');
-        } catch (_) {}
-        metricsService.increment('orders_created_total');
-        logger.info('order_created', `New trip order created ${newTrip.id}`, { orderId: newTrip.id, customerId: newTrip.customerId });
-
-        // Trigger deterministic dispatch matcher.
-        const dispatchRes = await dispatchService.findAndOfferDriver(newTrip.id);
-
-        const createdTrip = db.getTripById(newTrip.id);
-
-        const responsePayload = {
-          success: true,
-          trip: createdTrip || newTrip,
-          dispatch: dispatchRes
-        };
-
-        if (effKey) {
-          await idempotencyService.saveResponse(effKey, newTrip.id, 200, responsePayload);
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify(responsePayload));
       });
       return true;
     }
