@@ -6,9 +6,6 @@ const { redisLockManager } = require('./redisLockManager');
 const { metricsService } = require('./metricsService');
 const { logger } = require('./logger');
 
-/**
- * VAAYU Delivery State Machine & Controlled Order Lifecycle (Milestone 3)
- */
 const DELIVERY_STATES = {
   CREATED: 'CREATED', SEARCHING_DRIVER: 'SEARCHING_DRIVER', DRIVER_ASSIGNED: 'DRIVER_ASSIGNED',
   DRIVER_ACCEPTED: 'DRIVER_ACCEPTED', DRIVER_ARRIVING: 'DRIVER_ARRIVING', DRIVER_AT_PICKUP: 'DRIVER_AT_PICKUP',
@@ -45,7 +42,7 @@ const ACTOR_PERMISSIONS = {
     { from: DELIVERY_STATES.PICKUP_CONFIRMED, to: DELIVERY_STATES.IN_TRANSIT },
     { from: DELIVERY_STATES.IN_TRANSIT, to: DELIVERY_STATES.DRIVER_AT_DROPOFF },
     { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.DELIVERED },
-    { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.FAILED
+    { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.FAILED }
   ]},
   SYSTEM: { allowedTransitions: [
     { from: DELIVERY_STATES.CREATED, to: DELIVERY_STATES.SEARCHING_DRIVER },
@@ -64,7 +61,7 @@ const ACTOR_PERMISSIONS = {
     { from: DELIVERY_STATES.PICKUP_CONFIRMED, to: DELIVERY_STATES.CANCELLED },
     { from: DELIVERY_STATES.IN_TRANSIT, to: DELIVERY_STATES.CANCELLED },
     { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.CANCELLED },
-    { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.FAILED
+    { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.FAILED }
   ]}
 };
 
@@ -85,16 +82,14 @@ class DeliveryStateMachine {
       this.tripLocks.delete(tripId);
       return { success: false, error: { code: 'TRIP_COMMAND_CONFLICT', message: 'Another backend instance is already processing this trip. Retry the command.' } };
     }
-    try {
-      return await fn();
-    } finally {
+    try { return await fn(); }
+    finally {
       await redisLockManager.releaseTripLock(distributedLock).catch(() => {});
       this.tripLocks.delete(tripId);
     }
   }
 
   canTransition(currentState, nextState) { return (TRANSITION_MATRIX[currentState] || []).includes(nextState); }
-
   isActorAuthorized(actorType, currentState, nextState) {
     const actorConfig = ACTOR_PERMISSIONS[actorType];
     return Boolean(actorConfig && actorConfig.allowedTransitions.some(t => t.from === currentState && t.to === nextState));
@@ -123,9 +118,7 @@ class DeliveryStateMachine {
         if (idempotencyKey) this.cacheIdempotency(idempotencyKey, dupResult);
         return dupResult;
       }
-      if ([DELIVERY_STATES.DELIVERED, DELIVERY_STATES.CANCELLED, DELIVERY_STATES.FAILED].includes(currentState)) {
-        return { success: false, error: { code: 'ORDER_ALREADY_TERMINAL', message: `Order ${tripId} is already in terminal state: ${currentState}` } };
-      }
+      if ([DELIVERY_STATES.DELIVERED, DELIVERY_STATES.CANCELLED, DELIVERY_STATES.FAILED].includes(currentState)) return { success: false, error: { code: 'ORDER_ALREADY_TERMINAL', message: `Order ${tripId} is already in terminal state: ${currentState}` } };
       if (!this.canTransition(currentState, nextState)) return { success: false, error: { code: 'INVALID_STATE_TRANSITION', message: `Cannot transition order from ${currentState} to ${nextState}` } };
       if (!this.isActorAuthorized(actorType, currentState, nextState)) return { success: false, error: { code: 'UNAUTHORIZED_TRANSITION', message: `Actor ${actorType} is not authorized for transition ${currentState} -> ${nextState}` } };
       const currentVersion = trip.version || 1;
@@ -159,8 +152,6 @@ class DeliveryStateMachine {
           currentLat: d.lat ?? null,
           currentLng: d.lng ?? null
         };
-        // Persist the exact Redis reservation owner with the trip so a different
-        // backend instance can release the correct lock when the driver accepts.
         trip.driverReservationId = metadata.reservationId || null;
         trip.offerExpiresAt = metadata.offerExpiresAt || null;
       }
@@ -188,9 +179,8 @@ class DeliveryStateMachine {
       databaseStore.delivery_audit_logs.push(auditLogRecord);
       db.saveDb(databaseStore);
 
-      try {
-        await db.waitForCommit();
-      } catch (error) {
+      try { await db.waitForCommit(); }
+      catch (error) {
         logger.error('delivery_transition_persistence_failed', `Order ${tripId} transition was not durably committed`, { orderId: tripId, fromState: currentState, toState: nextState, version: newVersion, error: error.message });
         return { success: false, error: { code: 'PERSISTENCE_COMMIT_FAILED', message: 'Delivery state transition could not be durably committed. Retry the same command.' } };
       }
@@ -218,7 +208,6 @@ class DeliveryStateMachine {
     this.idempotencyCache.set(key, result);
     if (this.idempotencyCache.size > this.MAX_IDEMPOTENCY_ENTRIES) this.idempotencyCache.delete(this.idempotencyCache.keys().next().value);
   }
-
   getAuditLogs(tripId) {
     const logs = db.getDb().delivery_audit_logs || [];
     return logs.filter(l => l.orderId === tripId);
