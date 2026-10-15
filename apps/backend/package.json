@@ -33,6 +33,7 @@
     "test:p19": "node --test --test-force-exit test/unit/fullPlatformCapacityEconomics.test.js",
     "test:final": "node --test --test-force-exit test/unit/finalProductionGate.test.js",
     "test:realtime": "node --test test/unit/realtimeStreamResilience.test.js",
+    "test:telemetry-replay": "node --test test/unit/telemetryReplaySuppression.test.js",
     "test:dispatch": "node --test test/unit/dispatchCorrectnessConcurrency.test.js",
     "test:location": "node --test test/unit/locationMobilityIntegrity.test.js",
     "test:routing": "node --test test/unit/routingEtaReliability.test.js",
