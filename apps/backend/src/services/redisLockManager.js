@@ -152,8 +152,19 @@ class RedisLockManager {
     const key = `${prefix}${scopeId}`;
     const token = `lock_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
     const result = await this.redis.set(key, token, 'NX', 'PX', ttlMs);
-    if (result === 'OK' || result === true) return { success: true, key, token, expiresAt: Date.now() + ttlMs };
+    if (result === 'OK' || result === true) return { success: true, key, token, expiresAt: Date.now() + ttlMs, ttlMs };
     return { success: false, key };
+  }
+
+  /**
+   * Refresh a scoped command lock without allowing ownership to change during
+   * the refresh. The token remains identical; only the lease expiry moves.
+   */
+  async refreshScopedLock(lock, additionalTtlMs = this.COMMAND_LOCK_TTL_MS) {
+    if (!lock || !lock.key || !lock.token) return { success: false, error: 'Invalid lock handle' };
+    const updated = await this._compareAndSet(lock.key, lock.token, lock.token, additionalTtlMs);
+    if (!updated) return { success: false, error: 'Lock ownership changed or expired' };
+    return { success: true, key: lock.key, token: lock.token, expiresAt: Date.now() + additionalTtlMs, ttlMs: additionalTtlMs };
   }
 
   async releaseScopedLock(lock) {
