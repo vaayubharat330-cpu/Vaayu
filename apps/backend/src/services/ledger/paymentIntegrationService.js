@@ -1,7 +1,7 @@
 'use strict';
 
-const { PaymentStateMachine, PaymentStateError } = require('./paymentStateMachine');
-const { LedgerError } = require('./ledgerService');
+const { PaymentStateMachine } = require('./paymentStateMachine');
+const { PostgresLedgerRepository } = require('./postgresLedgerRepository');
 
 const ERROR_CODES = Object.freeze({
   INSUFFICIENT_WALLET_BALANCE: 'INSUFFICIENT_WALLET_BALANCE',
@@ -42,16 +42,7 @@ class PaymentIntegrationService {
 
   _formatError(err, context = {}) {
     const code = normalizeErrorCode(err.code);
-    return {
-      success: false,
-      error: {
-        code,
-        message: err.message,
-        paymentId: context.paymentId || err.details?.paymentId || (context.tripId ? `PAY_${context.tripId}` : null),
-        currentState: err.details?.currentState || err.details?.actualState || null,
-        details: err.details || null
-      }
-    };
+    return { success: false, error: { code, message: err.message, paymentId: context.paymentId || err.details?.paymentId || (context.tripId ? `PAY_${context.tripId}` : null), currentState: err.details?.currentState || err.details?.actualState || null, details: err.details || null } };
   }
 
   async reserveEscrow({ tripId, orderId = null, customerId, amountPaise, idempotencyKey = null }) {
@@ -129,10 +120,17 @@ class PaymentIntegrationService {
     } catch (err) { return this._formatError(err, { tripId, paymentId }); }
   }
 
-  getPaymentStatus(tripId) {
-    const tx = this.psm.getPaymentByTripId(tripId);
-    if (!tx) return { success: false, error: { code: ERROR_CODES.PAYMENT_NOT_FOUND, message: `No payment transaction found for trip ${tripId}` } };
-    return { success: true, payment: tx };
+  async getPaymentStatus(tripId) {
+    try {
+      if (this.psm?.ledger && typeof this.psm.ledger.getPaymentByTripId === 'function') {
+        const tx = await this.psm.ledger.getPaymentByTripId(tripId);
+        if (!tx) return { success: false, error: { code: ERROR_CODES.PAYMENT_NOT_FOUND, message: `No payment transaction found for trip ${tripId}` } };
+        return { success: true, payment: tx, source: 'postgres-ledger' };
+      }
+      const tx = this.psm.getPaymentByTripId(tripId);
+      if (!tx) return { success: false, error: { code: ERROR_CODES.PAYMENT_NOT_FOUND, message: `No payment transaction found for trip ${tripId}` } };
+      return { success: true, payment: tx, source: 'local-psm' };
+    } catch (err) { return this._formatError(err, { tripId }); }
   }
 
   getReconciliation() {
@@ -156,5 +154,12 @@ class PaymentIntegrationService {
   }
 }
 
-const defaultPaymentIntegrationService = new PaymentIntegrationService();
+function createDefaultPaymentIntegrationService() {
+  const usePostgres = ['postgres', 'postgresql'].includes(String(process.env.PERSISTENCE_PROVIDER || '').toLowerCase()) && Boolean(process.env.DATABASE_URL);
+  if (!usePostgres) return new PaymentIntegrationService();
+  const ledger = new PostgresLedgerRepository(process.env.DATABASE_URL);
+  return new PaymentIntegrationService({ ledgerService: ledger });
+}
+
+const defaultPaymentIntegrationService = createDefaultPaymentIntegrationService();
 module.exports = { PaymentIntegrationService, paymentIntegrationService: defaultPaymentIntegrationService, ERROR_CODES };
