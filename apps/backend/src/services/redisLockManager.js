@@ -72,37 +72,46 @@ class RedisLockManager {
     if (!raw) return null;
     try {
       const payload = JSON.parse(raw);
-      if (Date.now() > payload.expiresAt) { await this.redis.del(key); return null; }
+      if (Date.now() > payload.expiresAt) {
+        await this._releaseOwnedKey(key, current => current === raw);
+        return null;
+      }
       return payload;
     } catch (_) { return null; }
   }
 
   async refreshDriverLock(driverId, reservationId, additionalTtlMs = 30000) {
-    const lock = await this.getDriverLock(driverId);
-    if (!lock || lock.reservationId !== reservationId) return { success: false, error: 'Lock not found or owned by another reservation' };
+    if (!driverId || !reservationId) return { success: false, error: 'driverId and reservationId are required' };
     const key = `${this.LOCK_PREFIX}${driverId}`;
-    lock.expiresAt = Date.now() + additionalTtlMs;
-    await this.redis.set(key, JSON.stringify(lock), 'PX', additionalTtlMs);
-    return { success: true, lock };
+    const currentRaw = await this.redis.get(key);
+    if (!currentRaw) return { success: false, error: 'Lock not found or owned by another reservation' };
+
+    let lock;
+    try { lock = JSON.parse(currentRaw); } catch (_) {
+      return { success: false, error: 'Lock payload is invalid' };
+    }
+    if (lock.reservationId !== reservationId) {
+      return { success: false, error: 'Lock not found or owned by another reservation' };
+    }
+
+    const refreshed = { ...lock, expiresAt: Date.now() + additionalTtlMs };
+    const nextRaw = JSON.stringify(refreshed);
+    const updated = await this._compareAndSet(key, currentRaw, nextRaw, additionalTtlMs);
+    if (!updated) return { success: false, error: 'Lock ownership changed before refresh' };
+    return { success: true, lock: refreshed };
   }
 
   /**
    * Release only if the current Redis value is still owned by this caller.
-   * Production Redis uses an atomic Lua compare-and-delete, preventing an expired lock
-   * from being deleted after another worker has already acquired the same key.
-   * The in-memory test engine falls back to GET/DEL because its operations execute on one
-   * Node event loop and it has no EVAL primitive.
+   * Production Redis uses atomic Lua compare-and-delete. The in-memory test engine
+   * falls back to GET/DEL because it intentionally has no EVAL primitive.
    */
   async _releaseOwnedKey(key, ownsValue) {
     const redisConnection = this.redis && this.redis.redis;
     if (redisConnection && typeof redisConnection.eval === 'function') {
       const expectedToken = await this.redis.get(key);
       if (!expectedToken) return true;
-
-      // For JSON driver locks the predicate is based on decoded fields; for command locks
-      // it is an opaque token. The value is supplied to Lua and compared atomically.
-      const isOwned = ownsValue(expectedToken);
-      if (!isOwned) return false;
+      if (!ownsValue(expectedToken)) return false;
       const deleted = await redisConnection.eval(
         "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
         1,
@@ -118,6 +127,26 @@ class RedisLockManager {
     return true;
   }
 
+  async _compareAndSet(key, expectedValue, nextValue, ttlMs) {
+    const redisConnection = this.redis && this.redis.redis;
+    if (redisConnection && typeof redisConnection.eval === 'function') {
+      const result = await redisConnection.eval(
+        "if redis.call('get', KEYS[1]) == ARGV[1] then redis.call('set', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 else return 0 end",
+        1,
+        key,
+        expectedValue,
+        nextValue,
+        String(ttlMs)
+      );
+      return Number(result) === 1;
+    }
+
+    const current = await this.redis.get(key);
+    if (current !== expectedValue) return false;
+    await this.redis.set(key, nextValue, 'PX', ttlMs);
+    return true;
+  }
+
   async acquireScopedLock(prefix, scopeId, ttlMs = this.COMMAND_LOCK_TTL_MS) {
     if (!scopeId) throw new Error('scopeId is required');
     const key = `${prefix}${scopeId}`;
@@ -129,7 +158,7 @@ class RedisLockManager {
 
   async releaseScopedLock(lock) {
     if (!lock || !lock.key || !lock.token) return false;
-    return this._releaseOwnedKey(lock.key, (current) => current === lock.token);
+    return this._releaseOwnedKey(lock.key, current => current === lock.token);
   }
 
   async acquireTripLock(tripId, ttlMs = this.COMMAND_LOCK_TTL_MS) {
