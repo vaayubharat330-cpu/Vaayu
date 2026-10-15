@@ -279,7 +279,7 @@ function createPaymentRoutes({
         return true;
       }
 
-      const result = integrationService.getPaymentStatus(tripId);
+      const result = await integrationService.getPaymentStatus(tripId);
       res.writeHead(result.success ? 200 : 404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));
       return true;
