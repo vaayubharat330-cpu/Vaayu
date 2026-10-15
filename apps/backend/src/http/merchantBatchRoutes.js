@@ -3,8 +3,10 @@
 // refuses with FEATURE_UNAVAILABLE. Access to /api/merchant/* is checked by the dispatcher before these run.
 // Each matched route answers and returns true at once, so the router stops here.
 const { csvCell, isLatitude, isLongitude } = require('./helpers');
+const { idempotencyService } = require('../services/idempotencyService');
+const { metricsService } = require('../services/metricsService');
 
-function createMerchantBatchRoutes({ db, authService, fareQuoteProvider, dispatchService, slaService, idempotencyService, metricsService, parseJsonBody, validateFields }) {
+function createMerchantBatchRoutes({ db, authService, fareQuoteProvider, dispatchService, slaService, parseJsonBody, validateFields }) {
   return async function handleMerchantBatchRoute(req, res, { pathname, parsedUrl }) {
     if (pathname === '/api/merchant/register' && req.method === 'POST') {
       let body = '';
@@ -40,20 +42,19 @@ function createMerchantBatchRoutes({ db, authService, fareQuoteProvider, dispatc
         // Batch booking is a financial/dispatch command: callers may retry after a network
         // timeout, so accept the same idempotency contract as customer trip creation.
         const effKey = data.idempotencyKey || (req.headers ? req.headers['x-idempotency-key'] : null);
-        if (effKey && idempotencyService) {
+        if (effKey) {
           const existing = await idempotencyService.findExistingResponse(effKey);
           if (existing.found) {
             res.writeHead(existing.statusCode, { 'Content-Type': 'application/json' });
             return res.end(typeof existing.body === 'string' ? existing.body : JSON.stringify(existing.body));
           }
-        } else if (metricsService) {
+        } else {
           metricsService.increment('merchant_batch_booking_without_idempotency_key_total');
         }
 
-        // Every delivery needs real pickup and drop coordinates. A booking is never placed at a default location.
         const hasCoordinates = b => [b.pickupLat, b.dropLat].every(v => typeof v === 'number' && isLatitude(v)) && [b.pickupLng, b.dropLng].every(v => typeof v === 'number' && isLongitude(v));
         if (!Array.isArray(data.bookings) || data.bookings.length === 0 || !data.bookings.every(hasCoordinates)) {
-          if (effKey && idempotencyService) await idempotencyService.abortResponse(effKey);
+          if (effKey) await idempotencyService.abortResponse(effKey);
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ success: false, error: 'Every booking needs pickup and drop coordinates. Geocode each address before booking.' }));
         }
@@ -91,12 +92,12 @@ function createMerchantBatchRoutes({ db, authService, fareQuoteProvider, dispatc
             try { return await dispatchService.findAndOfferDriver(trip.id); }
             catch (error) { return { success: false, orderId: trip.id, error: error.message || 'Dispatch could not start.' }; }
           }));
-        } else if (effKey && idempotencyService) {
+        } else if (effKey) {
           await idempotencyService.abortResponse(effKey);
         }
 
         const responsePayload = resData;
-        if (resData.success && effKey && idempotencyService) {
+        if (resData.success && effKey) {
           await idempotencyService.saveResponse(effKey, resData.trips?.[0]?.id || null, 200, responsePayload);
         }
 
