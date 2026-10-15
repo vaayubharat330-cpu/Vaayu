@@ -12,6 +12,7 @@
     "test:postgres-transition": "node --test test/unit/postgresTransitionAtomicity.test.js",
     "test:payment-routing": "node --test test/unit/paymentIntegrationPostgresRouting.test.js",
     "test:payment-status": "node --test test/unit/paymentStatusDurability.test.js",
+    "test:idempotency": "node --test test/unit/idempotencyAbortLifecycle.test.js",
     "test:cluster": "node --test test/unit/clusterConcurrency.test.js",
     "test:outbox": "node --test test/unit/outboxDispatcher.test.js",
     "test:ingest": "node --test test/unit/providerIngestion.test.js",
