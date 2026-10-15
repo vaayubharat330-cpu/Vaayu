@@ -7,7 +7,7 @@ const { logger } = require('./logger');
 
 /**
  * VAAYU Delivery State Machine & Controlled Order Lifecycle (Milestone 3)
- * 
+ *
  * Formal States:
  * - CREATED
  * - SEARCHING_DRIVER
@@ -38,7 +38,6 @@ const DELIVERY_STATES = {
   FAILED: 'FAILED'
 };
 
-// Formal Transition Matrix (Allowed from -> to)
 const TRANSITION_MATRIX = {
   [DELIVERY_STATES.CREATED]: [DELIVERY_STATES.SEARCHING_DRIVER, DELIVERY_STATES.CANCELLED],
   [DELIVERY_STATES.SEARCHING_DRIVER]: [DELIVERY_STATES.DRIVER_ASSIGNED, DELIVERY_STATES.CANCELLED],
@@ -54,7 +53,6 @@ const TRANSITION_MATRIX = {
   [DELIVERY_STATES.FAILED]: []
 };
 
-// Actor Permission Matrix
 const ACTOR_PERMISSIONS = {
   CUSTOMER: {
     allowedTransitions: [
@@ -88,7 +86,6 @@ const ACTOR_PERMISSIONS = {
   },
   ADMIN: {
     allowedTransitions: [
-      // Admin is authorized for operational override/cancellation across active non-terminal states
       { from: DELIVERY_STATES.CREATED, to: DELIVERY_STATES.CANCELLED },
       { from: DELIVERY_STATES.SEARCHING_DRIVER, to: DELIVERY_STATES.CANCELLED },
       { from: DELIVERY_STATES.DRIVER_ASSIGNED, to: DELIVERY_STATES.CANCELLED },
@@ -105,24 +102,16 @@ const ACTOR_PERMISSIONS = {
 
 class DeliveryStateMachine {
   constructor() {
-    // Process-level serialized mutex lock map per trip ID
     this.tripLocks = new Map();
-
-    // Idempotency cache: idempotencyKey -> transitionResult
     this.idempotencyCache = new Map();
     this.MAX_IDEMPOTENCY_ENTRIES = 1000;
-
-    // Configurable Geofence Radius (meters)
     this.PICKUP_GEOFENCE_RADIUS_METERS = 300;
     this.DROPOFF_GEOFENCE_RADIUS_METERS = 300;
   }
 
-  /**
-   * Serialized Execution Mutex per Trip ID to guarantee process-level atomic transactions
-   */
   async withTripLock(tripId, fn) {
     while (this.tripLocks.get(tripId)) {
-      await new Promise(r => setTimeout(r, 10)); // Spinlock wait
+      await new Promise(r => setTimeout(r, 10));
     }
     this.tripLocks.set(tripId, true);
     try {
@@ -132,35 +121,24 @@ class DeliveryStateMachine {
     }
   }
 
-  /**
-   * Validates if transition is allowed in the transition matrix
-   */
   canTransition(currentState, nextState) {
     const allowedNext = TRANSITION_MATRIX[currentState] || [];
     return allowedNext.includes(nextState);
   }
 
-  /**
-   * Validates if actor is authorized for transition
-   */
   isActorAuthorized(actorType, currentState, nextState) {
     const actorConfig = ACTOR_PERMISSIONS[actorType];
     if (!actorConfig) return false;
     return actorConfig.allowedTransitions.some(t => t.from === currentState && t.to === nextState);
   }
 
-  /**
-   * Evaluates geofence proximity between driver location and target location
-   */
   async verifyGeofence(driverId, targetLat, targetLng, radiusMeters) {
     const driverState = await driverLocationService.getDriverState(driverId);
     if (!driverState || !driverState.lat || !driverState.lng) {
       return { verified: false, reason: 'Driver location telemetry unavailable' };
     }
-
     const distanceKm = calcHaversine(driverState.lat, driverState.lng, targetLat, targetLng);
     const distanceMeters = Math.round(distanceKm * 1000);
-
     if (distanceMeters > radiusMeters) {
       return {
         verified: false,
@@ -168,165 +146,105 @@ class DeliveryStateMachine {
         distanceMeters
       };
     }
-
     return { verified: true, distanceMeters };
   }
 
-  /**
-   * Core State Transition Method
-   */
   async transition(tripId, nextState, actor, options = {}) {
     const { idempotencyKey = null, reason = null, otp = null, expectedVersion = null, metadata = {}, proof = null } = options;
     const actorType = (actor && actor.type) ? actor.type : 'SYSTEM';
     const actorId = (actor && actor.id) ? actor.id : 'SYSTEM';
 
-    // 1. Idempotency Check
     if (idempotencyKey && this.idempotencyCache.has(idempotencyKey)) {
       console.log(`[DeliveryStateMachine] Idempotent request served for key: ${idempotencyKey}`);
       return this.idempotencyCache.get(idempotencyKey);
     }
 
     return await this.withTripLock(tripId, async () => {
-      // 2. Fetch Trip Record from Database
       const trip = db.getTripById(tripId);
       if (!trip) {
-        return {
-          success: false,
-          error: { code: 'ORDER_NOT_FOUND', message: `Trip ${tripId} not found` }
-        };
+        return { success: false, error: { code: 'ORDER_NOT_FOUND', message: `Trip ${tripId} not found` } };
       }
 
       const currentState = trip.status || DELIVERY_STATES.CREATED;
-
-      // 3. Duplicate Transition Check (Idempotent success if already in nextState)
       if (currentState === nextState) {
         const dupResult = { success: true, trip, duplicate: true };
         if (idempotencyKey) this.cacheIdempotency(idempotencyKey, dupResult);
         return dupResult;
       }
 
-      // 4. Terminal State Protection
-      if (currentState === DELIVERY_STATES.DELIVERED || currentState === DELIVERY_STATES.CANCELLED || currentState === DELIVERY_STATES.FAILED) {
-        return {
-          success: false,
-          error: { code: 'ORDER_ALREADY_TERMINAL', message: `Order ${tripId} is already in terminal state: ${currentState}` }
-        };
+      if ([DELIVERY_STATES.DELIVERED, DELIVERY_STATES.CANCELLED, DELIVERY_STATES.FAILED].includes(currentState)) {
+        return { success: false, error: { code: 'ORDER_ALREADY_TERMINAL', message: `Order ${tripId} is already in terminal state: ${currentState}` } };
       }
 
-      // 5. State Transition Validity
       if (!this.canTransition(currentState, nextState)) {
-        return {
-          success: false,
-          error: { code: 'INVALID_STATE_TRANSITION', message: `Cannot transition order from ${currentState} to ${nextState}` }
-        };
+        return { success: false, error: { code: 'INVALID_STATE_TRANSITION', message: `Cannot transition order from ${currentState} to ${nextState}` } };
       }
 
-      // 6. Actor Authorization Validation
       if (!this.isActorAuthorized(actorType, currentState, nextState)) {
-        return {
-          success: false,
-          error: { code: 'UNAUTHORIZED_TRANSITION', message: `Actor ${actorType} is not authorized for transition ${currentState} -> ${nextState}` }
-        };
+        return { success: false, error: { code: 'UNAUTHORIZED_TRANSITION', message: `Actor ${actorType} is not authorized for transition ${currentState} -> ${nextState}` } };
       }
 
-      // 7. Optimistic Concurrency Control (Version Check)
       const currentVersion = trip.version || 1;
       if (expectedVersion !== null && expectedVersion !== currentVersion) {
-        return {
-          success: false,
-          error: { code: 'CONCURRENCY_CONFLICT', message: `Version conflict: Expected version ${expectedVersion}, found ${currentVersion}` }
-        };
+        return { success: false, error: { code: 'CONCURRENCY_CONFLICT', message: `Version conflict: Expected version ${expectedVersion}, found ${currentVersion}` } };
       }
 
-      // 8. Specific State Evidence & Geofence Validations
-      
-      // A. DRIVER_ARRIVING -> DRIVER_AT_PICKUP (Geofence Check)
       if (nextState === DELIVERY_STATES.DRIVER_AT_PICKUP && actorType === 'DRIVER') {
         const driverId = trip.driver ? trip.driver.id : actorId;
         const gf = await this.verifyGeofence(driverId, trip.pickupLat, trip.pickupLng, this.PICKUP_GEOFENCE_RADIUS_METERS);
-        if (!gf.verified) {
-          return {
-            success: false,
-            error: { code: 'GEOFENCE_VALIDATION_FAILED', message: gf.reason }
-          };
-        }
+        if (!gf.verified) return { success: false, error: { code: 'GEOFENCE_VALIDATION_FAILED', message: gf.reason } };
       }
 
-      // B. DRIVER_AT_PICKUP -> PICKUP_CONFIRMED (OTP Verification)
       if (nextState === DELIVERY_STATES.PICKUP_CONFIRMED) {
-        // The pickup code is separate from the delivery code. A missing pickup code refuses the step.
         if (!otp || !trip.pickupOtp || String(otp).trim() !== String(trip.pickupOtp).trim()) {
-          return {
-            success: false,
-            error: { code: 'OTP_VERIFICATION_FAILED', message: 'Invalid Goods Pickup Verification OTP' }
-          };
+          return { success: false, error: { code: 'OTP_VERIFICATION_FAILED', message: 'Invalid Goods Pickup Verification OTP' } };
         }
       }
 
-      // C. IN_TRANSIT -> DRIVER_AT_DROPOFF (Geofence Check)
       if (nextState === DELIVERY_STATES.DRIVER_AT_DROPOFF && actorType === 'DRIVER') {
         const driverId = trip.driver ? trip.driver.id : actorId;
         const gf = await this.verifyGeofence(driverId, trip.dropLat, trip.dropLng, this.DROPOFF_GEOFENCE_RADIUS_METERS);
-        if (!gf.verified) {
-          return {
-            success: false,
-            error: { code: 'GEOFENCE_VALIDATION_FAILED', message: gf.reason }
-          };
-        }
+        if (!gf.verified) return { success: false, error: { code: 'GEOFENCE_VALIDATION_FAILED', message: gf.reason } };
       }
 
-      // D. DRIVER_AT_DROPOFF -> DELIVERED (OTP Verification)
       if (nextState === DELIVERY_STATES.DELIVERED) {
         if (!otp || String(otp).trim() !== String(trip.deliveryOtp).trim()) {
-          return {
-            success: false,
-            error: { code: 'OTP_VERIFICATION_FAILED', message: 'Invalid Delivery OTP' }
-          };
+          return { success: false, error: { code: 'OTP_VERIFICATION_FAILED', message: 'Invalid Delivery OTP' } };
         }
       }
 
-      // 9. Atomic Persistence Update
       const newVersion = currentVersion + 1;
+      const updatedAt = new Date().toISOString();
       trip.status = nextState;
       trip.version = newVersion;
-      trip.updatedAt = new Date().toISOString();
+      trip.updatedAt = updatedAt;
 
       if (nextState === DELIVERY_STATES.DELIVERED) {
-        trip.completedAt = new Date().toISOString();
-        // Proof is stored only here, after the delivery OTP has passed, so it can never attach to an unverified hand-over.
+        trip.completedAt = updatedAt;
         if (proof) {
           trip.proofOfDelivery = {
             podPhotoUrl: proof.podPhotoUrl || null,
             receiverName: typeof proof.receiverName === 'string' ? proof.receiverName.trim().slice(0, 120) || null : null,
-            capturedAt: new Date().toISOString(),
+            capturedAt: updatedAt,
             capturedBy: actorId
           };
         }
       } else if (nextState === DELIVERY_STATES.CANCELLED) {
-        trip.cancelledAt = new Date().toISOString();
+        trip.cancelledAt = updatedAt;
         trip.cancelReason = reason || 'User requested cancellation';
       }
 
-      db.updateTripStatus(tripId, nextState);
-      
-      // Update extended trip fields in DB store
       const databaseStore = db.getDb();
       const dbTrip = databaseStore.trips.find(t => t.id === tripId);
-      if (dbTrip) {
-        dbTrip.version = newVersion;
-        dbTrip.updatedAt = trip.updatedAt;
-        if (trip.completedAt) dbTrip.completedAt = trip.completedAt;
-        if (trip.proofOfDelivery) dbTrip.proofOfDelivery = trip.proofOfDelivery;
-        if (trip.cancelledAt) {
-          dbTrip.cancelledAt = trip.cancelledAt;
-          dbTrip.cancelReason = trip.cancelReason;
-        }
-        db.saveDb(databaseStore);
+      if (!dbTrip) {
+        return { success: false, error: { code: 'TRIP_NOT_FOUND', message: `Trip ${tripId} disappeared during transition` } };
       }
 
-      // 10. Audit Log Record Creation
+      // Apply the complete logical transition to the single in-memory snapshot before one persistence write.
+      Object.assign(dbTrip, trip);
+
       const auditLogRecord = {
-        id: `AUDIT_${Date.now()}_${Math.floor(Math.random()*1000)}`,
+        id: `AUDIT_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         orderId: tripId,
         fromState: currentState,
         toState: nextState,
@@ -336,16 +254,37 @@ class DeliveryStateMachine {
         idempotencyKey,
         reason: reason || null,
         timestamp: Date.now(),
-        isoTime: new Date().toISOString(),
+        isoTime: updatedAt,
         metadata
       };
 
       if (!databaseStore.delivery_audit_logs) databaseStore.delivery_audit_logs = [];
       databaseStore.delivery_audit_logs.push(auditLogRecord);
+
+      // One logical transition = one snapshot persistence request. In PostgreSQL mode this is
+      // committed asynchronously; waitForCommit below makes the command durable before success.
       db.saveDb(databaseStore);
 
-      // 11. Real-Time WebSocket Event Emission
-      websocketService.broadcastToRoom(`trip:${tripId}`, 'delivery:state_changed', {
+      try {
+        await db.waitForCommit();
+      } catch (error) {
+        logger.error('delivery_transition_persistence_failed', `Order ${tripId} transition was not durably committed`, {
+          orderId: tripId,
+          fromState: currentState,
+          toState: nextState,
+          version: newVersion,
+          error: error.message
+        });
+        return {
+          success: false,
+          error: {
+            code: 'PERSISTENCE_COMMIT_FAILED',
+            message: 'Delivery state transition could not be durably committed. Retry the same command.'
+          }
+        };
+      }
+
+      await websocketService.broadcastToRoom(`trip:${tripId}`, 'delivery:state_changed', {
         orderId: tripId,
         fromState: currentState,
         toState: nextState,
@@ -355,7 +294,7 @@ class DeliveryStateMachine {
       });
 
       const city = (trip.city || 'hyderabad').toLowerCase();
-      websocketService.broadcastToRoom(`fleet:${city}`, 'delivery:state_changed', {
+      await websocketService.broadcastToRoom(`fleet:${city}`, 'delivery:state_changed', {
         orderId: tripId,
         toState: nextState,
         driverId: trip.driver ? trip.driver.id : null
@@ -367,18 +306,17 @@ class DeliveryStateMachine {
       if (nextState === DELIVERY_STATES.CANCELLED) metricsService.increment('orders_cancelled_total');
       if (nextState === DELIVERY_STATES.FAILED) metricsService.increment('orders_failed_total');
 
-      logger.info('delivery_state_transition', `Order ${tripId} transitioned ${currentState} -> ${nextState}`, { orderId: tripId, fromState: currentState, toState: nextState, actorType, version: newVersion, service: 'state_machine' });
+      logger.info('delivery_state_transition', `Order ${tripId} transitioned ${currentState} -> ${nextState}`, {
+        orderId: tripId,
+        fromState: currentState,
+        toState: nextState,
+        actorType,
+        version: newVersion,
+        service: 'state_machine'
+      });
 
-      const finalResult = {
-        success: true,
-        trip: dbTrip || trip,
-        auditLog: auditLogRecord
-      };
-
-      if (idempotencyKey) {
-        this.cacheIdempotency(idempotencyKey, finalResult);
-      }
-
+      const finalResult = { success: true, trip: dbTrip, auditLog: auditLogRecord };
+      if (idempotencyKey) this.cacheIdempotency(idempotencyKey, finalResult);
       return finalResult;
     });
   }
@@ -391,9 +329,6 @@ class DeliveryStateMachine {
     }
   }
 
-  /**
-   * Retrieves full audit logs for a trip
-   */
   getAuditLogs(tripId) {
     const databaseStore = db.getDb();
     const logs = databaseStore.delivery_audit_logs || [];
