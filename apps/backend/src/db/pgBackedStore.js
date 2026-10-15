@@ -82,14 +82,28 @@ class PgBackedStore {
           });
         }
       }
-      for (const key of previous.keys()) {
-        if (!current.has(key)) changes.push({ collection: name, key, remove: true });
+      for (const [key, before] of previous.entries()) {
+        if (!current.has(key)) {
+          changes.push({
+            collection: name,
+            key,
+            remove: true,
+            expectedVersion: before.version,
+          });
+        }
       }
       seen.set(name, current);
     }
-    for (const name of this.known.keys()) {
+    for (const [name, previous] of this.known.entries()) {
       if (!seen.has(name)) {
-        for (const key of this.known.get(name).keys()) changes.push({ collection: name, key, remove: true });
+        for (const [key, before] of previous.entries()) {
+          changes.push({
+            collection: name,
+            key,
+            remove: true,
+            expectedVersion: before.version,
+          });
+        }
       }
     }
     return { changes, seen };
