@@ -45,7 +45,6 @@ class IdempotencyService {
         this.REDIS_RESPONSE_TTL_SEC
       );
     } catch (err) {
-      // PostgreSQL remains authoritative; a Redis replay-cache failure must not fail the command.
       logger.warn('idempotency_shared_cache_write_failed', err.message, { idempotencyKey });
     }
   }
@@ -85,14 +84,12 @@ class IdempotencyService {
       logger.warn('idempotency_durable_lookup_failed', err.message, { idempotencyKey });
     }
 
-    // Only one backend instance may cross the lookup -> business mutation boundary.
     const lock = await redisLockManager.acquireIdempotencyLock(idempotencyKey);
     if (lock.success) {
       this.pendingLocks.set(idempotencyKey, lock);
       return { found: false };
     }
 
-    // Another instance owns the key. Give it a short window to finish and persist the response.
     const deadline = Date.now() + this.LOCK_WAIT_MS;
     while (Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, this.LOCK_POLL_MS));
@@ -128,6 +125,22 @@ class IdempotencyService {
       body: { success: false, error: { code: 'IDEMPOTENCY_IN_PROGRESS', message: 'An identical request is already being processed. Retry with the same idempotency key.' } },
       fromCache: 'CONCURRENT_LOCK'
     };
+  }
+
+  /**
+   * Abort an in-flight idempotent command before a durable response exists.
+   * Route handlers must call this when validation/business work exits without
+   * saveResponse(); otherwise the distributed lease remains occupied until TTL expiry.
+   */
+  async abortResponse(idempotencyKey) {
+    if (!idempotencyKey || typeof idempotencyKey !== 'string') return false;
+    const lock = this.pendingLocks.get(idempotencyKey);
+    if (!lock) return false;
+    try {
+      return await redisLockManager.releaseIdempotencyLock(lock);
+    } finally {
+      this.pendingLocks.delete(idempotencyKey);
+    }
   }
 
   async saveResponse(idempotencyKey, orderId, statusCode, body) {
