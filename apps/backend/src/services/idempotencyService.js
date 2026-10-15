@@ -20,6 +20,8 @@ class IdempotencyService {
     this.LOCK_POLL_MS = 100;
     this.REDIS_RESPONSE_PREFIX = 'command:idempotency-response:';
     this.REDIS_RESPONSE_TTL_SEC = 86400;
+    this.COMMAND_LOCK_TTL_MS = 15000;
+    this.LOCK_REFRESH_INTERVAL_MS = 5000;
   }
 
   _redisResponseKey(idempotencyKey) {
@@ -55,6 +57,39 @@ class IdempotencyService {
     return records.find(r => r.idempotencyKey === idempotencyKey) || null;
   }
 
+  _trackPendingLock(idempotencyKey, lock) {
+    const existing = this.pendingLocks.get(idempotencyKey);
+    if (existing && existing.timer) clearInterval(existing.timer);
+
+    const entry = { lock, timer: null };
+    entry.timer = setInterval(async () => {
+      try {
+        const refreshed = await redisLockManager.refreshIdempotencyLock(lock, this.COMMAND_LOCK_TTL_MS);
+        if (!refreshed.success) {
+          clearInterval(entry.timer);
+          entry.timer = null;
+          metricsService.increment('idempotency_lock_refresh_failed_total');
+          logger.warn('idempotency_lock_refresh_failed', refreshed.error || 'lock ownership changed', { idempotencyKey });
+        } else {
+          metricsService.increment('idempotency_lock_refresh_total');
+        }
+      } catch (err) {
+        metricsService.increment('idempotency_lock_refresh_failed_total');
+        logger.warn('idempotency_lock_refresh_error', err.message, { idempotencyKey });
+      }
+    }, this.LOCK_REFRESH_INTERVAL_MS);
+    entry.timer.unref?.();
+    this.pendingLocks.set(idempotencyKey, entry);
+  }
+
+  _takePendingLock(idempotencyKey) {
+    const entry = this.pendingLocks.get(idempotencyKey);
+    if (!entry) return null;
+    if (entry.timer) clearInterval(entry.timer);
+    this.pendingLocks.delete(idempotencyKey);
+    return entry.lock;
+  }
+
   async findExistingResponse(idempotencyKey) {
     if (!idempotencyKey || typeof idempotencyKey !== 'string') return { found: false };
 
@@ -84,9 +119,9 @@ class IdempotencyService {
       logger.warn('idempotency_durable_lookup_failed', err.message, { idempotencyKey });
     }
 
-    const lock = await redisLockManager.acquireIdempotencyLock(idempotencyKey);
+    const lock = await redisLockManager.acquireIdempotencyLock(idempotencyKey, this.COMMAND_LOCK_TTL_MS);
     if (lock.success) {
-      this.pendingLocks.set(idempotencyKey, lock);
+      this._trackPendingLock(idempotencyKey, lock);
       return { found: false };
     }
 
@@ -111,9 +146,9 @@ class IdempotencyService {
         }
       } catch (_) {}
 
-      const retryLock = await redisLockManager.acquireIdempotencyLock(idempotencyKey);
+      const retryLock = await redisLockManager.acquireIdempotencyLock(idempotencyKey, this.COMMAND_LOCK_TTL_MS);
       if (retryLock.success) {
-        this.pendingLocks.set(idempotencyKey, retryLock);
+        this._trackPendingLock(idempotencyKey, retryLock);
         return { found: false };
       }
     }
@@ -134,12 +169,13 @@ class IdempotencyService {
    */
   async abortResponse(idempotencyKey) {
     if (!idempotencyKey || typeof idempotencyKey !== 'string') return false;
-    const lock = this.pendingLocks.get(idempotencyKey);
+    const lock = this._takePendingLock(idempotencyKey);
     if (!lock) return false;
     try {
       return await redisLockManager.releaseIdempotencyLock(lock);
-    } finally {
-      this.pendingLocks.delete(idempotencyKey);
+    } catch (err) {
+      logger.warn('idempotency_lock_release_failed', err.message, { idempotencyKey });
+      return false;
     }
   }
 
@@ -163,10 +199,9 @@ class IdempotencyService {
       logger.error('idempotency_durable_save_failed', err.message, { idempotencyKey });
       throw err;
     } finally {
-      const lock = this.pendingLocks.get(idempotencyKey);
+      const lock = this._takePendingLock(idempotencyKey);
       if (lock) {
         try { await redisLockManager.releaseIdempotencyLock(lock); } catch (_) {}
-        this.pendingLocks.delete(idempotencyKey);
       }
     }
 
@@ -182,6 +217,9 @@ class IdempotencyService {
   }
 
   reset() {
+    for (const entry of this.pendingLocks.values()) {
+      if (entry.timer) clearInterval(entry.timer);
+    }
     this.memoryCache.clear();
     this.pendingLocks.clear();
     try {
