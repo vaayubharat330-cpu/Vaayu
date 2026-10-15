@@ -45,7 +45,7 @@ const ACTOR_PERMISSIONS = {
     { from: DELIVERY_STATES.PICKUP_CONFIRMED, to: DELIVERY_STATES.IN_TRANSIT },
     { from: DELIVERY_STATES.IN_TRANSIT, to: DELIVERY_STATES.DRIVER_AT_DROPOFF },
     { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.DELIVERED },
-    { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.FAILED }
+    { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.FAILED
   ]},
   SYSTEM: { allowedTransitions: [
     { from: DELIVERY_STATES.CREATED, to: DELIVERY_STATES.SEARCHING_DRIVER },
@@ -64,7 +64,7 @@ const ACTOR_PERMISSIONS = {
     { from: DELIVERY_STATES.PICKUP_CONFIRMED, to: DELIVERY_STATES.CANCELLED },
     { from: DELIVERY_STATES.IN_TRANSIT, to: DELIVERY_STATES.CANCELLED },
     { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.CANCELLED },
-    { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.FAILED }
+    { from: DELIVERY_STATES.DRIVER_AT_DROPOFF, to: DELIVERY_STATES.FAILED
   ]}
 };
 
@@ -148,8 +148,6 @@ class DeliveryStateMachine {
       trip.version = newVersion;
       trip.updatedAt = updatedAt;
 
-      // Assignment metadata is part of the same logical command as DRIVER_ASSIGNED.
-      // This guarantees the authoritative event cannot precede the assigned-driver projection.
       if (nextState === DELIVERY_STATES.DRIVER_ASSIGNED && metadata.assignedDriver) {
         const d = metadata.assignedDriver;
         trip.driver = {
@@ -161,6 +159,10 @@ class DeliveryStateMachine {
           currentLat: d.lat ?? null,
           currentLng: d.lng ?? null
         };
+        // Persist the exact Redis reservation owner with the trip so a different
+        // backend instance can release the correct lock when the driver accepts.
+        trip.driverReservationId = metadata.reservationId || null;
+        trip.offerExpiresAt = metadata.offerExpiresAt || null;
       }
 
       if (nextState === DELIVERY_STATES.DELIVERED) {
@@ -204,7 +206,9 @@ class DeliveryStateMachine {
       if (nextState === DELIVERY_STATES.FAILED) metricsService.increment('orders_failed_total');
       logger.info('delivery_state_transition', `Order ${tripId} transitioned ${currentState} -> ${nextState}`, { orderId: tripId, fromState: currentState, toState: nextState, actorType, version: newVersion, service: 'state_machine' });
 
-      const finalResult = { success: true, trip: dbTrip, auditLog: auditLogRecord };
+      const responseTrip = { ...dbTrip };
+      delete responseTrip.deliveryOtp;
+      const finalResult = { success: true, trip: responseTrip, auditLog: auditLogRecord };
       if (idempotencyKey) this.cacheIdempotency(idempotencyKey, finalResult);
       return finalResult;
     });
