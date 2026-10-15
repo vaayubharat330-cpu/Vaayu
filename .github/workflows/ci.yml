@@ -64,6 +64,7 @@ jobs:
           npm run test:postgres-transition
           npm run test:payment-routing
           npm run test:payment-status
+          npm run test:idempotency
           npm run test:cluster
           npm run test:ledger-pg
       - name: Dependency audit (production, fails on high or critical)
