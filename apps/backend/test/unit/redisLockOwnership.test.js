@@ -5,17 +5,21 @@ const assert = require('node:assert/strict');
 const { RedisLockManager } = require('../../src/services/redisLockManager');
 const { RedisClient, sharedMemoryRedisEngine } = require('../../src/services/redisClient');
 
+function uniqueLockName(prefix) {
+  return `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 test('Redis lock ownership: stale owner cannot release a newer lock', async () => {
-  sharedMemoryRedisEngine.clear();
   const client = new RedisClient();
   const locks = new RedisLockManager(client);
+  const lockName = uniqueLockName('trip-lock-test');
 
-  const first = await locks.acquireTripLock('trip-lock-test', 1000);
+  const first = await locks.acquireTripLock(lockName, 1000);
   assert.equal(first.success, true);
 
   const key = first.key;
   await client.del(key);
-  const second = await locks.acquireTripLock('trip-lock-test', 1000);
+  const second = await locks.acquireTripLock(lockName, 1000);
   assert.equal(second.success, true);
   assert.notEqual(first.token, second.token);
 
@@ -29,11 +33,11 @@ test('Redis lock ownership: stale owner cannot release a newer lock', async () =
 });
 
 test('Redis lock ownership: refresh rejects a different reservation and preserves owner', async () => {
-  sharedMemoryRedisEngine.clear();
   const client = new RedisClient();
   const locks = new RedisLockManager(client);
+  const lockName = uniqueLockName('refresh');
 
-  const owner = await locks.acquireScopedLock('test-lock:', 'refresh', 1000);
+  const owner = await locks.acquireScopedLock('test-lock:', lockName, 1000);
   assert.equal(owner.success, true);
 
   const rejected = await locks._compareAndSet(owner.key, 'wrong-owner', 'replacement', 5000);
