@@ -132,7 +132,21 @@ class PgRecordStore {
             if (!updated.rowCount) throw new VersionConflictError(change.collection, change.key);
           }
         } else if (change.remove) {
-          await client.query(`DELETE FROM ${TABLE} WHERE collection = $1 AND record_key = $2`, [change.collection, change.key]);
+          // Deletes are optimistic too. Without the version predicate, a stale snapshot could
+          // delete a record that another writer updated after this process last loaded it.
+          if (change.expectedVersion === undefined) {
+            const deleted = await client.query(
+              `DELETE FROM ${TABLE} WHERE collection = $1 AND record_key = $2`,
+              [change.collection, change.key]
+            );
+            if (!deleted.rowCount) throw new VersionConflictError(change.collection, change.key);
+          } else {
+            const deleted = await client.query(
+              `DELETE FROM ${TABLE} WHERE collection = $1 AND record_key = $2 AND version = $3`,
+              [change.collection, change.key, change.expectedVersion]
+            );
+            if (!deleted.rowCount) throw new VersionConflictError(change.collection, change.key);
+          }
         }
       }
       await client.query('COMMIT');
