@@ -61,6 +61,7 @@ jobs:
           npm run test:realtime
           npm run test:telemetry-replay
           npm run test:redis-lock
+          npm run test:postgres-transition
           npm run test:cluster
           npm run test:ledger-pg
       - name: Dependency audit (production, fails on high or critical)
