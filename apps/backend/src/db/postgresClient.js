@@ -46,6 +46,34 @@ class PostgresPool {
     }
   }
 
+  /**
+   * Run several statements on one leased PostgreSQL connection.
+   * This is mandatory for BEGIN/COMMIT transaction scopes; Pool.query()
+   * may otherwise dispatch successive statements to different connections.
+   */
+  async withTransaction(work) {
+    const client = await this.pool.connect();
+    const start = Date.now();
+    try {
+      await client.query('BEGIN');
+      const result = await work(client);
+      await client.query('COMMIT');
+      metricsService.recordLatency('postgres_transaction_latency', Date.now() - start);
+      return result;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        metricsService.increment('postgres_transaction_rollback_errors_total');
+        console.error('[postgres] transaction rollback failed:', rollbackErr.message);
+      }
+      metricsService.increment('postgres_transaction_failures_total');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async connect() {
     return await this.pool.connect();
   }
