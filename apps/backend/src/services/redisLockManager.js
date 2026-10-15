@@ -49,18 +49,20 @@ class RedisLockManager {
   async releaseDriverLock(driverId, ownerIdOrReservationId) {
     if (!driverId || !ownerIdOrReservationId) return false;
     const key = `${this.LOCK_PREFIX}${driverId}`;
-    const existingRaw = await this.redis.get(key);
-    if (!existingRaw) return true;
-    try {
-      const payload = JSON.parse(existingRaw);
-      if (payload.reservationId === ownerIdOrReservationId || payload.orderId === ownerIdOrReservationId) {
-        await this.redis.del(key);
-        metricsService.increment('redis_lock_release_total');
-        logger.info('driver_lock_released', `Driver lock released for ${driverId}`, { driverId, reservationId: payload.reservationId, service: 'dispatch' });
-        return true;
+    const expected = ownerIdOrReservationId;
+    const result = await this._releaseOwnedKey(key, (raw) => {
+      try {
+        const payload = JSON.parse(raw);
+        return payload.reservationId === expected || payload.orderId === expected;
+      } catch (_) {
+        return false;
       }
-    } catch (_) {}
-    return false;
+    });
+    if (result) {
+      metricsService.increment('redis_lock_release_total');
+      logger.info('driver_lock_released', `Driver lock released for ${driverId}`, { driverId, ownerIdOrReservationId, service: 'dispatch' });
+    }
+    return result;
   }
 
   async getDriverLock(driverId) {
@@ -84,6 +86,38 @@ class RedisLockManager {
     return { success: true, lock };
   }
 
+  /**
+   * Release only if the current Redis value is still owned by this caller.
+   * Production Redis uses an atomic Lua compare-and-delete, preventing an expired lock
+   * from being deleted after another worker has already acquired the same key.
+   * The in-memory test engine falls back to GET/DEL because its operations execute on one
+   * Node event loop and it has no EVAL primitive.
+   */
+  async _releaseOwnedKey(key, ownsValue) {
+    const redisConnection = this.redis && this.redis.redis;
+    if (redisConnection && typeof redisConnection.eval === 'function') {
+      const expectedToken = await this.redis.get(key);
+      if (!expectedToken) return true;
+
+      // For JSON driver locks the predicate is based on decoded fields; for command locks
+      // it is an opaque token. The value is supplied to Lua and compared atomically.
+      const isOwned = ownsValue(expectedToken);
+      if (!isOwned) return false;
+      const deleted = await redisConnection.eval(
+        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+        1,
+        key,
+        expectedToken
+      );
+      return Number(deleted) === 1;
+    }
+
+    const current = await this.redis.get(key);
+    if (!current || !ownsValue(current)) return Boolean(!current);
+    await this.redis.del(key);
+    return true;
+  }
+
   async acquireScopedLock(prefix, scopeId, ttlMs = this.COMMAND_LOCK_TTL_MS) {
     if (!scopeId) throw new Error('scopeId is required');
     const key = `${prefix}${scopeId}`;
@@ -95,10 +129,7 @@ class RedisLockManager {
 
   async releaseScopedLock(lock) {
     if (!lock || !lock.key || !lock.token) return false;
-    const current = await this.redis.get(lock.key);
-    if (current !== lock.token) return false;
-    await this.redis.del(lock.key);
-    return true;
+    return this._releaseOwnedKey(lock.key, (current) => current === lock.token);
   }
 
   async acquireTripLock(tripId, ttlMs = this.COMMAND_LOCK_TTL_MS) {
