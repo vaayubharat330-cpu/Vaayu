@@ -52,7 +52,9 @@ function createOpsRoutes({ db, redisRateLimiter, websocketService, routeRegistry
       if (!websocketService || !websocketService.pubSub) pubsubStatus = 'degraded';
     } catch (_) { pubsubStatus = 'unavailable'; }
 
-    const isReady = process.env.NODE_ENV !== 'production';
+    const isDbReady = persistenceStatus === 'postgres' ? Boolean(process.env.DATABASE_URL) : true;
+    const isRedisReady = redisStatus === 'healthy' || (process.env.NODE_ENV !== 'production' && redisStatus === 'in-memory-development-only');
+    const isReady = isDbReady && isRedisReady;
     const statusCode = isReady ? 200 : 503;
 
     res.writeHead(statusCode, { 'Content-Type': 'application/json' });

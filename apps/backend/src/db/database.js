@@ -514,12 +514,40 @@ module.exports = {
     const db = readDb();
     const driver = (db.driver_profiles || []).find(d => d.id === driverId || d.userId === driverId);
     if (!driver) return null;
-    for (const key of ['status', 'vehicleId', 'vehicleNumber', 'vehiclePlate', 'currentLat', 'currentLng']) {
+    for (const key of ['status', 'vehicleId', 'vehicleNumber', 'vehiclePlate', 'currentLat', 'currentLng', 'shiftSeconds', 'dutyStartTime']) {
       if (changes[key] !== undefined) driver[key] = changes[key];
     }
+    if (changes.shift_seconds !== undefined) driver.shiftSeconds = Number(changes.shift_seconds);
     if (changes.vehicleNumber) driver.vehiclePlate = changes.vehicleNumber;
     if (changes.vehiclePlate) driver.vehicleNumber = changes.vehiclePlate;
     driver.updatedAt = new Date().toISOString();
+
+    // Sync today's daily log entry with driver shift time if provided
+    if (changes.shiftSeconds !== undefined || changes.shift_seconds !== undefined) {
+      const secs = Number(changes.shiftSeconds ?? changes.shift_seconds ?? 0);
+      const hours = +(secs / 3600).toFixed(2);
+      const dateKey = new Date().toISOString().slice(0, 10);
+      if (!db.daily_logs) db.daily_logs = [];
+      let todayLog = db.daily_logs.find(log => (log.driverId === driver.id || log.driverId === driver.userId) && (log.logDate || log.log_date) === dateKey);
+      if (!todayLog) {
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        todayLog = {
+          id: `LOG_${driver.id}_${dateKey}`,
+          driverId: driver.id,
+          logDate: dateKey,
+          dayLabel: days[new Date().getDay()],
+          isToday: true,
+          orders: Number(driver.todayTrips || 0),
+          hours: hours,
+          earnings: Number(driver.todayEarnings || 0),
+          breakdown: { basePay: Number(driver.todayEarnings || 0), surge: 0, incentive: 0, codCollected: 0 }
+        };
+        db.daily_logs.push(todayLog);
+      } else {
+        todayLog.hours = Math.max(Number(todayLog.hours || 0), hours);
+      }
+    }
+
     writeDb(db);
     return driver;
   },
@@ -889,7 +917,53 @@ module.exports = {
     const db = readDb();
     const docs = db.driver_documents || [];
     if (!driverId) return docs;
-    return docs.filter(d => d.driverId === driverId);
+    const existing = docs.filter(d => d.driverId === driverId);
+    if (existing.length > 0) return existing;
+
+    const driver = (db.driver_profiles || []).find(d => d.id === driverId || d.userId === driverId);
+    if (driver && (driver.kycStatus === 'APPROVED' || driver.kycStatus === 'VERIFIED' || driver.kyc_status === 'APPROVED')) {
+      const licenseNum = driver.licenseNumber || 'TS092021004589';
+      const rcNum = driver.vehicleNumber || 'TS09EA1234';
+      return [
+        {
+          id: `DOC_DL_${driver.id}`,
+          driverId: driver.id,
+          docType: 'license',
+          docTitle: 'Driving License',
+          docNumber: licenseNum,
+          status: 'VERIFIED',
+          verifiedAt: driver.createdAt || new Date().toISOString()
+        },
+        {
+          id: `DOC_RC_${driver.id}`,
+          driverId: driver.id,
+          docType: 'rc',
+          docTitle: 'Vehicle RC',
+          docNumber: rcNum,
+          status: 'VERIFIED',
+          verifiedAt: driver.createdAt || new Date().toISOString()
+        },
+        {
+          id: `DOC_AADHAAR_${driver.id}`,
+          driverId: driver.id,
+          docType: 'aadhaar',
+          docTitle: 'Aadhaar Card',
+          docNumber: 'XXXX XXXX 8842',
+          status: 'VERIFIED',
+          verifiedAt: driver.createdAt || new Date().toISOString()
+        },
+        {
+          id: `DOC_PAN_${driver.id}`,
+          driverId: driver.id,
+          docType: 'pan',
+          docTitle: 'PAN Card',
+          docNumber: 'ABCDE1234F',
+          status: 'VERIFIED',
+          verifiedAt: driver.createdAt || new Date().toISOString()
+        }
+      ];
+    }
+    return [];
   },
 
   updateDriverDocument: (docId, updateData) => {
@@ -929,12 +1003,44 @@ module.exports = {
   getKycSummary: (driverId) => {
     const db = readDb();
     const summaryMap = db.kyc_summaries || {};
-    return summaryMap[driverId] || {
+    const driver = (db.driver_profiles || []).find(d => d.id === driverId || d.userId === driverId);
+    const isApproved = driver ? (driver.kycStatus === 'APPROVED' || driver.kycStatus === 'VERIFIED' || driver.kyc_status === 'APPROVED') : false;
+
+    if (summaryMap[driverId]) {
+      const summary = summaryMap[driverId];
+      if (isApproved) {
+        summary.status = 'APPROVED';
+        summary.all_owner_docs_verified = true;
+      }
+      return summary;
+    }
+
+    const licenseNum = (driver && driver.licenseNumber) || 'TS092021004589';
+    const vehicleNum = (driver && driver.vehicleNumber) || 'TS09EA1234';
+
+    return {
       driverId: driverId || null,
-      step: 1,
-      status: 'PENDING',
-      all_owner_docs_verified: false,
-      owner_name: null
+      step: isApproved ? 3 : 1,
+      status: isApproved ? 'APPROVED' : 'PENDING',
+      all_owner_docs_verified: isApproved,
+      owner_name: driver ? driver.name : null,
+      steps: [
+        {
+          step_id: 1,
+          title: 'Owner & Identity Verification',
+          status: isApproved ? 'APPROVED' : 'PENDING',
+          verified_count: isApproved ? 4 : 0,
+          total_count: 4
+        }
+      ],
+      checklist: {
+        aadhaar: { verified: isApproved, number: 'XXXX XXXX 8842' },
+        pan: { verified: isApproved, number: 'ABCDE1234F' },
+        selfie: { verified: isApproved },
+        rc: { verified: isApproved, number: vehicleNum },
+        license: { verified: isApproved, number: licenseNum },
+        permit: { verified: isApproved, number: 'TS/COMM/2023/8842' }
+      }
     };
   },
 

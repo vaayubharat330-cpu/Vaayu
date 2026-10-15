@@ -1,20 +1,136 @@
-# Secrets. Never commit real values.
+# ==============================================================================
+# VAAYU UNIFIED LOGISTICS & MOBILITY OPERATING SYSTEM
+# Git Ignore Configuration (Production & Development Cleanliness)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. SECRETS & ENVIRONMENT CONFIGURATIONS (Fail-Closed Policy)
+# ------------------------------------------------------------------------------
+# Never commit real credentials, tokens, or environment files.
 .env
 .env.*
 !.env.example
 !.env.compose.example
+!.env.production.example
+
 apps/backend/.env
 apps/backend/.env.*
 !apps/backend/.env.example
 !apps/backend/.env.production.example
-apps/backend/secrets/
 
-# Dependencies and local tools
+apps/mobile/.env
+apps/mobile/.env.*
+!apps/mobile/.env.example
+
+apps/backend/secrets/
+**/*.key
+**/*.pem
+**/*.keystore
+**/*.jks
+**/key.properties
+
+# ------------------------------------------------------------------------------
+# 2. NODE.JS & JAVASCRIPT ECOSYSTEM
+# ------------------------------------------------------------------------------
 node_modules/
 apps/backend/node_modules/
 apps/backend/.local-tools/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+package-lock.json.bak
 
-# Local data stores (development only). Production data lives in PostgreSQL.
+# ------------------------------------------------------------------------------
+# 3. FLUTTER & DART ECOSYSTEM
+# ------------------------------------------------------------------------------
+.dart_tool/
+**/.dart_tool/
+.flutter-plugins
+**/.flutter-plugins
+.flutter-plugins-dependencies
+**/.flutter-plugins-dependencies
+.packages
+**/.packages
+.pub-cache/
+**/.pub-cache/
+.pub/
+**/.pub/
+build/
+**/build/
+coverage/
+**/coverage/
+app.*.symbols
+app.*.map.json
+**/doc/api/
+.widget_preview/
+
+# ------------------------------------------------------------------------------
+# 4. ANDROID & MOBILE BUILD ARTIFACTS
+# ------------------------------------------------------------------------------
+.gradle/
+**/.gradle/
+local.properties
+**/local.properties
+captures/
+**/captures/
+GeneratedPluginRegistrant.*
+**/GeneratedPluginRegistrant.*
+.cxx/
+**/.cxx/
+*.apk
+*.aab
+*.class
+Pods/
+**/Pods/
+.symlinks/
+**/.symlinks/
+
+# Android Studio build output
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+
+# ------------------------------------------------------------------------------
+# 5. IDE & SYSTEM CACHES
+# ------------------------------------------------------------------------------
+.idea/
+**/.idea/
+*.iml
+**/*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+*~
+.history/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
+
+# OS specific files
+.DS_Store
+**/.DS_Store
+Thumbs.db
+**/Thumbs.db
+desktop.ini
+
+# ------------------------------------------------------------------------------
+# 6. LOGS, LOCAL STORES, TEST DUMPS & SCRATCH DATA
+# ------------------------------------------------------------------------------
+*.log
+*.out
+*.err
+local_dump*.xml
+*.dump.xml
+*.zip
+scratch/
+archive/
+local-data/
+backups/
+apps/backend/backups/
 apps/backend/local-data/
 apps/backend/private_uploads/
 apps/backend/src/db/*.sqlite
@@ -22,16 +138,4 @@ apps/backend/src/db/*.sqlite-shm
 apps/backend/src/db/*.sqlite-wal
 apps/backend/src/db/vaayu_store.json
 apps/backend/src/db/vaayu_store.json.bak
-
-# Build output
 apps/backend/dist/
-
-# Logs, scratch, and archives
-*.log
-*.out
-*.err
-scratch/
-archive/
-local-data/
-backups/
-apps/backend/backups/

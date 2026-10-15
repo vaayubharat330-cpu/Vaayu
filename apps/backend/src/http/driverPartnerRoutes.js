@@ -95,6 +95,9 @@ function createDriverPartnerRoutes({
           vehicle_plate: resolvedVehicleNumber,
           license_number: resolvedLicenseNumber,
           kyc_status: resolvedKycStatus,
+          shift_seconds: Number(driver.shiftSeconds || 0),
+          shiftSeconds: Number(driver.shiftSeconds || 0),
+          duty_start_time: driver.dutyStartTime || null,
           payouts,
           daily_logs,
           activeTrips
@@ -124,6 +127,12 @@ function createDriverPartnerRoutes({
         if (!await enforceDriverAccess(req, res, driverId, 'driver:update')) return;
         const changes = {};
         if (['ONLINE', 'OFFLINE', 'ON_TRIP'].includes(data.status)) changes.status = data.status;
+        if (data.shift_seconds !== undefined || data.shiftSeconds !== undefined) {
+          changes.shiftSeconds = Number(data.shift_seconds ?? data.shiftSeconds ?? 0);
+        }
+        if (data.duty_start_time !== undefined || data.dutyStartTime !== undefined) {
+          changes.dutyStartTime = data.duty_start_time ?? data.dutyStartTime;
+        }
         if (changes.status === 'OFFLINE') {
           const activeStatuses = new Set(['DRIVER_ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_AT_PICKUP', 'PICKUP_CONFIRMED', 'IN_TRANSIT', 'DRIVER_AT_DROPOFF']);
           const activeTrip = (db.getTrips() || []).find(trip => activeStatuses.has(trip.status) && String(trip.driver?.id || trip.driver?.userId) === String(req.authorizedDriverId));

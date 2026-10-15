@@ -40,6 +40,8 @@ class AuthService {
       phone: user.phone || '',
       role: user.role || 'CUSTOMER',
       city: user.city || 'Hyderabad',
+      tenantId: user.tenantId || user.merchantId || null,
+      merchantId: user.merchantId || user.tenantId || null,
       iat: Math.floor(Date.now() / 1000)
     };
 

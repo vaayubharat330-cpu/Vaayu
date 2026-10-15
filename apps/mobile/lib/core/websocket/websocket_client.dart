@@ -1,0 +1,297 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:web_socket_channel/web_socket_channel.dart';
+
+/// WebSocket connection lifecycle exposed to the application.
+enum WebSocketStatus {
+  disconnected,
+  connecting,
+  connected,
+  reconnecting,
+}
+
+/// Small injectable transport boundary used by unit tests and the production
+/// WebSocketChannel adapter. Domain code never depends on a concrete socket.
+abstract class IWebSocketChannel {
+  void send(String message);
+  Stream<dynamic> get stream;
+  Future<void> close([int? code, String? reason]);
+}
+
+class WebSocketChannelAdapter implements IWebSocketChannel {
+  final WebSocketChannel _channel;
+
+  WebSocketChannelAdapter(this._channel);
+
+  @override
+  void send(String message) => _channel.sink.add(message);
+
+  @override
+  Stream<dynamic> get stream => _channel.stream;
+
+  @override
+  Future<void> close([int? code, String? reason]) async {
+    await _channel.sink.close(code, reason);
+  }
+}
+
+/// Single authoritative mobile WebSocket transport.
+///
+/// Responsibilities deliberately stop at transport concerns:
+/// - authenticated connection
+/// - JSON serialization/deserialization
+/// - bounded exponential reconnect with jitter
+/// - durable room intent + automatic re-subscription
+/// - application heartbeat frames
+/// - connection lifecycle events
+///
+/// Server-authoritative trip/business logic remains outside this class.
+class WebSocketClient {
+  final String serverUrl;
+  final Future<String> Function() _tokenProvider;
+  final IWebSocketChannel Function(String url) _channelFactory;
+  final Random _random;
+
+  WebSocketStatus _status = WebSocketStatus.disconnected;
+  IWebSocketChannel? _socket;
+  StreamSubscription<dynamic>? _socketSubscription;
+  Timer? _reconnectTimer;
+  Timer? _heartbeatTimer;
+
+  final Set<String> _rooms = <String>{};
+  final StreamController<Map<String, dynamic>> _messages =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<WebSocketStatus> _statusController =
+      StreamController<WebSocketStatus>.broadcast();
+
+  int _reconnectAttempts = 0;
+  int _connectionGeneration = 0;
+  bool _manualDisconnect = false;
+
+  static const int _baseReconnectDelayMs = 1000;
+  static const int _maxReconnectDelayMs = 30000;
+  static const Duration _heartbeatInterval = Duration(seconds: 25);
+
+  WebSocketClient({
+    required this.serverUrl,
+    required dynamic tokenProvider,
+    IWebSocketChannel Function(String url)? channelFactory,
+    Random? random,
+  })  : _tokenProvider = _normalizeTokenProvider(tokenProvider),
+        _channelFactory = channelFactory ?? _defaultChannelFactory,
+        _random = random ?? Random();
+
+  static Future<String> Function() _normalizeTokenProvider(dynamic provider) {
+    if (provider is Future<String> Function()) return provider;
+    if (provider != null) {
+      return () async => await provider.getValidToken();
+    }
+    return () async => '';
+  }
+
+  static IWebSocketChannel _defaultChannelFactory(String url) {
+    return WebSocketChannelAdapter(WebSocketChannel.connect(Uri.parse(url)));
+  }
+
+  WebSocketStatus get status => _status;
+  bool get isConnected => _status == WebSocketStatus.connected;
+  Set<String> get subscribedRooms => Set.unmodifiable(_rooms);
+
+  Stream<Map<String, dynamic>> get messageStream => _messages.stream;
+  Stream<WebSocketStatus> get statusStream => _statusController.stream;
+
+  Future<bool> connect() async {
+    if (_status == WebSocketStatus.connected) return true;
+    if (_status == WebSocketStatus.connecting) return false;
+
+    _manualDisconnect = false;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _updateStatus(
+      _reconnectAttempts == 0
+          ? WebSocketStatus.connecting
+          : WebSocketStatus.reconnecting,
+    );
+
+    final generation = ++_connectionGeneration;
+
+    try {
+      final token = await _tokenProvider();
+      final uri = Uri.parse(serverUrl);
+      final query = Map<String, String>.from(uri.queryParameters);
+      if (token.isNotEmpty) query['token'] = token;
+      final authenticatedUri = uri.replace(queryParameters: query);
+
+      final channel = _channelFactory(authenticatedUri.toString());
+      _socket = channel;
+
+      _socketSubscription = channel.stream.listen(
+        (raw) {
+          if (generation != _connectionGeneration) return;
+          _handleIncoming(raw);
+        },
+        onError: (Object error, StackTrace stack) {
+          if (generation == _connectionGeneration) _handleDisconnect();
+        },
+        onDone: () {
+          if (generation == _connectionGeneration) _handleDisconnect();
+        },
+        cancelOnError: true,
+      );
+
+      _reconnectAttempts = 0;
+      _updateStatus(WebSocketStatus.connected);
+      _startHeartbeat();
+      _resubscribeRooms();
+      return true;
+    } catch (_) {
+      if (generation == _connectionGeneration) _handleDisconnect();
+      return false;
+    }
+  }
+
+  /// Sends a JSON object only while the active connection is established.
+  /// Returns false when there is no live socket; callers must decide whether
+  /// the operation is retryable or should be persisted by their own layer.
+  bool send(Map<String, dynamic> message) {
+    if (!isConnected || _socket == null) return false;
+    try {
+      _socket!.send(jsonEncode(message));
+      return true;
+    } catch (_) {
+      _handleDisconnect();
+      return false;
+    }
+  }
+
+  void joinRoom(String roomName) {
+    final room = roomName.trim();
+    if (room.isEmpty) return;
+    final added = _rooms.add(room);
+    if (added && isConnected) {
+      send({'action': 'join', 'room': room});
+    }
+  }
+
+  void leaveRoom(String roomName) {
+    final removed = _rooms.remove(roomName);
+    if (removed && isConnected) {
+      send({'action': 'leave', 'room': roomName});
+    }
+  }
+
+  Future<void> disconnect({bool clearSubscriptions = true}) async {
+    _manualDisconnect = true;
+    _connectionGeneration++;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+
+    await _socketSubscription?.cancel();
+    _socketSubscription = null;
+
+    final socket = _socket;
+    _socket = null;
+    if (socket != null) {
+      try {
+        await socket.close(1000, 'Normal Client Closure');
+      } catch (_) {
+        // Closing an already-dead socket is intentionally idempotent.
+      }
+    }
+
+    if (clearSubscriptions) _rooms.clear();
+    _reconnectAttempts = 0;
+    _updateStatus(WebSocketStatus.disconnected);
+  }
+
+  void _handleIncoming(dynamic raw) {
+    Map<String, dynamic>? decoded;
+    try {
+      if (raw is String) {
+        final value = jsonDecode(raw);
+        if (value is Map) decoded = Map<String, dynamic>.from(value);
+      } else if (raw is List<int>) {
+        final value = jsonDecode(utf8.decode(raw));
+        if (value is Map) decoded = Map<String, dynamic>.from(value);
+      } else if (raw is Map) {
+        decoded = Map<String, dynamic>.from(raw);
+      }
+    } catch (_) {
+      return;
+    }
+
+    if (decoded != null) _messages.add(decoded);
+  }
+
+  void _resubscribeRooms() {
+    for (final room in List<String>.from(_rooms)) {
+      send({'action': 'join', 'room': room});
+    }
+  }
+
+  void _handleDisconnect() {
+    if (_manualDisconnect) return;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+
+    _socketSubscription?.cancel();
+    _socketSubscription = null;
+    _socket = null;
+
+    if (_status != WebSocketStatus.disconnected) {
+      _updateStatus(WebSocketStatus.reconnecting);
+      _scheduleReconnect();
+    }
+  }
+
+  void _scheduleReconnect() {
+    if (_manualDisconnect || _reconnectTimer != null) return;
+
+    final exponential = min(
+      _maxReconnectDelayMs,
+      _baseReconnectDelayMs * pow(2, _reconnectAttempts).toInt(),
+    );
+    // Full jitter keeps a fleet of clients from reconnecting simultaneously.
+    final jitter = max(0, (exponential * 0.25).round());
+    final minDelay = max(0, exponential - jitter);
+    final maxDelay = exponential + jitter;
+    final delayMs = minDelay + _random.nextInt(max(1, maxDelay - minDelay + 1));
+    _reconnectAttempts++;
+
+    _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
+      _reconnectTimer = null;
+      connect();
+    });
+  }
+
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
+      if (isConnected) {
+        // Application-level heartbeat. The server may acknowledge this as
+        // `pong`; inbound frames are surfaced to the event router unchanged.
+        send({'action': 'ping'});
+      }
+    });
+  }
+
+  void _updateStatus(WebSocketStatus next) {
+    if (_status == next) return;
+    _status = next;
+    if (!_statusController.isClosed) _statusController.add(next);
+  }
+
+  Future<void> dispose() async {
+    await disconnect();
+    await _messages.close();
+    await _statusController.close();
+  }
+}
+
+/// Backward-compatible name for code that referred to the previous
+/// experimental implementation. There is now only one transport.
+typedef ResilientWebSocketClient = WebSocketClient;

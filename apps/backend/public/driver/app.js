@@ -14,6 +14,11 @@ let vaayuDriverToken = null;
 try { vaayuDriverToken = sessionStorage.getItem('vaayu_driver_token'); } catch (_) {}
 let vaayuFleetToken = null;
 try { vaayuFleetToken = sessionStorage.getItem('vaayu_fleet_token'); } catch (_) {}
+Object.defineProperty(window, 'vaayuFleetToken', {
+  get: () => vaayuFleetToken,
+  set: (val) => { vaayuFleetToken = val; try { sessionStorage.setItem('vaayu_fleet_token', val); } catch (_) {} },
+  configurable: true
+});
 let fleetOtpPhone = '';
 let fleetOtpCode = '';
 let fleetOwnerProfile = null;
@@ -172,17 +177,17 @@ const HERO_CAROUSEL_SLIDES = {
   en: [
     { headline: 'Drive & Earn', subtext: 'Join the VAAYU partner network' },
     { headline: 'Instant Daily Payouts', subtext: 'Direct UPI settlement after every shift' },
-    { headline: 'Zero Commission Days', subtext: 'Keep 100% of your delivery trip fares' }
+    { headline: 'Transparent Fares', subtext: 'Guaranteed trip rates shown before accepting' }
   ],
   hi: [
     { headline: 'ड्राइव करें और कमाएं', subtext: 'VAAYU पार्टनर नेटवर्क से जुड़ें' },
     { headline: 'दैनिक त्वरित भुगतान', subtext: 'प्रत्येक शिफ्ट के बाद सीधे UPI ट्रांसफर' },
-    { headline: 'जीरो कमीशन सप्ताह', subtext: 'अपनी पूरी डिलीवरी कमाई अपने पास रखें' }
+    { headline: 'पारदर्शी किराया', subtext: 'स्वीकार करने से पहले यात्रा का स्पष्ट किराया देखें' }
   ],
   te: [
     { headline: 'డ్రైవ్ చేయండి & సంపాదించండి', subtext: 'VAAYU పార్టనర్ నెట్‌వర్క్‌లో చేరండి' },
     { headline: 'రోజువారీ తక్షణ చెల్లింపులు', subtext: 'ప్రతి షిఫ్ట్ తర్వాత నేరుగా UPI బదిలీ' },
-    { headline: 'జీరో కమిషన్ డేస్', subtext: 'డెలివరీ ఛార్జీలలో 100% మీ వద్దే ఉంచుకోండి' }
+    { headline: 'పారదర్శక ఛార్జీలు', subtext: 'ఆర్డర్ అంగీకరించే ముందే స్పష్టమైన ఛార్జీలను చూడండి' }
   ]
 };
 
@@ -1364,6 +1369,7 @@ function performLogin(profile) {
     showFloatingOverlay();
   }
 
+  updateLoginScreenVisibility();
   if (vaayuDriverToken) {
     fetch('/api/driver/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ driver_id: state.driverId, status: 'ONLINE' }) }).catch(() => {});
     startDriverOfferPolling();
@@ -1400,9 +1406,18 @@ function saveState() {
 }
 
 // Active Trip conforming to TripStatus lifecycle
-// "SEARCHING" | "ACCEPTED" | "ARRIVED_AT_PICKUP" | "IN_TRANSIT" | "COMPLETED" | "CANCELLED"
 let currentTrip = null;
 let currentTripStatus = null; // null | "ACCEPTED" | "ARRIVED_AT_PICKUP" | "IN_TRANSIT" | "COMPLETED"
+Object.defineProperty(window, 'currentTrip', {
+  get: () => currentTrip,
+  set: (val) => { currentTrip = val; },
+  configurable: true
+});
+Object.defineProperty(window, 'currentTripStatus', {
+  get: () => currentTripStatus,
+  set: (val) => { currentTripStatus = val; },
+  configurable: true
+});
 let browserGeoWatchId = null;
 
 let alertCountdownInterval = null;
@@ -1539,9 +1554,12 @@ async function loadDriverFromDatabase(driverId) {
       state.totalTrips = Number(dbDriver.total_trips ?? dbDriver.totalTrips ?? 0);
       state.acceptanceRate = dbDriver.acceptance_rate || (dbDriver.acceptanceRate ? `${dbDriver.acceptanceRate}%` : null);
       state.todayBonus = Number(dbDriver.today_bonus ?? 0);
-      state.yesterdayDiffTrips = dbDriver.yesterday_diff_trips !== undefined && dbDriver.yesterday_diff_trips !== null ? Number(dbDriver.yesterday_diff_trips) : 0;
       state.avgDeliveryMins = dbDriver.avg_delivery_mins ? Number(dbDriver.avg_delivery_mins) : 18;
-      state.shiftSeconds = Number(dbDriver.shift_seconds ?? dbDriver.shiftSeconds ?? 0);
+      const dbShiftSecs = Number(dbDriver.shift_seconds ?? dbDriver.shiftSeconds ?? 0);
+      state.shiftSeconds = Math.max(Number(state.shiftSeconds || 0), dbShiftSecs);
+      if (dbDriver.duty_start_time || dbDriver.dutyStartTime) {
+        state.shiftStartTime = dbDriver.duty_start_time || dbDriver.dutyStartTime;
+      }
       state.availableCashLimit = Number(dbDriver.available_cash_limit ?? dbDriver.availableCashLimit ?? 0);
       state.codCashInHand = Number(dbDriver.cod_cash_in_hand ?? dbDriver.codCashInHand ?? 0);
       state.customerTipsBalance = Number(dbDriver.customer_tips_balance ?? dbDriver.customerTipsBalance ?? 0);
@@ -2233,6 +2251,7 @@ async function acceptCurrentTrip() {
 }
 
 function renderActiveTripUI() {
+  window.renderActiveTripUI = renderActiveTripUI;
   const idleCard = document.getElementById('idleDutyCard');
   const tripCard = document.getElementById('activeTripCard');
   const sliderBox = document.getElementById('sliderCompleteContainer');
@@ -3064,9 +3083,10 @@ function renderAttendanceCalendar() {
 }
 
 function formatDecimalHours(decimalHours) {
-  const h = Math.floor(decimalHours);
-  const m = Math.round((decimalHours - h) * 60);
-  return `${h}h ${m > 0 ? (m < 10 ? '0' + m : m) + 'm' : '00m'}`;
+  const totalMins = Math.round(Number(decimalHours || 0) * 60);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  return `${h}h ${m < 10 ? '0' + m : m}m`;
 }
 
 function getCurrentWeekRangeString() {
@@ -3105,9 +3125,27 @@ function renderDailyBreakdown() {
 
   const logs = Array.isArray(state.dailyLogs) ? [...state.dailyLogs] : [];
 
-  // Sync today's log entry with live state
-  const todayEntry = logs.find(d => d.isToday) || logs[0];
-  if (todayEntry) {
+  const now = new Date();
+  const dateKey = now.toISOString().slice(0, 10);
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayLabel = days[now.getDay()];
+
+  // Sync or initialize today's log entry with live state
+  let todayEntry = logs.find(d => d.isToday || d.date === dateKey);
+  const currentShiftHours = state.shiftSeconds > 0 ? +(state.shiftSeconds / 3600).toFixed(4) : 0;
+  if (!todayEntry) {
+    todayEntry = {
+      date: dateKey,
+      dayLabel: dayLabel,
+      isToday: true,
+      orders: Number(state.todayTrips || 0),
+      hours: currentShiftHours,
+      earnings: Number(state.todayEarnings || 0),
+      breakdown: { basePay: Number(state.todayEarnings || 0), surge: 0, incentive: 0, codCollected: 0 }
+    };
+    logs.unshift(todayEntry);
+  } else {
+    todayEntry.isToday = true;
     if (state.todayEarnings > (todayEntry.earnings || 0)) {
       const diff = state.todayEarnings - (todayEntry.earnings || 0);
       todayEntry.earnings = state.todayEarnings;
@@ -3115,27 +3153,21 @@ function renderDailyBreakdown() {
       todayEntry.breakdown.basePay = (todayEntry.breakdown.basePay || 0) + diff;
     }
     todayEntry.orders = Math.max(todayEntry.orders || 0, state.todayTrips || 0);
-    if (state.shiftSeconds > 0) {
-      const liveHours = +(state.shiftSeconds / 3600).toFixed(2);
-      todayEntry.hours = Math.max(todayEntry.hours || 0, liveHours);
+    if (currentShiftHours > 0) {
+      todayEntry.hours = Math.max(Number(todayEntry.hours || 0), currentShiftHours);
     }
   }
+  state.dailyLogs = logs;
 
   let totalEarnings = 0;
   let totalHours = 0;
   let totalTrips = 0;
 
-  if (logs.length > 0) {
-    logs.forEach(d => {
-      totalEarnings += Number(d.earnings) || 0;
-      totalHours += Number(d.hours) || 0;
-      totalTrips += Number(d.orders) || 0;
-    });
-  } else {
-    totalEarnings = Number(state.todayEarnings || 0);
-    totalTrips = Number(state.totalTrips || state.todayTrips || 0);
-    totalHours = state.shiftSeconds > 0 ? +(state.shiftSeconds / 3600).toFixed(2) : 0;
-  }
+  logs.forEach(d => {
+    totalEarnings += Number(d.earnings) || 0;
+    totalHours += Number(d.hours) || 0;
+    totalTrips += Number(d.orders) || 0;
+  });
 
   const avgPerHour = totalHours > 0 ? (totalEarnings / totalHours) : 0;
   const avgDayHours = logs.length > 0 ? (totalHours / logs.length) : 0;
@@ -3184,7 +3216,7 @@ function renderDailyBreakdown() {
   if (!container) return;
   container.innerHTML = '';
 
-  if (logs.length === 0 || (logs.length === 1 && !logs[0].earnings && !logs[0].orders)) {
+  if (logs.length === 0 || (logs.length === 1 && !logs[0].earnings && !logs[0].orders && !logs[0].hours)) {
     container.innerHTML = `
       <div class="p-6 text-center text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
         No trip logs recorded yet in this cycle. Complete deliveries to see daily stats!
@@ -3479,10 +3511,18 @@ function updateKycUIFromSummary(summary, documents) {
   }
 
   // 9. Top Cockpit KYC Badge (Clean badge without tick mark)
+  const isKycApproved = Boolean(
+    summary.all_owner_docs_verified ||
+    summary.status === 'APPROVED' ||
+    summary.status === 'VERIFIED' ||
+    state.kycStatus === 'APPROVED' ||
+    state.kycStatus === 'VERIFIED'
+  );
+
   const topKycBadge = document.getElementById('topKycBadgeText');
   const topDot = document.getElementById('topKycBadgeDot');
   if (topKycBadge) {
-    if (summary.all_owner_docs_verified) {
+    if (isKycApproved) {
       topKycBadge.innerText = 'KYC';
       if (topDot) topDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
     } else {
@@ -3496,7 +3536,7 @@ function updateKycUIFromSummary(summary, documents) {
   const profKycDot = document.getElementById('profileKycDot');
   const profKycBtn = document.getElementById('profileKycBadge');
   if (profKycBadgeText) {
-    if (summary.all_owner_docs_verified) {
+    if (isKycApproved) {
       profKycBadgeText.innerText = 'KYC ✓';
       if (profKycDot) profKycDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
       if (profKycBtn) profKycBtn.className = 'flex items-center gap-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm active:scale-95 transition cursor-pointer shrink-0';
@@ -4782,6 +4822,23 @@ function syncUI() {
     refCodeEl.innerText = state.driverId ? String(state.driverId).slice(-8).toUpperCase() : '-';
   }
 
+  // Profile KYC badge sync
+  const profKycBadgeText = document.getElementById('profileKycBadgeText');
+  const profKycDot = document.getElementById('profileKycDot');
+  const profKycBtn = document.getElementById('profileKycBadge');
+  const isKycApproved = state.kycStatus === 'APPROVED' || state.kycStatus === 'VERIFIED';
+  if (profKycBadgeText) {
+    if (isKycApproved) {
+      profKycBadgeText.innerText = 'KYC ✓';
+      if (profKycDot) profKycDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+      if (profKycBtn) profKycBtn.className = 'flex items-center gap-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm active:scale-95 transition cursor-pointer shrink-0';
+    } else {
+      profKycBadgeText.innerText = 'KYC Pending';
+      if (profKycDot) profKycDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse';
+      if (profKycBtn) profKycBtn.className = 'flex items-center gap-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm active:scale-95 transition cursor-pointer shrink-0';
+    }
+  }
+
   updateLoginScreenVisibility();
   renderPayoutHistory();
   renderAttendanceCalendar();
@@ -4800,17 +4857,43 @@ function updateClock() {
   }
 }
 
+function updateShiftTimerDisplay() {
+  const el = document.getElementById('shiftTimer');
+  if (el) {
+    const hrs = Math.floor((state.shiftSeconds || 0) / 3600);
+    const mins = Math.floor(((state.shiftSeconds || 0) % 3600) / 60);
+    const secs = (state.shiftSeconds || 0) % 60;
+    el.innerText = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+}
+
+function syncShiftSecondsToBackend() {
+  const driverId = state.driverId || state.driverPartnerId;
+  if (!driverId) return;
+  fetch('/api/driver/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      driver_id: driverId,
+      shift_seconds: state.shiftSeconds || 0,
+      status: state.status || 'OFFLINE'
+    })
+  }).catch(() => {});
+}
+
 function startShiftTimer() {
   if (shiftTimerInterval) clearInterval(shiftTimerInterval);
+  updateShiftTimerDisplay();
   shiftTimerInterval = setInterval(() => {
     if (state.status !== 'OFFLINE') {
-      state.shiftSeconds += 1;
-      const el = document.getElementById('shiftTimer');
-      if (el) {
-        const hrs = Math.floor(state.shiftSeconds / 3600);
-        const mins = Math.floor((state.shiftSeconds % 3600) / 60);
-        const secs = state.shiftSeconds % 60;
-        el.innerText = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      state.shiftSeconds = (Number(state.shiftSeconds) || 0) + 1;
+      updateShiftTimerDisplay();
+      if (state.shiftSeconds % 5 === 0) {
+        saveState();
+        renderDailyBreakdown();
+      }
+      if (state.shiftSeconds % 15 === 0) {
+        syncShiftSecondsToBackend();
       }
     }
   }, 1000);
@@ -6094,8 +6177,11 @@ function initApplication() {
     const authCard = document.getElementById('fleetOwnerAuthCard');
     if (!vaayuFleetToken) { if (content) content.classList.add('hidden'); if (authCard) authCard.classList.remove('hidden'); renderFleetRoster(); return; }
     try {
+      const fleetHeaders = { 'Authorization': `Bearer ${vaayuFleetToken}` };
       const [profileResponse, driversResponse, summaryResponse] = await Promise.all([
-        fetch('/api/fleet/profile'), fetch('/api/fleet/drivers'), fetch('/api/fleet/summary')
+        fetch('/api/fleet/profile', { headers: fleetHeaders }),
+        fetch('/api/fleet/drivers', { headers: fleetHeaders }),
+        fetch('/api/fleet/summary', { headers: fleetHeaders })
       ]);
       const [profile, driverData, summaryData] = await Promise.all([profileResponse.json(), driversResponse.json(), summaryResponse.json()]);
       if ([profileResponse, driversResponse, summaryResponse].some(response => response.status === 401 || response.status === 403)) throw new Error('Fleet session expired. Please sign in again.');
@@ -6185,7 +6271,14 @@ function initApplication() {
     if (!vaayuFleetToken || !vehicleId) return;
     const message = document.getElementById('fleetAuthMessage');
     try {
-      const response = await fetch('/api/fleet/assign-driver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ driver_id: driverId, vehicle_id: vehicleId }) });
+      const response = await fetch('/api/fleet/assign-driver', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${vaayuFleetToken}`
+        },
+        body: JSON.stringify({ driver_id: driverId, vehicle_id: vehicleId })
+      });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error || 'Vehicle assignment failed.');
       if (message) message.textContent = result.message || 'Vehicle assignment saved.';
@@ -6831,34 +6924,38 @@ function initApplication() {
   }
 
   // Audio Toggle
-  document.getElementById('btnAudioToggle').addEventListener('click', () => {
-    state.soundAlerts = !state.soundAlerts;
-    const icon = document.getElementById('audioIcon');
-    const text = document.getElementById('audioText');
-    if (state.soundAlerts) {
-      icon.innerText = '🔊';
-      text.innerText = 'Sound ON';
-    } else {
-      icon.innerText = '🔇';
-      text.innerText = 'Sound OFF';
-    }
-    saveState();
-  });
+  const btnAudioToggle = document.getElementById('btnAudioToggle');
+  if (btnAudioToggle) {
+    btnAudioToggle.addEventListener('click', () => {
+      state.soundAlerts = !state.soundAlerts;
+      const icon = document.getElementById('audioIcon');
+      const text = document.getElementById('audioText');
+      if (icon) icon.innerText = state.soundAlerts ? '🔊' : '🔇';
+      if (text) text.innerText = state.soundAlerts ? 'Sound ON' : 'Sound OFF';
+      saveState();
+    });
+  }
 
   // Viewport Switcher
-  document.getElementById('btnViewMobile').addEventListener('click', () => {
-    document.getElementById('appViewport').classList.remove('full-canvas-mode');
-    document.getElementById('btnViewMobile').className = 'px-2.5 py-1 rounded text-xs font-medium transition-all bg-vaayu-600 text-white shadow-sm flex items-center gap-1.5';
-    document.getElementById('btnViewFull').className = 'px-2.5 py-1 rounded text-xs font-medium transition-all text-slate-400 hover:text-white flex items-center gap-1.5';
-    if (map) setTimeout(() => map.invalidateSize(), 200);
-  });
+  const btnViewMobile = document.getElementById('btnViewMobile');
+  const btnViewFull = document.getElementById('btnViewFull');
+  if (btnViewMobile) {
+    btnViewMobile.addEventListener('click', () => {
+      document.getElementById('appViewport')?.classList.remove('full-canvas-mode');
+      if (btnViewMobile) btnViewMobile.className = 'px-2.5 py-1 rounded text-xs font-medium transition-all bg-vaayu-600 text-white shadow-sm flex items-center gap-1.5';
+      if (btnViewFull) btnViewFull.className = 'px-2.5 py-1 rounded text-xs font-medium transition-all text-slate-400 hover:text-white flex items-center gap-1.5';
+      if (map) setTimeout(() => map.invalidateSize(), 200);
+    });
+  }
 
-  document.getElementById('btnViewFull').addEventListener('click', () => {
-    document.getElementById('appViewport').classList.add('full-canvas-mode');
-    document.getElementById('btnViewFull').className = 'px-2.5 py-1 rounded text-xs font-medium transition-all bg-vaayu-600 text-white shadow-sm flex items-center gap-1.5';
-    document.getElementById('btnViewMobile').className = 'px-2.5 py-1 rounded text-xs font-medium transition-all text-slate-400 hover:text-white flex items-center gap-1.5';
-    if (map) setTimeout(() => map.invalidateSize(), 200);
-  });
+  if (btnViewFull) {
+    btnViewFull.addEventListener('click', () => {
+      document.getElementById('appViewport')?.classList.add('full-canvas-mode');
+      if (btnViewFull) btnViewFull.className = 'px-2.5 py-1 rounded text-xs font-medium transition-all bg-vaayu-600 text-white shadow-sm flex items-center gap-1.5';
+      if (btnViewMobile) btnViewMobile.className = 'px-2.5 py-1 rounded text-xs font-medium transition-all text-slate-400 hover:text-white flex items-center gap-1.5';
+      if (map) setTimeout(() => map.invalidateSize(), 200);
+    });
+  }
 
   // Settings
   document.getElementById('settingAutoAccept').addEventListener('change', (e) => {
@@ -7274,4 +7371,30 @@ if (document.readyState === 'loading') {
 } else {
   initApplication();
 }
+
+window.addEventListener('beforeunload', () => {
+  try {
+    saveState();
+    const driverId = state.driverId || state.driverPartnerId;
+    if (driverId && state.shiftSeconds > 0) {
+      const payload = JSON.stringify({
+        driver_id: driverId,
+        shift_seconds: state.shiftSeconds,
+        status: state.status || 'OFFLINE'
+      });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/driver/update', new Blob([payload], { type: 'application/json' }));
+      }
+    }
+  } catch (_) {}
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    try {
+      saveState();
+      if (typeof syncShiftSecondsToBackend === 'function') syncShiftSecondsToBackend();
+    } catch (_) {}
+  }
+});
 

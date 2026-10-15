@@ -359,7 +359,21 @@ class RedisClient {
   }
 
   async geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr) {
-    if (this.redis) return this.redis.geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr);
+    if (this.redis) {
+      try {
+        return await this.redis.geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr);
+      } catch (err) {
+        // Redis 5 / <6.2 backwards compatibility fallback via GEORADIUS
+        if (err.message && err.message.includes('unknown command')) {
+          const args = [key, lng, lat, radiusKm, unitWord || 'km'];
+          if (withDistWord) args.push(withDistWord);
+          if (withCoordsWord) args.push(withCoordsWord.replace('WITHCOORDS', 'WITHCOORD'));
+          if (sortOrderStr) args.push(sortOrderStr);
+          return await this.redis.georadius(...args);
+        }
+        throw err;
+      }
+    }
     return this.engine.geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr);
   }
 
@@ -392,6 +406,7 @@ class RedisClient {
     if (this.redis) {
       if (!this.subscriber) {
         this.subscriber = this.redis.duplicate();
+        this.subscriber.on('error', () => {});
         this.subscriber.on('message', (messageChannel, message) => {
           const handlers = this.subscriptionHandlers.get(messageChannel) || [];
           let parsed = message;
@@ -419,6 +434,17 @@ class RedisClient {
       return true;
     }
     return this.engine.unsubscribe(channel, handler);
+  }
+
+  async disconnect() {
+    if (this.subscriber) {
+      try { this.subscriber.disconnect(); } catch (_) {}
+      this.subscriber = null;
+    }
+    if (this.redis) {
+      try { this.redis.disconnect(); } catch (_) {}
+    }
+    this.isConnected = false;
   }
 }
 

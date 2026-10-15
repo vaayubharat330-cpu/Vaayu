@@ -210,7 +210,7 @@ class OSRMProvider extends BaseRoutingProvider {
 // 5. Fallback Haversine Routing Provider Adapter
 class FallbackHaversineRoutingProvider extends BaseRoutingProvider {
   constructor() {
-    super('FallbackHaversineProvider');
+    super('HAVERSINE_FALLBACK');
   }
 
   async calculateRoute(waypoints, options = {}) {
@@ -315,35 +315,143 @@ class RouteCache {
 
 // 7. Master Routing Engine Service
 class RoutingService {
-  constructor() {
+  constructor(options = {}) {
     this.googleProvider = new GoogleRoutingProvider();
     this.osrmProvider = new OSRMProvider();
     this.fallbackProvider = new FallbackHaversineRoutingProvider();
 
-    // Default provider priority chain
-    this.providers = [
-      this.googleProvider,
-      this.osrmProvider,
-      this.fallbackProvider
-    ];
+    if (options.provider) {
+      this.providers = [options.provider, this.fallbackProvider];
+    } else if (Array.isArray(options.providers)) {
+      this.providers = [...options.providers, this.fallbackProvider];
+    } else {
+      // Default provider priority chain
+      this.providers = [
+        this.googleProvider,
+        this.osrmProvider,
+        this.fallbackProvider
+      ];
+    }
 
-    this.cache = new RouteCache(500, 600000);
+    this.enableCache = options.enableCache !== false;
+    this.cache = new RouteCache(options.cacheCapacity || 500, options.cacheTtlMs || 600000);
+
+    // In-flight request deduplication map
+    this.inFlightRequests = new Map();
+
+    // Circuit Breaker State per Provider
+    this.circuitBreakers = new Map();
+    this.CIRCUIT_FAIL_THRESHOLD = options.circuitFailThreshold || 3;
+    this.CIRCUIT_RESET_TIMEOUT_MS = options.circuitResetTimeoutMs || 30000;
+  }
+
+  getCircuitState(providerName) {
+    if (!this.circuitBreakers.has(providerName)) {
+      this.circuitBreakers.set(providerName, {
+        state: 'CLOSED', // CLOSED, OPEN, HALF_OPEN
+        failures: 0,
+        lastFailureTime: 0
+      });
+    }
+    const cb = this.circuitBreakers.get(providerName);
+    if (cb.state === 'OPEN' && Date.now() - cb.lastFailureTime > this.CIRCUIT_RESET_TIMEOUT_MS) {
+      cb.state = 'HALF_OPEN';
+    }
+    return cb;
+  }
+
+  recordCircuitSuccess(providerName) {
+    const cb = this.getCircuitState(providerName);
+    cb.failures = 0;
+    cb.state = 'CLOSED';
+  }
+
+  recordCircuitFailure(providerName) {
+    const cb = this.getCircuitState(providerName);
+    cb.failures++;
+    cb.lastFailureTime = Date.now();
+    if (cb.failures >= this.CIRCUIT_FAIL_THRESHOLD) {
+      if (cb.state !== 'OPEN') {
+        metricsService.increment('routing_circuit_breaker_tripped_total');
+      }
+      cb.state = 'OPEN';
+    }
+  }
+
+  /**
+   * Validates external provider response against physical & mathematical anomalies
+   */
+  validateProviderResponse(result, waypoints, vehicleId = 'DEFAULT') {
+    if (!result) return { valid: false, reason: 'Null or empty provider response' };
+    
+    const distanceKm = Number(result.distanceKm);
+    const durationMin = Number(result.durationMin !== undefined ? result.durationMin : result.durationMinutes);
+
+    if (!Number.isFinite(distanceKm) || distanceKm < 0) {
+      return { valid: false, reason: `Invalid distanceKm: ${distanceKm}` };
+    }
+    if (!Number.isFinite(durationMin) || durationMin < 0) {
+      return { valid: false, reason: `Invalid durationMin: ${durationMin}` };
+    }
+
+    // Great circle haversine between endpoints
+    const start = waypoints[0];
+    const end = waypoints[waypoints.length - 1];
+    const straightLineKm = haversineDistance(start.lat, start.lng, end.lat, end.lng);
+
+    // If straight line > 0.5km, road distance cannot be 0
+    if (straightLineKm > 0.5 && distanceKm === 0) {
+      return { valid: false, reason: `Zero distance for distinct coordinates (${straightLineKm.toFixed(2)}km straight)` };
+    }
+
+    // Circuity check: road distance cannot be significantly less than straight-line distance
+    if (straightLineKm > 1.0 && distanceKm < straightLineKm * 0.8) {
+      return { valid: false, reason: `Road distance (${distanceKm}km) violates Euclidean lower bound (${straightLineKm.toFixed(2)}km)` };
+    }
+
+    // Implausible Speed Anomaly: distance / (duration / 60) > 160 km/h in city
+    if (distanceKm > 1.0 && durationMin > 0) {
+      const calculatedSpeed = (distanceKm / (durationMin / 60));
+      if (calculatedSpeed > 160) {
+        return { valid: false, reason: `Implausible route speed detected: ${calculatedSpeed.toFixed(1)} km/h` };
+      }
+    }
+
+    return { valid: true, distanceKm, durationMin };
   }
 
   /**
    * Primary Provider-Independent Route & Duration Calculation Method
    */
-  async calculateRoute(pickupLat, pickupLng, dropLat, dropLng, intermediateStops = [], options = {}) {
+  async calculateRoute(arg1, arg2, arg3, arg4, arg5 = [], arg6 = {}) {
+    let waypoints = [];
+    let options = {};
+
+    // Support polymorphic invocation:
+    // Form A: calculateRoute(pickupLat, pickupLng, dropLat, dropLng, intermediateStops, options)
+    // Form B: calculateRoute(waypointsArray, options)
+    if (Array.isArray(arg1)) {
+      waypoints = arg1.map(p => ({ lat: Number(p?.lat), lng: Number(p?.lng) }));
+      options = arg2 || {};
+    } else {
+      const pickupLat = arg1;
+      const pickupLng = arg2;
+      const dropLat = arg3;
+      const dropLng = arg4;
+      const intermediateStops = Array.isArray(arg5) ? arg5 : [];
+      options = arg6 || {};
+
+      waypoints = [
+        { lat: Number(pickupLat), lng: Number(pickupLng) },
+        ...intermediateStops.map(stop => ({ lat: Number(stop?.lat), lng: Number(stop?.lng) })),
+        { lat: Number(dropLat), lng: Number(dropLng) }
+      ];
+    }
+
     const routeStart = Date.now();
     metricsService.increment('routing_requests_total');
     metricsService.increment('eta_calculations_total');
 
-    if (!Array.isArray(intermediateStops)) throw new TypeError('intermediateStops must be an array');
-    const waypoints = [
-      { lat: Number(pickupLat), lng: Number(pickupLng) },
-      ...intermediateStops.map(stop => ({ lat: Number(stop?.lat), lng: Number(stop?.lng) })),
-      { lat: Number(dropLat), lng: Number(dropLng) }
-    ];
     if (waypoints.length > 25) throw new RangeError('A route can contain at most 25 waypoints');
     if (waypoints.some(point => !isValidCoordinate(point.lat, point.lng))) {
       throw new RangeError('Every route waypoint must have valid latitude and longitude');
@@ -352,72 +460,122 @@ class RoutingService {
     const vehicleId = options.vehicleId || 'DEFAULT';
     const isOutstation = Boolean(options.isOutstation);
     const requestedProviderName = options.provider;
-    const bypassCache = Boolean(options.bypassCache);
+    const bypassCache = Boolean(options.bypassCache) || !this.enableCache;
 
     // 1. Check Cache
     const cacheKey = this.cache.getCacheKey(waypoints, vehicleId, isOutstation, requestedProviderName);
     if (!bypassCache) {
       const cachedResult = this.cache.get(cacheKey);
       if (cachedResult) {
+        metricsService.increment('routing_cache_hits_total');
         metricsService.recordLatency('routing_latency', Date.now() - routeStart);
         return {
           ...cachedResult,
           cached: true
         };
       }
+      metricsService.increment('routing_cache_misses_total');
     }
 
-    // 2. Select Provider Chain
-    let targetProviders = this.providers;
-    if (requestedProviderName) {
-      if (requestedProviderName === 'Google' || requestedProviderName === 'GoogleRoutingProvider') {
-        targetProviders = [this.googleProvider, this.osrmProvider, this.fallbackProvider];
-      } else if (requestedProviderName === 'OSRM' || requestedProviderName === 'OSRMProvider') {
-        targetProviders = [this.osrmProvider, this.fallbackProvider];
-      } else if (requestedProviderName === 'Fallback' || requestedProviderName === 'FallbackHaversineProvider') {
-        targetProviders = [this.fallbackProvider];
+    // 2. Request Deduplication for concurrent identical in-flight requests
+    if (this.inFlightRequests.has(cacheKey)) {
+      return await this.inFlightRequests.get(cacheKey);
+    }
+
+    const routeExecutionPromise = (async () => {
+      // 3. Select Provider Chain
+      let targetProviders = this.providers;
+      if (requestedProviderName) {
+        if (requestedProviderName === 'Google' || requestedProviderName === 'GoogleRoutingProvider') {
+          targetProviders = [this.googleProvider, this.osrmProvider, this.fallbackProvider];
+        } else if (requestedProviderName === 'OSRM' || requestedProviderName === 'OSRMProvider') {
+          targetProviders = [this.osrmProvider, this.fallbackProvider];
+        } else if (requestedProviderName === 'Fallback' || requestedProviderName === 'FallbackHaversineProvider' || requestedProviderName === 'HAVERSINE_FALLBACK') {
+          targetProviders = [this.fallbackProvider];
+        }
       }
-    }
 
-    // 3. Execute Provider Fallback Loop
-    let attemptIndex = 0;
-    for (const provider of targetProviders) {
-      attemptIndex++;
-      try {
-        const result = await provider.calculateRoute(waypoints, { vehicleId, isOutstation });
-        if (result && Number.isFinite(result.distanceKm) && result.distanceKm >= 0 && Number.isFinite(result.durationMin)) {
+      // 4. Execute Provider Fallback Loop with Circuit Breakers & Validation
+      let attemptIndex = 0;
+      for (const provider of targetProviders) {
+        attemptIndex++;
+        const providerName = provider.name;
+
+        // Skip provider if Circuit Breaker is OPEN (unless it's the ultimate fallback)
+        if (provider !== this.fallbackProvider) {
+          const cb = this.getCircuitState(providerName);
+          if (cb.state === 'OPEN') {
+            continue;
+          }
+        }
+
+        try {
+          const result = await provider.calculateRoute(waypoints, { vehicleId, isOutstation });
+          
+          // Anomaly Validation Guard
+          const validation = this.validateProviderResponse(result, waypoints, vehicleId);
+          if (!validation.valid) {
+            metricsService.increment('routing_anomalies_detected_total');
+            metricsService.increment('routing_provider_failure_total');
+            this.recordCircuitFailure(providerName);
+            continue;
+          }
+
+          // Provider produced valid route
+          this.recordCircuitSuccess(providerName);
           metricsService.increment('routing_provider_success_total');
           if (attemptIndex > 1 || result.isDegraded) {
             metricsService.increment('routing_fallback_total');
           }
+
           const finalResult = {
-            distanceKm: result.distanceKm,
-            durationMin: result.durationMin,
+            distanceKm: validation.distanceKm,
+            durationMin: validation.durationMin,
+            durationMinutes: validation.durationMin,
             routePoints: result.routePoints || [],
+            polyline: result.routePoints || [],
             provider: result.provider,
+            source: result.provider,
             isDegraded: Boolean(result.isDegraded),
             routeQuality: result.routeQuality || (result.isDegraded ? 'ESTIMATED' : 'ROAD_NETWORK'),
             cached: false
           };
+
           // Save in cache
-          this.cache.set(cacheKey, finalResult);
+          if (this.enableCache) {
+            this.cache.set(cacheKey, finalResult);
+          }
           metricsService.recordLatency('routing_latency', Date.now() - routeStart);
           return finalResult;
+        } catch (err) {
+          this.recordCircuitFailure(providerName);
+          metricsService.increment('routing_provider_failure_total');
         }
-      } catch (err) {
-        metricsService.increment('routing_provider_failure_total');
-        console.warn(`[RoutingService] Provider ${provider.name} failed: ${err.message}`);
       }
-    }
 
-    // Ultimate fallback if loop unexpectedly completes without result
-    metricsService.increment('routing_fallback_total');
-    const fallbackRes = await this.fallbackProvider.calculateRoute(waypoints, { vehicleId, isOutstation });
-    metricsService.recordLatency('routing_latency', Date.now() - routeStart);
-    return {
-      ...fallbackRes,
-      cached: false
-    };
+      // 5. Ultimate Fallback: Internal Vehicle-Profile Haversine
+      metricsService.increment('routing_fallback_total');
+      const fallbackRes = await this.fallbackProvider.calculateRoute(waypoints, { vehicleId, isOutstation });
+      metricsService.recordLatency('routing_latency', Date.now() - routeStart);
+      const ultimateResult = {
+        ...fallbackRes,
+        durationMinutes: fallbackRes?.durationMin,
+        polyline: fallbackRes?.routePoints || [],
+        source: fallbackRes?.provider,
+        cached: false
+      };
+      if (this.enableCache) {
+        this.cache.set(cacheKey, ultimateResult);
+      }
+      return ultimateResult;
+    })();
+
+    this.inFlightRequests.set(cacheKey, routeExecutionPromise);
+    try {
+      return await routeExecutionPromise;
+    } finally {
+      this.inFlightRequests.delete(cacheKey);
+    }
   }
 
   /**
@@ -433,7 +591,8 @@ class RoutingService {
     return {
       distKm,
       durationMin,
-      pickupEtaMin: durationMin + 2 // +2 mins buffer for driver turnaround
+      pickupEtaMin: durationMin + 2, // +2 mins buffer for driver turnaround
+      source: 'HAVERSINE_PROFILE'
     };
   }
 

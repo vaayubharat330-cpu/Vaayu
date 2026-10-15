@@ -121,6 +121,12 @@ class RedisRateLimiter {
       return { allowed: true, error: err.message };
     }
   }
+
+  async disconnect() {
+    if (this.redis && typeof this.redis.disconnect === 'function') {
+      await this.redis.disconnect();
+    }
+  }
 }
 
 const redisRateLimiter = new RedisRateLimiter();

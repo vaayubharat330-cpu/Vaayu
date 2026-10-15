@@ -50,7 +50,38 @@ class MetricsService {
       'routing_provider_success_total',
       'routing_provider_failure_total',
       'routing_fallback_total',
+      'routing_circuit_breaker_tripped_total',
+      'routing_anomalies_detected_total',
+      'routing_cache_hits_total',
+      'routing_cache_misses_total',
       'eta_calculations_total',
+
+      // Notifications (Pillar 12)
+      'notifications_dispatched_total',
+      'notifications_delivered_total',
+      'notifications_failed_total',
+      'notifications_deduped_total',
+      'notifications_stale_suppressed_total',
+      'notifications_dlq_total',
+      'notifications_circuit_breaker_tripped_total',
+
+      // Fraud & Risk (Pillar 13)
+      'risk_evaluations_total',
+      'risk_decisions_allow_total',
+      'risk_decisions_review_total',
+      'risk_decisions_delay_total',
+      'risk_decisions_block_total',
+      'risk_gps_spoofing_detected_total',
+      'risk_velocity_violations_total',
+      'risk_collusion_detected_total',
+      'risk_maker_checker_actions_total',
+
+      // Enterprise & Multi-Tenancy (Pillar 14)
+      'tenant_isolation_checks_total',
+      'tenant_cross_access_blocked_total',
+      'tenant_quota_exceeded_total',
+      'tenant_bulk_operations_total',
+      'tenant_suspended_rejections_total',
 
       // Redis
       'redis_command_errors_total',
@@ -105,6 +136,7 @@ class MetricsService {
       'location_search_latency',
       'routing_latency',
       'dispatch_latency',
+      'driver_telemetry_latency',
       'postgres_query_latency',
       'redis_operation_latency',
       'websocket_publish_latency',
@@ -205,6 +237,190 @@ class MetricsService {
     }
 
     return lines.join('\n');
+  }
+
+  static get DEFAULT_SLO_BUDGETS() {
+    return {
+      dispatch_latency: { p95: 250, p99: 500, unit: 'ms', description: 'Order dispatch and driver matching' },
+      driver_telemetry_latency: { p95: 20, p99: 50, unit: 'ms', description: 'Driver location update ingestion' },
+      postgres_query_latency: { p95: 50, p99: 100, unit: 'ms', description: 'Database double-entry & order transactions' },
+      routing_latency: { p95: 50, p99: 150, unit: 'ms', description: 'Routing engine and distance calculation' },
+      location_search_latency: { p95: 50, p99: 150, unit: 'ms', description: 'Geocoding and place searches' },
+      redis_operation_latency: { p95: 10, p99: 25, unit: 'ms', description: 'Redis lock and cache operations' },
+      websocket_publish_latency: { p95: 20, p99: 50, unit: 'ms', description: 'Real-time WebSocket event dispatch' }
+    };
+  }
+
+  evaluateSlo(metricName, customBudget = null) {
+    const budget = customBudget || MetricsService.DEFAULT_SLO_BUDGETS[metricName];
+    if (!budget) {
+      return {
+        metricName,
+        status: 'UNCONFIGURED',
+        compliant: false,
+        reason: `No SLO budget defined for ${metricName}`
+      };
+    }
+
+    const samples = this.histograms.get(metricName) || [];
+    const stats = this.getPercentiles(samples);
+
+    if (stats.count === 0) {
+      return {
+        metricName,
+        status: 'NO_DATA',
+        compliant: true,
+        budget,
+        observed: stats
+      };
+    }
+
+    const p95Compliant = stats.p95 <= budget.p95;
+    const p99Compliant = stats.p99 <= budget.p99;
+    const overallCompliant = p95Compliant && p99Compliant;
+
+    const p95ConsumedPct = Math.round((stats.p95 / budget.p95) * 10000) / 100;
+    const p99ConsumedPct = Math.round((stats.p99 / budget.p99) * 10000) / 100;
+
+    return {
+      metricName,
+      status: overallCompliant ? 'COMPLIANT' : 'BREACHED',
+      compliant: overallCompliant,
+      p95Compliant,
+      p99Compliant,
+      budget,
+      observed: stats,
+      budgetConsumption: {
+        p95ConsumedPct,
+        p99ConsumedPct,
+        maxConsumedPct: Math.max(p95ConsumedPct, p99ConsumedPct)
+      }
+    };
+  }
+
+  evaluateAllSlos(customBudgets = {}) {
+    const budgets = { ...MetricsService.DEFAULT_SLO_BUDGETS, ...customBudgets };
+    const evaluations = {};
+    let allCompliant = true;
+
+    for (const [metricName, budget] of Object.entries(budgets)) {
+      const result = this.evaluateSlo(metricName, budget);
+      evaluations[metricName] = result;
+      if (!result.compliant) {
+        allCompliant = false;
+      }
+    }
+
+    return {
+      timestamp: new Date().toISOString(),
+      allCompliant,
+      slos: evaluations
+    };
+  }
+
+  evaluateAlertRules() {
+    const alerts = [];
+    const now = new Date().toISOString();
+
+    // 1. Circuit Breaker Trips
+    const routingBreakerTrips = this.counters.get('routing_circuit_breaker_tripped_total') || 0;
+    if (routingBreakerTrips > 0) {
+      alerts.push({
+        alertId: 'ROUTING_CIRCUIT_BREAKER_OPEN',
+        severity: 'CRITICAL',
+        metric: 'routing_circuit_breaker_tripped_total',
+        value: routingBreakerTrips,
+        message: 'Routing circuit breaker tripped; upstream map service degraded.',
+        timestamp: now
+      });
+    }
+
+    const notifBreakerTrips = this.counters.get('notifications_circuit_breaker_tripped_total') || 0;
+    if (notifBreakerTrips > 0) {
+      alerts.push({
+        alertId: 'NOTIFICATIONS_CIRCUIT_BREAKER_OPEN',
+        severity: 'WARNING',
+        metric: 'notifications_circuit_breaker_tripped_total',
+        value: notifBreakerTrips,
+        message: 'Notification provider circuit breaker tripped; falling back or queuing.',
+        timestamp: now
+      });
+    }
+
+    // 2. High Error Rate Alert (> 5% delivery transition failures)
+    const totalTransitions = this.counters.get('delivery_transition_total') || 0;
+    const failedTransitions = this.counters.get('delivery_transition_failure_total') || 0;
+    if (totalTransitions >= 20 && (failedTransitions / totalTransitions) > 0.05) {
+      alerts.push({
+        alertId: 'HIGH_DELIVERY_TRANSITION_FAILURE_RATE',
+        severity: 'CRITICAL',
+        metric: 'delivery_transition_failure_rate',
+        value: Math.round((failedTransitions / totalTransitions) * 10000) / 100,
+        message: `High delivery state transition failure rate: ${Math.round((failedTransitions / totalTransitions) * 100)}%`,
+        timestamp: now
+      });
+    }
+
+    // 3. Security Breach / BOLA Surge Alert
+    const bolaDenied = this.counters.get('bola_denied_total') || 0;
+    if (bolaDenied >= 10) {
+      alerts.push({
+        alertId: 'BOLA_ATTACK_SURGE',
+        severity: 'CRITICAL',
+        metric: 'bola_denied_total',
+        value: bolaDenied,
+        message: `Broken Object Level Authorization (BOLA) attempts exceeded threshold: ${bolaDenied} events.`,
+        timestamp: now
+      });
+    }
+
+    // 4. Rate Limit Surge
+    const rateLimitHits = this.counters.get('rate_limit_rejected_total') || 0;
+    if (rateLimitHits >= 50) {
+      alerts.push({
+        alertId: 'RATE_LIMIT_ABUSE_SPIKE',
+        severity: 'WARNING',
+        metric: 'rate_limit_rejected_total',
+        value: rateLimitHits,
+        message: `API rate limit rejections exceeded threshold: ${rateLimitHits} rejected requests.`,
+        timestamp: now
+      });
+    }
+
+    // 5. Postgres Connection Starvation
+    const poolWaiting = this.gauges.get('postgres_connection_pool_waiting') || 0;
+    if (poolWaiting > 0) {
+      alerts.push({
+        alertId: 'POSTGRES_POOL_STARVATION',
+        severity: 'CRITICAL',
+        metric: 'postgres_connection_pool_waiting',
+        value: poolWaiting,
+        message: `PostgreSQL connection pool saturated; ${poolWaiting} queries waiting for client.`,
+        timestamp: now
+      });
+    }
+
+    // 6. SLO Latency Budget Violations
+    const sloSummary = this.evaluateAllSlos();
+    for (const [metric, res] of Object.entries(sloSummary.slos)) {
+      if (res.status === 'BREACHED') {
+        alerts.push({
+          alertId: `SLO_BREACH_${metric.toUpperCase()}`,
+          severity: 'WARNING',
+          metric,
+          value: res.observed.p99,
+          threshold: res.budget.p99,
+          message: `SLO breach on ${metric}: p99 observed ${res.observed.p99}ms exceeds budget ${res.budget.p99}ms.`,
+          timestamp: now
+        });
+      }
+    }
+
+    return {
+      activeAlertsCount: alerts.length,
+      hasCriticalAlerts: alerts.some(a => a.severity === 'CRITICAL'),
+      alerts
+    };
   }
 
   reset() {

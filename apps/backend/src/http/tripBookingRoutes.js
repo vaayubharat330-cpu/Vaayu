@@ -3,11 +3,15 @@
 // Earlier fixes are kept: the delivery PIN uses crypto.randomInt, and a booking without a signed-in customer
 // is refused with 401 rather than assigned a fixed customer ID.
 
+const { paymentIntegrationService: defaultPaymentIntegrationService } = require('../services/ledger/paymentIntegrationService');
+
 function createTripBookingRoutes({
   db, fareQuoteProvider, isAdminFeatureEnabled, idempotencyService, paymentProvider, otpService,
   orderIdService, portalContextService, metricsService, logger, dispatchService, DELIVERY_STATES,
-  parseJsonBody, validateFields, isLatitude, isLongitude, enforceSecurityChecks, crypto, redisRateLimiter
+  parseJsonBody, validateFields, isLatitude, isLongitude, enforceSecurityChecks, crypto, redisRateLimiter,
+  paymentIntegrationService: injectedPaymentService
 }) {
+  const paymentService = injectedPaymentService || defaultPaymentIntegrationService;
   return async function handleTripBookingRoute(req, res, { pathname }) {
     // Dynamic trip estimate. Public, so the customer can price a trip before signing in.
     if (pathname === '/api/trips/estimate' && req.method === 'POST') {
@@ -165,12 +169,37 @@ function createTripBookingRoutes({
         const paymentMethod = String(data.paymentMethod || 'CASH_ON_DELIVERY').toUpperCase();
         let paymentInfo;
         if (paymentMethod === 'WALLET') {
-          const debit = db.debitCustomerWallet ? db.debitCustomerWallet(customerId, finalTotalFare, tempOrderId) : { success: false, error: 'Wallet payments are unavailable.' };
-          if (!debit.success) {
+          const farePaise = Math.round(Number(finalTotalFare) * 100);
+          const escrowResult = await paymentService.reserveEscrow({
+            tripId: tempOrderId,
+            orderId: tempOrderId,
+            customerId,
+            amountPaise: farePaise,
+            idempotencyKey: effKey ? `VAAYU:${effKey}:ESCROW` : `VAAYU:${tempOrderId}:ESCROW`
+          });
+
+          if (!escrowResult.success) {
             res.writeHead(402, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({ success: false, error: debit.error || 'Wallet payment could not be completed.' }));
+            return res.end(JSON.stringify({ success: false, error: escrowResult.error?.message || 'Wallet payment could not be completed.' }));
           }
-          paymentInfo = { success: true, provider: 'VAAYU_WALLET', status: 'PAID', requiresPayment: false, isPaid: true, deferred: false, orderId: tempOrderId, amount: finalTotalFare, paymentMethod, timestamp: new Date().toISOString() };
+
+          if (db.debitCustomerWallet) {
+            db.debitCustomerWallet(customerId, finalTotalFare, tempOrderId);
+          }
+
+          paymentInfo = {
+            success: true,
+            provider: 'VAAYU_WALLET',
+            status: 'PAID',
+            requiresPayment: false,
+            isPaid: true,
+            deferred: false,
+            orderId: tempOrderId,
+            amount: finalTotalFare,
+            paymentMethod,
+            timestamp: new Date().toISOString(),
+            escrow: escrowResult
+          };
         } else {
           paymentInfo = await paymentProvider.processPayment(tempOrderId, finalTotalFare, paymentMethod);
         }

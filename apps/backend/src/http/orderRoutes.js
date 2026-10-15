@@ -3,10 +3,14 @@
 // here, including when a guard has refused the request. Per-role permission is enforced by the delivery state
 // machine's actor table, not by these routes.
 
+const { paymentIntegrationService: defaultPaymentIntegrationService } = require('../services/ledger/paymentIntegrationService');
+
 function createOrderRoutes({
   db, deliveryStateMachine, redisLockManager, otpService, paymentProvider, idempotencyService, dispatchService,
-  driverLocationService, DELIVERY_STATES, enforceSecurityChecks, parseJsonBody
+  driverLocationService, DELIVERY_STATES, enforceSecurityChecks, parseJsonBody,
+  paymentIntegrationService: injectedPaymentService
 }) {
+  const paymentService = injectedPaymentService || defaultPaymentIntegrationService;
   return async function handleOrderRoute(req, res, { pathname, parsedUrl }) {
     // Controlled transition: the caller names the next state.
     if (pathname === '/api/orders/transition' && req.method === 'POST') {
@@ -49,6 +53,32 @@ function createOrderRoutes({
           expectedVersion,
           metadata
         });
+
+        if (result.success && nextState === DELIVERY_STATES.DELIVERED) {
+          try {
+            const completedTrip = db.getTripById ? db.getTripById(orderId) : null;
+            const assignedDriverId = completedTrip?.driver?.id || completedTrip?.driver?.userId;
+            const fare = completedTrip?.totalFare ?? completedTrip?.fareBreakdown?.total ?? 0;
+            if (assignedDriverId) {
+              const settleRes = await paymentService.settleTrip({
+                tripId: orderId,
+                driverId: assignedDriverId,
+                amountPaise: Math.round(Number(fare) * 100),
+                idempotencyKey: `VAAYU:${orderId}:SETTLEMENT`
+              });
+              result.paymentSettlement = settleRes;
+            }
+          } catch (_) {}
+        } else if (result.success && nextState === DELIVERY_STATES.CANCELLED) {
+          try {
+            const refundRes = await paymentService.refundTrip({
+              tripId: orderId,
+              reason: reason || 'Order cancelled',
+              idempotencyKey: `VAAYU:${orderId}:REFUND`
+            });
+            result.paymentRefund = refundRes;
+          } catch (_) {}
+        }
 
         const statusCode = result.success ? 200 : 400;
         if (effKey && result.success) {
@@ -147,26 +177,50 @@ function createOrderRoutes({
           if (profile) await dispatchService.handleDriverAccept(orderId, profile.id);
         }
 
-        if (result.success && action === 'complete' && req.user.role === 'DRIVER' && db.recordDriverTripCompletion) {
-          const completedTrip = db.getTripById(orderId);
+        if (result.success && action === 'complete') {
+          const completedTrip = db.getTripById ? db.getTripById(orderId) : null;
           const assignedDriverId = completedTrip?.driver?.id || completedTrip?.driver?.userId;
-          const profile = (db.getDrivers() || []).find(driver => driver.id === assignedDriverId || driver.userId === assignedDriverId);
-          if (profile) {
-            const earnings = Number(completedTrip.driverEarnings ?? completedTrip.totalFare ?? completedTrip.fareBreakdown?.total ?? 0);
-            db.recordDriverTripCompletion(profile.id, orderId, earnings);
-            if (db.updateDriverProfile) db.updateDriverProfile(profile.id, { status: 'ONLINE' });
-            if (driverLocationService.setDriverAvailability) await driverLocationService.setDriverAvailability(profile.id, true);
+          if (assignedDriverId) {
+            try {
+              const fare = completedTrip?.totalFare ?? completedTrip?.fareBreakdown?.total ?? 0;
+              const settleRes = await paymentService.settleTrip({
+                tripId: orderId,
+                driverId: assignedDriverId,
+                amountPaise: Math.round(Number(fare) * 100),
+                idempotencyKey: `VAAYU:${orderId}:SETTLEMENT`
+              });
+              result.paymentSettlement = settleRes;
+            } catch (_) {}
+          }
+          if (req.user.role === 'DRIVER' && db.recordDriverTripCompletion) {
+            const profile = (db.getDrivers() || []).find(driver => driver.id === assignedDriverId || driver.userId === assignedDriverId);
+            if (profile) {
+              const earnings = Number(completedTrip.driverEarnings ?? completedTrip.totalFare ?? completedTrip.fareBreakdown?.total ?? 0);
+              db.recordDriverTripCompletion(profile.id, orderId, earnings);
+              if (db.updateDriverProfile) db.updateDriverProfile(profile.id, { status: 'ONLINE' });
+              if (driverLocationService.setDriverAvailability) await driverLocationService.setDriverAvailability(profile.id, true);
+            }
           }
         }
 
         if (result.success && action === 'cancel') {
-          const currentTrip = db.getTripById(orderId);
+          const currentTrip = db.getTripById ? db.getTripById(orderId) : null;
           if (currentTrip && currentTrip.driver && currentTrip.driver.id) {
             const lockInfo = await redisLockManager.getDriverLock(currentTrip.driver.id);
             if (lockInfo && lockInfo.orderId === orderId) {
               await redisLockManager.releaseDriverLock(currentTrip.driver.id, lockInfo.reservationId);
             }
           }
+
+          try {
+            const psmRefund = await paymentService.refundTrip({
+              tripId: orderId,
+              reason: reason || 'Customer Order Cancellation',
+              idempotencyKey: `VAAYU:${orderId}:REFUND`
+            });
+            result.paymentRefund = psmRefund;
+          } catch (_) {}
+
           const paidTransaction = db.getPaymentForBooking ? db.getPaymentForBooking(orderId) : null;
           let refundRes = { success: false, refundIssued: false, status: 'NOT_APPLICABLE', reason: 'No captured online payment is linked to this booking.' };
           if (paidTransaction?.razorpayPaymentId) {

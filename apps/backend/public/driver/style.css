@@ -111,24 +111,33 @@
 /* Responsive Web Layout overrides */
 #appViewport {
   width: 100% !important;
-  max-width: 1380px !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  min-height: calc(100vh - 80px) !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  min-height: 100vh !important;
   height: auto !important;
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
+  padding: 0 !important;
 }
 
 #cockpitScreen {
-  min-height: calc(100vh - 110px) !important;
+  min-height: 100vh !important;
   height: auto !important;
+  border-radius: 0 !important;
+  border: 0 !important;
+}
+
+#loginPageScreen {
+  min-height: 100vh !important;
+  height: auto !important;
+  border-radius: 0 !important;
+  border: 0 !important;
 }
 
 #sectionContainer {
   height: auto !important;
-  min-height: calc(100vh - 180px) !important;
+  min-height: calc(100vh - 75px) !important;
   padding-bottom: 2rem !important;
 }
 

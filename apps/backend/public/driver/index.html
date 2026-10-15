@@ -33,56 +33,21 @@
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen antialiased selection:bg-vaayu-500 selection:text-black">
 
-  <!-- Enterprise Web Navigation Bar -->
-  <header class="w-full sticky top-0 z-40 flex items-center justify-between px-4 sm:px-8 py-3.5 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 shadow-lg text-xs">
-    <div class="flex items-center gap-3.5">
-      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 font-display font-black text-slate-950 text-lg tracking-tight">
-        ⚡
-      </div>
-      <div>
-        <div class="font-display font-extrabold text-sm sm:text-base tracking-wide text-white flex items-center gap-2">
-          <span>VAAYU DRIVER COCKPIT</span>
-          <span class="text-[10px] bg-emerald-500/15 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/30 font-semibold uppercase tracking-wider">Web Portal</span>
-        </div>
-        <p class="text-slate-400 text-[11px] hidden sm:block">Intra-City Commercial Logistics &amp; Driver Fleet Partner Console</p>
-      </div>
-    </div>
-
-    <!-- Web Navigation & Quick Actions -->
-    <div class="flex items-center gap-2 sm:gap-3">
-      <!-- Hidden dummy buttons for backward compatibility if referenced by script -->
-      <div class="hidden">
-        <button id="btnViewMobile" type="button"></button>
-        <button id="btnViewFull" type="button"></button>
-        <span id="liveClock"></span>
-        <div id="batteryIndicator"></div>
-      </div>
-
-      <!-- System Connection Status Badge -->
-      <button id="btnDbStatus" class="px-3 py-1.5 bg-slate-800/90 hover:bg-slate-750 text-slate-200 rounded-xl border border-emerald-500/40 transition flex items-center gap-2 cursor-pointer shadow-sm" title="System Status: Connected">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span class="font-mono text-xs font-bold text-white">System: <span class="text-emerald-400">Online</span></span>
-      </button>
-
-      <button id="btnShareApp" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white border border-slate-700 font-semibold rounded-xl transition flex items-center gap-1.5 active:scale-95 cursor-pointer text-xs" title="Share Portal Link">
-        <span>🔗</span> Share Link
-      </button>
-
-      <button id="btnAudioToggle" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer text-xs" title="Toggle audio alert chime">
-        <span id="audioIcon">🔊</span> <span id="audioText">Sound ON</span>
-      </button>
-
-      <a href="/otp-console.html" target="_blank" class="hidden md:flex px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 rounded-xl border border-emerald-500/30 font-bold transition items-center gap-1.5 text-xs">
-        <span>📱</span> OTP Console
-      </a>
-    </div>
-  </header>
+  <!-- Hidden dummy buttons and headless utility compatibility anchors -->
+  <div class="hidden" aria-hidden="true">
+    <button id="btnDbStatus" type="button"></button>
+    <button id="btnShareApp" type="button"></button>
+    <button id="btnViewMobile" type="button"></button>
+    <button id="btnViewFull" type="button"></button>
+    <span id="liveClock"></span>
+    <div id="batteryIndicator"></div>
+  </div>
 
   <!-- Main Web Container: Full Page Web Layout -->
-  <main class="w-full flex-1 flex flex-col justify-start items-stretch min-h-[calc(100vh-65px)]">
+  <main class="w-full flex-1 flex flex-col justify-start items-stretch min-h-screen p-0 m-0">
     
     <!-- Enterprise Web Cockpit Canvas Container (Full Web Viewport) -->
-    <div id="appViewport" class="w-full max-w-7xl mx-auto flex-1 flex flex-col min-h-[calc(100vh-65px)] px-3 sm:px-6 lg:px-8 py-4 transition-all duration-300">
+    <div id="appViewport" class="w-full flex-1 flex flex-col min-h-screen p-0 m-0 transition-all duration-300">
 
       <!-- ========================================== -->
       <!-- LOGIN / ONBOARDING SCREEN                  -->
@@ -91,7 +56,7 @@
       <!-- LOGIN / ONBOARDING SCREEN (WEB TEMPLATE)   -->
       <!-- Photo Hero + Driver Web Sign-In + OTP Verification -->
       <!-- ========================================== -->
-      <div id="loginPageScreen" class="flex-1 w-full min-h-[calc(100vh-100px)] relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 shadow-2xl flex flex-col justify-between p-0 m-0">
+      <div id="loginPageScreen" class="flex-1 w-full min-h-screen relative overflow-hidden bg-slate-950 flex flex-col justify-between p-0 m-0">
         
         <!-- Full-Bleed Edge-to-Edge Hero Image with Web Gradient Vignette -->
         <img src="hero_driver.jpg" alt="Vaayu Driver Partner" class="absolute inset-0 w-full h-full object-cover object-center select-none pointer-events-none z-0 brightness-[0.55]" />
@@ -112,9 +77,6 @@
 
           <!-- Floating Controls Layer -->
           <div class="pointer-events-auto flex items-center gap-2.5">
-            <button id="btnLandingFleetRegisterTop" type="button" class="px-4 py-2 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-display font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 cursor-pointer">
-              <span>🚛 Fleet Partner Portal</span>
-            </button>
             <div class="flex items-center gap-1 p-1 rounded-full bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-xl text-xs">
               <button type="button" class="lang-pill active px-3 py-1 rounded-full font-bold bg-emerald-500 text-slate-950 transition" data-lang="en">EN</button>
               <button type="button" class="lang-pill px-3 py-1 rounded-full text-slate-300 hover:text-white transition" data-lang="hi">हिन्दी</button>
@@ -129,13 +91,13 @@
           <!-- Headline & Subtext Carousel -->
           <div id="heroSlideContainer" class="w-full transition-all duration-300 space-y-3">
             <span class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider">
-              <span>🇮🇳</span> Hyderabad's #1 Commercial Logistics Platform
+              <span>🇮🇳</span> Commercial Intra-City Logistics
             </span>
             <h2 id="loginHeroHeadline" class="font-display font-black text-4xl sm:text-5xl lg:text-6xl text-white tracking-tight leading-tight drop-shadow-xl">
-              Drive &amp; Earn with Freedom
+              Drive &amp; Earn
             </h2>
             <p id="loginHeroSubtext" class="text-emerald-400 font-extrabold text-base sm:text-xl drop-shadow-md max-w-2xl mx-auto">
-              Up to ₹35,000 / month with instant daily settlements
+              Reliable daily logistics trips &amp; instant settlements
             </p>
           </div>
 
@@ -629,10 +591,10 @@
       <!-- ========================================== -->
       <!-- COCKPIT SCREEN (ENTERPRISE WEB COCKPIT)     -->
       <!-- ========================================== -->
-      <div id="cockpitScreen" class="hidden flex flex-col flex-1 w-full bg-slate-900/60 rounded-3xl border border-slate-800/80 shadow-2xl overflow-hidden relative min-h-[calc(100vh-120px)]">
+      <div id="cockpitScreen" class="hidden flex flex-col flex-1 w-full bg-slate-950 overflow-hidden relative min-h-screen">
 
       <!-- Web Cockpit Primary Navigation Bar -->
-      <div class="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-5 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4 shrink-0 z-30 shadow-md">
+      <div class="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-5 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4 shrink-0 z-30 shadow-md">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-300 flex items-center justify-center font-display font-black text-slate-950 text-sm shadow-md shadow-emerald-950/60 ring-2 ring-emerald-500/20 shrink-0">
             V
@@ -668,6 +630,11 @@
 
         <!-- Duty Online/Offline Pill Switcher & Top Help Button -->
         <div class="flex items-center gap-2.5">
+          <!-- Audio Alert Chime Toggle -->
+          <button id="btnAudioToggle" type="button" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold flex items-center gap-1.5 active:scale-95 transition cursor-pointer shadow-sm" title="Toggle audio chime">
+            <span id="audioIcon">🔊</span>
+            <span id="audioText" class="hidden sm:inline">Sound ON</span>
+          </button>
           <!-- 2-in-1 Role Switcher Button -->
           <button id="btnRoleSwitcher" data-on="click" data-action="togglePartnerMode" class="px-3.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1.5 active:scale-95 transition cursor-pointer shadow-sm" title="2-in-1 App: Switch between Solo Driver & Fleet Owner Cockpit">
             <span class="text-xs">🔄</span>
@@ -715,7 +682,7 @@
             <div class="flex items-center gap-3 bg-slate-950/70 px-4 py-2.5 rounded-2xl border border-slate-800">
               <div class="text-left">
                 <span class="text-[9px] text-slate-400 uppercase font-mono font-bold block">Current Session</span>
-                <span id="shiftTimer" class="font-mono text-base font-bold text-emerald-400">03:42:15</span>
+                <span id="shiftTimer" class="font-mono text-base font-bold text-emerald-400">00:00:00</span>
               </div>
               <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse ml-2"></div>
             </div>
@@ -3850,15 +3817,15 @@
             <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-center">
               <div class="p-1.5 rounded-xl bg-slate-900 border border-slate-800">
                 <span class="text-[9px] uppercase font-semibold text-slate-400 block">Avg Rate</span>
-                <span id="weeklyAvgPerHour" class="text-xs font-mono font-bold text-white">₹190 / hr</span>
+                <span id="weeklyAvgPerHour" class="text-xs font-mono font-bold text-white">₹0 / hr</span>
               </div>
               <div class="p-1.5 rounded-xl bg-slate-900 border border-slate-800">
                 <span class="text-[9px] uppercase font-semibold text-slate-400 block">Total Trips</span>
-                <span id="weeklyTotalTrips" class="text-xs font-mono font-bold text-emerald-400">16 Trips</span>
+                <span id="weeklyTotalTrips" class="text-xs font-mono font-bold text-emerald-400">0 Trips</span>
               </div>
               <div class="p-1.5 rounded-xl bg-slate-900 border border-slate-800">
                 <span class="text-[9px] uppercase font-semibold text-slate-400 block">Avg / Day</span>
-                <span id="weeklyAvgPerDay" class="text-xs font-mono font-bold text-amber-400">6.8 hrs</span>
+                <span id="weeklyAvgPerDay" class="text-xs font-mono font-bold text-amber-400">0.0 hrs</span>
               </div>
             </div>
           </div>

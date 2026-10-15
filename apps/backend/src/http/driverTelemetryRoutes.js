@@ -167,7 +167,14 @@ function createDriverTelemetryRoutes({ db, driverLocationService, websocketServi
 
         const result = await driverLocationService.setDriverAvailability(req.authorizedDriverId, isOnline);
         const status = isOnline ? 'ONLINE' : 'OFFLINE';
-        if (db.updateDriverProfile) db.updateDriverProfile(req.authorizedDriverId, { status });
+        const changes = { status };
+        if (isOnline) {
+          changes.dutyStartTime = new Date().toISOString();
+        }
+        if (data.shift_seconds !== undefined || data.shiftSeconds !== undefined) {
+          changes.shiftSeconds = Number(data.shift_seconds ?? data.shiftSeconds ?? 0);
+        }
+        if (db.updateDriverProfile) db.updateDriverProfile(req.authorizedDriverId, changes);
         else if (db.updateDriverStatus) db.updateDriverStatus(req.authorizedDriverId, status);
         res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(result));

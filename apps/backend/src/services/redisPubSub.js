@@ -109,10 +109,19 @@ class RedisPubSubManager {
    * Internal subscription wrapper creation
    */
   _createSubscriptionWrapper(channel) {
-    return (chan, msgStr) => {
-      if (chan !== channel) return;
+    return (arg1, arg2) => {
+      // In RedisMemoryEngine: handler(channel, msgStr)
+      // In ioredis message listener: handler(parsedMsg)
+      let msgStr;
+      if (arg2 !== undefined) {
+        if (arg1 !== channel) return;
+        msgStr = arg2;
+      } else {
+        msgStr = arg1;
+      }
+
       try {
-        const envelope = JSON.parse(msgStr);
+        const envelope = typeof msgStr === 'object' && msgStr !== null ? msgStr : JSON.parse(msgStr);
         if (envelope.sourceNode !== this.nodeId) {
           metricsService.increment('cross_node_event_delivery_total');
         }
@@ -195,7 +204,8 @@ class RedisPubSubManager {
 
   async disconnect() {
     this.isConnected = false;
-    // Preserves this.subscriptions & this.channelWrappers so resubscribeAll can re-establish them upon connection recovery
+    if (this.pubClient && typeof this.pubClient.disconnect === 'function') await this.pubClient.disconnect();
+    if (this.subClient && typeof this.subClient.disconnect === 'function') await this.subClient.disconnect();
   }
 
   async reset() {

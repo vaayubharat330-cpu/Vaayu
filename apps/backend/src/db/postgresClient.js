@@ -22,9 +22,9 @@ class PostgresPool {
     if (process.env.PGSSL === 'true' || config.ssl) {
       poolConfig.ssl = { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false' };
     }
-    poolConfig.max = parseInt(process.env.PGPOOL_MAX || '10', 10);
+    poolConfig.max = config.max || parseInt(process.env.PGPOOL_MAX || '10', 10);
     poolConfig.idleTimeoutMillis = 30000;
-    poolConfig.connectionTimeoutMillis = parseInt(process.env.PGCONNECT_TIMEOUT_MS || '5000', 10);
+    poolConfig.connectionTimeoutMillis = config.connectionTimeoutMillis || parseInt(process.env.PGCONNECT_TIMEOUT_MS || '5000', 10);
 
     this.pool = new Pool(poolConfig);
     this.pool.on('error', (err) => {
@@ -47,9 +47,7 @@ class PostgresPool {
   }
 
   async connect() {
-    const client = await this.pool.connect();
-    client.release();
-    return true;
+    return await this.pool.connect();
   }
 
   async end() {

@@ -1,0 +1,346 @@
+{
+  "users": [
+    {
+      "id": "usr_cust_primary_test",
+      "phone": "+91 9876543210",
+      "name": "Suraj Enterprise Shipper",
+      "email": "suraj@vaayu.in",
+      "city": "Hyderabad",
+      "role": "CUSTOMER",
+      "createdAt": "2026-10-11T13:34:02.168Z"
+    },
+    {
+      "id": "usr_drv_1791736647777_45a713",
+      "phone": "+91 7842416560",
+      "name": "Suraj",
+      "email": "7842416560@vaayu.in",
+      "city": "Hyderabad",
+      "role": "DRIVER",
+      "createdAt": "2026-10-11T16:37:27.777Z"
+    }
+  ],
+  "fleet_owners": [
+    {
+      "id": "flt_owner_royal_hyd",
+      "userId": "usr_flt_owner_royal",
+      "ownerName": "Royal Fleet Operations",
+      "companyName": "Royal Logistics Fleet Pvt Ltd",
+      "phone": "+91 9876543233",
+      "city": "Hyderabad",
+      "totalVehicles": 5,
+      "createdAt": "2026-10-11T13:34:33.159Z"
+    }
+  ],
+  "merchants": [
+    {
+      "id": "merch_1791725642172_2db81c0e",
+      "businessName": "Apex Industrial Logistics",
+      "category": "Retail Store",
+      "contactName": "Apex Dispatcher",
+      "phone": "+91 9876543222",
+      "email": "logistics@apex.in",
+      "gstin": null,
+      "city": "Hyderabad",
+      "address": "HITEC City Phase 2, Hyderabad",
+      "storefrontPhotoUrl": null,
+      "locationPhotoUrl": null,
+      "gstinDocUrl": null,
+      "verificationStatus": "PENDING_REVIEW",
+      "creditLimit": 50000,
+      "creditUsed": 0,
+      "status": "ACTIVE",
+      "createdAt": "2026-10-11T13:34:02.172Z"
+    }
+  ],
+  "merchant_schedules": [],
+  "driver_profiles": [
+    {
+      "id": "drv_prof_1791736647777_8c2296",
+      "userId": "usr_drv_1791736647777_45a713",
+      "name": "Suraj",
+      "phone": "+91 7842416560",
+      "vehicleId": "v_2w",
+      "vehicleNumber": "TG07AG4188",
+      "licenseNumber": "TG00720250001599",
+      "fleetOwnerId": null,
+      "status": "ONLINE",
+      "kycStatus": "APPROVED",
+      "rating": "4.95",
+      "totalTrips": 0,
+      "createdAt": "2026-10-11T16:37:27.777Z",
+      "auditTrail": []
+    }
+  ],
+  "vehicle_categories": [
+    {
+      "id": "v_2w",
+      "name": "VAAYU Express (2W)",
+      "code": "V_2W",
+      "capacityKg": 20,
+      "dimensions": "40cm x 40cm x 40cm",
+      "baseFare": 40,
+      "includedKm": 2,
+      "perKmRate": 8,
+      "perMinRate": 1,
+      "helperCharge": 0,
+      "icon": "🛵",
+      "description": "Documents, small parcels, food & electronics"
+    },
+    {
+      "id": "v_mini_3w",
+      "name": "VAAYU Mini 3W (Electric)",
+      "code": "V_MINI_3W",
+      "capacityKg": 350,
+      "dimensions": "4.5ft x 3.5ft x 3.5ft",
+      "baseFare": 110,
+      "includedKm": 2,
+      "perKmRate": 14,
+      "perMinRate": 1.5,
+      "helperCharge": 80,
+      "icon": "🛺",
+      "description": "Eco-friendly electric 3W for light commercial moves"
+    },
+    {
+      "id": "v_3w",
+      "name": "VAAYU Auto (3W)",
+      "code": "V_3W",
+      "capacityKg": 500,
+      "dimensions": "5.5ft x 4ft x 4ft",
+      "baseFare": 150,
+      "includedKm": 2,
+      "perKmRate": 18,
+      "perMinRate": 2,
+      "helperCharge": 100,
+      "icon": "🚚",
+      "description": "Piaggio Ape / Champion for commercial boxes & retail goods"
+    },
+    {
+      "id": "v_ace",
+      "name": "VAAYU Ace (Tata Ace 7ft)",
+      "code": "V_TATA_ACE",
+      "capacityKg": 750,
+      "dimensions": "7ft x 4.8ft x 4.8ft",
+      "baseFare": 250,
+      "includedKm": 3,
+      "perKmRate": 22,
+      "perMinRate": 3,
+      "helperCharge": 150,
+      "icon": "🚚",
+      "description": "Tata Ace 7ft for home shifting, furniture & heavy cargo"
+    },
+    {
+      "id": "v_pickup_8ft",
+      "name": "VAAYU Pickup (8ft)",
+      "code": "V_PICKUP_8FT",
+      "capacityKg": 1200,
+      "dimensions": "8ft x 5ft x 5ft",
+      "baseFare": 350,
+      "includedKm": 3,
+      "perKmRate": 28,
+      "perMinRate": 4,
+      "helperCharge": 250,
+      "icon": "🚛",
+      "description": "Mahindra Bolero Pickup for industrial equipment & tiles"
+    },
+    {
+      "id": "v_pickup_9ft",
+      "name": "VAAYU Pickup (9ft 1.5T)",
+      "code": "V_PICKUP_9FT",
+      "capacityKg": 1500,
+      "dimensions": "9ft x 5.5ft x 5.5ft",
+      "baseFare": 450,
+      "includedKm": 4,
+      "perKmRate": 32,
+      "perMinRate": 5,
+      "helperCharge": 300,
+      "icon": "🚛",
+      "description": "Bolero Maxi Truck 9ft for heavy commercial batches"
+    },
+    {
+      "id": "v_14ft",
+      "name": "VAAYU 14ft Truck (3.5T)",
+      "code": "V_14FT",
+      "capacityKg": 3500,
+      "dimensions": "14ft x 6ft x 6ft",
+      "baseFare": 850,
+      "includedKm": 5,
+      "perKmRate": 45,
+      "perMinRate": 7,
+      "helperCharge": 500,
+      "icon": "🚛",
+      "description": "Eicher / Tata 407 14ft container for full house & industrial moves"
+    },
+    {
+      "id": "v_17ft",
+      "name": "VAAYU 17ft Heavy Truck (5T)",
+      "code": "V_17FT",
+      "capacityKg": 5000,
+      "dimensions": "17ft x 7ft x 7ft",
+      "baseFare": 1200,
+      "includedKm": 5,
+      "perKmRate": 55,
+      "perMinRate": 9,
+      "helperCharge": 700,
+      "icon": "🚛",
+      "description": "Eicher 17ft Heavy Truck for full 3-4 BHK house shifting & bulk industrial freight"
+    }
+  ],
+  "trips": [],
+  "system_settings": {
+    "maintenanceMode": false,
+    "otaVersion": "v2.4.1 Production",
+    "releaseNotes": "Hyderabad Metro Expansion, 17ft Heavy Commercial Fleet & Dynamic Waiting Time Billing",
+    "surgeMultiplier": 1,
+    "featureFlags": {
+      "enableOutstation": true,
+      "enable17ftTruck": true,
+      "enableHouseShifting": true,
+      "enableWalletTopup": true,
+      "enableWaitingTimeBilling": true
+    }
+  },
+  "support_tickets": [],
+  "automation_logs": [],
+  "advertisements": [],
+  "zones": [
+    {
+      "id": "ZONE_101",
+      "name": "Cyberabad & Hitec City Tech Zone",
+      "city": "Hyderabad",
+      "surgeMultiplier": 1,
+      "status": "ACTIVE",
+      "activeDrivers": 6,
+      "maxFleetCapacity": 50,
+      "description": "Covers Mindspace, DLF Cybercity, Financial District & Kondapur"
+    },
+    {
+      "id": "ZONE_102",
+      "name": "Kukatpally & KPHB Commercial Zone",
+      "city": "Hyderabad",
+      "surgeMultiplier": 1.1,
+      "status": "ACTIVE",
+      "activeDrivers": 4,
+      "maxFleetCapacity": 40,
+      "description": "High retail & residential transport volume near JNTU & Forum Mall"
+    },
+    {
+      "id": "ZONE_103",
+      "name": "Sanathnagar & Jeedimetla Industrial Belt",
+      "city": "Hyderabad",
+      "surgeMultiplier": 1.15,
+      "status": "ACTIVE",
+      "activeDrivers": 3,
+      "maxFleetCapacity": 35,
+      "description": "Heavy truck priority zone for manufacturing & factory cargo"
+    },
+    {
+      "id": "ZONE_104",
+      "name": "Shamshabad RGIA Airport Cargo Corridor",
+      "city": "Hyderabad",
+      "surgeMultiplier": 1.25,
+      "status": "ACTIVE",
+      "activeDrivers": 2,
+      "maxFleetCapacity": 25,
+      "description": "24/7 express air cargo freight transport to and from RGIA Airport"
+    },
+    {
+      "id": "ZONE_105",
+      "name": "Secunderabad & Begumpet Logistics Hub",
+      "city": "Hyderabad",
+      "surgeMultiplier": 1,
+      "status": "ACTIVE",
+      "activeDrivers": 3,
+      "maxFleetCapacity": 30,
+      "description": "Railway station logistics & wholesale commercial markets"
+    }
+  ],
+  "disputes": [],
+  "broadcasts": [],
+  "driver_documents": [
+    {
+      "id": "DOC_DL_drv_prof_1791736647777_8c2296",
+      "driverId": "drv_prof_1791736647777_8c2296",
+      "docType": "license",
+      "docTitle": "Driving License",
+      "docNumber": "TG00720250001599",
+      "status": "VERIFIED",
+      "verifiedAt": "2026-10-11T16:37:27.777Z"
+    },
+    {
+      "id": "DOC_RC_drv_prof_1791736647777_8c2296",
+      "driverId": "drv_prof_1791736647777_8c2296",
+      "docType": "rc",
+      "docTitle": "Vehicle RC",
+      "docNumber": "TG07AG4188",
+      "status": "VERIFIED",
+      "verifiedAt": "2026-10-11T16:37:27.777Z"
+    },
+    {
+      "id": "DOC_AADHAAR_drv_prof_1791736647777_8c2296",
+      "driverId": "drv_prof_1791736647777_8c2296",
+      "docType": "aadhaar",
+      "docTitle": "Aadhaar Card",
+      "docNumber": "XXXX XXXX 8842",
+      "status": "VERIFIED",
+      "verifiedAt": "2026-10-11T16:37:27.777Z"
+    },
+    {
+      "id": "DOC_PAN_drv_prof_1791736647777_8c2296",
+      "driverId": "drv_prof_1791736647777_8c2296",
+      "docType": "pan",
+      "docTitle": "PAN Card",
+      "docNumber": "ABCDE1234F",
+      "status": "VERIFIED",
+      "verifiedAt": "2026-10-11T16:37:27.777Z"
+    }
+  ],
+  "order_rejections": [],
+  "payouts": [],
+  "daily_logs": [],
+  "telemetry_logs": [],
+  "kyc_summaries": {
+    "drv_prof_1791736647777_8c2296": {
+      "driverId": "drv_prof_1791736647777_8c2296",
+      "step": 3,
+      "status": "APPROVED",
+      "all_owner_docs_verified": true,
+      "owner_name": "Suraj",
+      "steps": [
+        {
+          "step_id": 1,
+          "title": "Owner & Identity Verification",
+          "status": "APPROVED",
+          "verified_count": 4,
+          "total_count": 4
+        }
+      ],
+      "checklist": {
+        "aadhaar": {
+          "verified": true,
+          "number": "XXXX XXXX 8842"
+        },
+        "pan": {
+          "verified": true,
+          "number": "ABCDE1234F"
+        },
+        "selfie": {
+          "verified": true
+        },
+        "rc": {
+          "verified": true,
+          "number": "TG07AG4188"
+        },
+        "license": {
+          "verified": true,
+          "number": "TG00720250001599"
+        },
+        "permit": {
+          "verified": true,
+          "number": "TS/COMM/2023/8842"
+        }
+      }
+    }
+  },
+  "otpRequests": [],
+  "wallet_ledger": []
+}

@@ -8,6 +8,8 @@
  * 4. Contextual fields (timestamp, level, service, event, nodeId, requestId, orderId, driverId, customerId).
  */
 
+const { tracingService } = require('./tracingService');
+
 class Logger {
   constructor() {
     this.serviceName = 'vaayu-backend';
@@ -74,7 +76,10 @@ class Logger {
   }
 
   formatLog(level, eventName, message, meta = {}) {
-    const requestId = meta.requestId || meta.xRequestId || null;
+    const activeTrace = tracingService ? tracingService.getCurrentContext() : null;
+    const traceId = meta.traceId || (activeTrace ? activeTrace.traceId : null);
+    const spanId = meta.spanId || (activeTrace ? activeTrace.spanId : null);
+    const requestId = meta.requestId || meta.xRequestId || (activeTrace ? activeTrace.requestId : null);
     const orderId = meta.orderId || meta.tripId || null;
     const driverId = meta.driverId || null;
     const customerId = meta.customerId || null;
@@ -83,6 +88,8 @@ class Logger {
     const sanitizedMeta = this.redactSensitiveData(meta);
 
     // Remove extracted top-level identifiers from meta body to avoid duplication
+    delete sanitizedMeta.traceId;
+    delete sanitizedMeta.spanId;
     delete sanitizedMeta.requestId;
     delete sanitizedMeta.xRequestId;
     delete sanitizedMeta.orderId;
@@ -98,6 +105,8 @@ class Logger {
       event: eventName,
       nodeId: this.nodeId,
       message,
+      ...(traceId ? { traceId } : {}),
+      ...(spanId ? { spanId } : {}),
       ...(requestId ? { requestId } : {}),
       ...(orderId ? { orderId } : {}),
       ...(driverId ? { driverId } : {}),

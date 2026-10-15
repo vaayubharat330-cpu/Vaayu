@@ -125,16 +125,20 @@ function createGuards({ db, redisRateLimiter, authService, metricsService, logge
   async function enforceMerchantAccess(req, res, requestedMerchantId = null) {
     const allowed = await enforceSecurityChecks(req, res, {
       routeName: 'merchant:private',
-      requiredRoles: ['MERCHANT', 'ADMIN', 'SUPER_ADMIN']
+      requiredRoles: ['MERCHANT', 'MERCHANT_ADMIN', 'MERCHANT_DISPATCHER', 'MERCHANT_AUDITOR', 'ADMIN', 'SUPER_ADMIN']
     });
     if (!allowed) return false;
-    if (req.user.role === 'MERCHANT') {
-      if (requestedMerchantId && String(requestedMerchantId) !== req.user.id) {
+    const userRole = req.user.role;
+    const isEnterpriseMerchantRole = ['MERCHANT', 'MERCHANT_ADMIN', 'MERCHANT_DISPATCHER', 'MERCHANT_AUDITOR'].includes(userRole);
+    if (isEnterpriseMerchantRole) {
+      const userTenantId = req.user.tenantId || req.user.merchantId || req.user.id;
+      if (requestedMerchantId && String(requestedMerchantId) !== String(userTenantId)) {
+        metricsService.increment('tenant_cross_access_blocked_total');
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: { code: 'FORBIDDEN_MERCHANT_ACCESS', message: 'Merchant account access denied.' } }));
         return false;
       }
-      req.authorizedMerchantId = req.user.id;
+      req.authorizedMerchantId = userTenantId;
     } else {
       req.authorizedMerchantId = requestedMerchantId || null;
     }
