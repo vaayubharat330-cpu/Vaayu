@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { RedisLockManager } = require('../../src/services/redisLockManager');
-const { RedisClient, sharedMemoryRedisEngine } = require('../../src/services/redisClient');
+const { RedisClient } = require('../../src/services/redisClient');
 
 function uniqueLockName(prefix) {
   return `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -49,4 +49,26 @@ test('Redis lock ownership: refresh rejects a different reservation and preserve
   assert.equal(await client.get(owner.key), 'refreshed-owner');
 
   await locks.releaseScopedLock({ key: owner.key, token: 'refreshed-owner' });
+});
+
+test('Redis lock ownership: scoped lease refresh extends only the current owner', async () => {
+  const client = new RedisClient();
+  const locks = new RedisLockManager(client);
+  const lockName = uniqueLockName('lease-refresh');
+
+  const owner = await locks.acquireIdempotencyLock(lockName, 1000);
+  assert.equal(owner.success, true);
+  const before = owner.expiresAt;
+
+  const refreshed = await locks.refreshIdempotencyLock(owner, 5000);
+  assert.equal(refreshed.success, true);
+  assert.ok(refreshed.expiresAt > before);
+  assert.equal(await client.get(owner.key), owner.token);
+
+  const stale = { ...owner, token: 'stale-owner-token' };
+  const rejected = await locks.refreshIdempotencyLock(stale, 5000);
+  assert.equal(rejected.success, false);
+  assert.equal(await client.get(owner.key), owner.token);
+
+  await locks.releaseIdempotencyLock(owner);
 });
