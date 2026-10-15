@@ -19,15 +19,12 @@ class PgBackedStore {
     this.dirty = false;
   }
 
-  // Loads the store from PostgreSQL. Throws if the database is unreachable or empty, so the app
-  // never serves stale or blank data as if it were real.
   async load() {
     await this.remote.init();
     await this.reload();
     if (!Object.keys(this.snapshot).length) {
       throw new Error('PostgreSQL store is empty. Seed it before starting: npm run db:seed.');
     }
-    // The timer only diffs when a write has happened since the last flush, so an idle store costs nothing.
     this.timer = setInterval(() => {
       if (this.dirty) this.flush().catch(() => {});
     }, FLUSH_INTERVAL_MS);
@@ -35,13 +32,11 @@ class PgBackedStore {
     return this.snapshot;
   }
 
-  // Loads the stored data and its versions. Used at startup and after a version conflict.
   async reload() {
     this.snapshot = await this.remote.loadAll();
     await this.syncKnown();
   }
 
-  // Records the stored version and content hash of every record, so the next diff is accurate.
   async syncKnown() {
     const { rows } = await this.remote.pool.query('SELECT collection, record_key, version, position, data FROM vaayu_records');
     this.known = new Map();
@@ -58,7 +53,6 @@ class PgBackedStore {
     return this.snapshot;
   }
 
-  // Replaces the in-memory snapshot. The next flush persists whatever changed.
   write(data) {
     if (!this.snapshot) throw new Error('PgBackedStore used before load().');
     this.snapshot = data;
@@ -70,7 +64,6 @@ class PgBackedStore {
     return this.dirty || this.flushing !== null;
   }
 
-  // Computes the record-level changes against the last flushed state.
   diff() {
     const changes = [];
     const seen = new Map();
@@ -82,7 +75,6 @@ class PgBackedStore {
         const hash = digest(item);
         const before = previous.get(key);
         current.set(key, { hash, version: before ? before.version : undefined, position });
-        // A record whose only change is its position still needs writing, so order is kept.
         if (!before || before.hash !== hash || before.position !== position) {
           changes.push({
             collection: name, key, upsert: item, position,
@@ -103,8 +95,10 @@ class PgBackedStore {
     return { changes, seen };
   }
 
-  // Writes only the changed records, in one transaction. A version conflict reloads the store from
-  // PostgreSQL, so the other writer's data is kept and this process does not overwrite it.
+  // A version conflict is a command conflict, not a successful persistence cycle. Reload the
+  // authoritative snapshot so this process does not overwrite the competing writer, then surface
+  // the conflict to the command that requested durability. The caller must retry its command using
+  // the newly authoritative state; the original mutation is never silently acknowledged.
   async flush() {
     if (this.flushing) return this.flushing;
     this.flushing = (async () => {
@@ -124,6 +118,9 @@ class PgBackedStore {
         if (error instanceof VersionConflictError) {
           console.error('[PgBackedStore] another writer changed a record; reloading from PostgreSQL.');
           await this.reload();
+          // The attempted mutation must not be retried against the refreshed snapshot as if it
+          // were still valid. Mark the local attempt consumed; the command receives the conflict.
+          this.dirty = false;
         } else {
           console.error('[PgBackedStore] flush failed; will retry:', error.message);
         }
@@ -133,17 +130,17 @@ class PgBackedStore {
     return this.flushing;
   }
 
-  // Waits until every write made so far is committed to PostgreSQL. Throws if that is not possible,
-  // so the caller can refuse to confirm the request.
+  // Waits until every write made so far is committed to PostgreSQL. Persistence errors are
+  // intentionally propagated. In particular, VersionConflictError must reach the critical command
+  // so it cannot return success or emit an authoritative event for a mutation PostgreSQL rejected.
   async flushAll() {
     for (let attempt = 0; attempt < 5 && this.hasPending(); attempt += 1) {
-      if (this.flushing) await this.flushing.catch(() => {});
+      if (this.flushing) await this.flushing;
       if (this.dirty) await this.flush();
     }
     if (this.dirty || this.flushing) throw new Error('Writes could not be committed to PostgreSQL.');
   }
 
-  // Flushes everything pending before shutdown. Throws if a write cannot be saved.
   async drain() {
     if (this.timer) clearInterval(this.timer);
     await this.flush();
