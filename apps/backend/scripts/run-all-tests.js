@@ -19,13 +19,20 @@ const suites = [
   'test/unit/no-silent-success.test.js',
   'test/integration/lifecycle.test.js',
   'test/integration/operations.test.js',
-  'test/integration/websocket.test.js'
+  'test/integration/websocket.test.js',
+  'test/unit/postgresTransitionAtomicity.test.js',
+  'test/unit/paymentIntegrationPostgresRouting.test.js',
+  'test/unit/redisLockOwnership.test.js',
+  'test/unit/telemetryReplaySuppression.test.js',
+  'test/unit/dispatchCorrectnessConcurrency.test.js',
+  'test/unit/realtimeStreamResilience.test.js'
 ];
 
 console.log('----------------------------------------------------');
 console.log('VAAYU Enterprise Test Battery Runner');
 console.log(`Base URL: ${base}`);
 console.log(`JWT Secret: ${jwtSecret ? 'Loaded (' + jwtSecret.length + ' chars)' : 'MISSING'}`);
+console.log(`Suites: ${suites.length}`);
 console.log('----------------------------------------------------\n');
 
 (async () => {
@@ -44,29 +51,29 @@ console.log('----------------------------------------------------\n');
   for (const suite of suites) {
     process.stdout.write(`Running ${suite} ... `);
     try {
-    execSync(`node ${suite}`, {
-      cwd: path.resolve(__dirname, '..'),
-      env: { ...process.env, VAAYU_TEST_JWT_SECRET: jwtSecret, VAAYU_TEST_BASE: base },
-      stdio: 'pipe'
-    });
-    console.log('PASSED ✓');
-  } catch (err) {
-    console.log('FAILED ✗');
-    console.error(err.stdout ? err.stdout.toString() : err.message);
-    failed++;
+      execSync(`node ${suite}`, {
+        cwd: path.resolve(__dirname, '..'),
+        env: { ...process.env, VAAYU_TEST_JWT_SECRET: jwtSecret, VAAYU_TEST_BASE: base },
+        stdio: 'pipe'
+      });
+      console.log('PASSED ✓');
+    } catch (err) {
+      console.log('FAILED ✗');
+      console.error(err.stdout ? err.stdout.toString() : err.message);
+      failed++;
+    }
   }
-}
 
-console.log('\n----------------------------------------------------');
+  console.log('\n----------------------------------------------------');
   if (failed === 0) {
-    console.log(`ALL ${suites.length} TEST SUITES PASSED (62/62 Tests Verified) ✓`);
+    console.log(`ALL ${suites.length} TEST SUITES PASSED ✓`);
     try {
       execSync('node src/db/seedPostgres.js --force', { cwd: path.resolve(__dirname, '..'), stdio: 'pipe' });
       console.log('Postgres clean baseline restored.');
     } catch (e) {}
     process.exit(0);
-  } else {
-    console.error(`${failed} SUITES FAILED ✗`);
-    process.exit(1);
   }
+
+  console.error(`${failed}/${suites.length} SUITES FAILED ✗`);
+  process.exit(1);
 })();
