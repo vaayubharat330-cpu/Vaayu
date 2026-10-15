@@ -5,10 +5,7 @@ const { PostgresLedgerRepository } = require('./postgresLedgerRepository');
 
 const balanceContext = new AsyncLocalStorage();
 
-/**
- * Prevents the legacy repository's response-time balance lookup from opening a
- * second connection against an account row still locked by the mutation transaction.
- */
+/** Prevents response-time balance lookups from waiting on the mutation transaction's row lock. */
 class SafePostgresLedgerRepository extends PostgresLedgerRepository {
   async getCustomerBalance(customerId) {
     const context = balanceContext.getStore();
@@ -18,7 +15,10 @@ class SafePostgresLedgerRepository extends PostgresLedgerRepository {
 
   async reserveEscrow(args) {
     const current = await super.getCustomerBalance(args.customerId);
-    const projected = Math.max(0, Number(current.paise) - Number(args.amountPaise));
+    const existing = await super.getPayment(`PAY_${args.tripId}`);
+    const projected = existing?.state === 'ESCROWED'
+      ? Number(current.paise)
+      : Math.max(0, Number(current.paise) - Number(args.amountPaise));
     return balanceContext.run({ customerId: args.customerId, customerBalance: { paise: projected, rupees: +(projected / 100).toFixed(2) } }, () => super.reserveEscrow(args));
   }
 
