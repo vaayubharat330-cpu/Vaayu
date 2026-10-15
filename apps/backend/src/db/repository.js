@@ -8,7 +8,7 @@ const DB_FILE = path.join(__dirname, 'vaayu_store.json');
 
 /**
  * VAAYU Milestone 6 Phase 6.1: Persistence Boundary Abstraction
- * 
+ *
  * Provides:
  * 1. DatabaseRepository (Abstract Class Boundary)
  * 2. JsonDatabaseRepository (Preserves existing JSON persistence)
@@ -84,9 +84,7 @@ class JsonDatabaseRepository extends DatabaseRepository {
       };
     });
     this.defaultData.vehicle_categories.forEach(defV => {
-      if (!categories.some(c => c.id === defV.id)) {
-        categories.push(defV);
-      }
+      if (!categories.some(c => c.id === defV.id)) categories.push(defV);
     });
     return categories;
   }
@@ -104,14 +102,8 @@ class JsonDatabaseRepository extends DatabaseRepository {
   createTrip(tripData) {
     const db = this.readDb();
     if (!db.trips) db.trips = [];
-    if (!tripData.internalValues && orderIdService) {
-      orderIdService.attachInternalValues(tripData);
-    }
-    const formattedTrip = {
-      ...tripData,
-      version: tripData.version || 1,
-      createdAt: tripData.createdAt || new Date().toISOString()
-    };
+    if (!tripData.internalValues && orderIdService) orderIdService.attachInternalValues(tripData);
+    const formattedTrip = { ...tripData, version: tripData.version || 1, createdAt: tripData.createdAt || new Date().toISOString() };
     db.trips.push(formattedTrip);
     this.writeDb(db);
     return formattedTrip;
@@ -121,11 +113,8 @@ class JsonDatabaseRepository extends DatabaseRepository {
     const db = this.readDb();
     if (!db.trips) db.trips = [];
     const idx = db.trips.findIndex(t => t.id === tripData.id);
-    if (idx >= 0) {
-      db.trips[idx] = tripData;
-    } else {
-      db.trips.push(tripData);
-    }
+    if (idx >= 0) db.trips[idx] = tripData;
+    else db.trips.push(tripData);
     this.writeDb(db);
     return tripData;
   }
@@ -136,9 +125,7 @@ class JsonDatabaseRepository extends DatabaseRepository {
     if (trip) {
       trip.status = status;
       trip.version = (trip.version || 1) + 1;
-      if (status === 'COMPLETED' || status === 'DELIVERED') {
-        trip.completedAt = new Date().toISOString();
-      }
+      if (status === 'COMPLETED' || status === 'DELIVERED') trip.completedAt = new Date().toISOString();
       this.writeDb(db);
     }
     return trip;
@@ -147,10 +134,7 @@ class JsonDatabaseRepository extends DatabaseRepository {
   async transitionTripState(tripId, expectedVersion, nextState, actor, reason = '', idempotencyKey = null, metadata = {}) {
     const db = this.readDb();
     const trip = (db.trips || []).find(t => t.id === tripId);
-
-    if (!trip) {
-      return { success: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } };
-    }
+    if (!trip) return { success: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } };
 
     const currentVersion = trip.version || 1;
     if (expectedVersion != null && currentVersion !== expectedVersion) {
@@ -158,26 +142,15 @@ class JsonDatabaseRepository extends DatabaseRepository {
     }
 
     if (!db.delivery_audit_logs) db.delivery_audit_logs = [];
-
-    // Idempotency Key Check
     if (idempotencyKey) {
       const existing = db.delivery_audit_logs.find(l => l.order_id === tripId && l.idempotency_key === idempotencyKey);
-      if (existing) {
-        return {
-          success: true,
-          trip,
-          version: trip.version,
-          cachedResult: true,
-          auditLog: existing
-        };
-      }
+      if (existing) return { success: true, trip, version: trip.version, cachedResult: true, auditLog: existing };
     }
 
     const fromState = trip.status;
     trip.status = nextState;
     trip.version = currentVersion + 1;
     trip.updatedAt = new Date().toISOString();
-
     const auditRecord = {
       id: db.delivery_audit_logs.length + 1,
       order_id: tripId,
@@ -191,16 +164,9 @@ class JsonDatabaseRepository extends DatabaseRepository {
       metadata,
       timestamp: new Date().toISOString()
     };
-
     db.delivery_audit_logs.push(auditRecord);
     this.writeDb(db);
-
-    return {
-      success: true,
-      trip,
-      version: trip.version,
-      auditLog: auditRecord
-    };
+    return { success: true, trip, version: trip.version, auditLog: auditRecord };
   }
 
   async getAuditLogs(tripId) {
@@ -213,28 +179,19 @@ class JsonDatabaseRepository extends DatabaseRepository {
     const trips = db.trips || [];
     const drivers = db.driver_profiles || [];
     const users = db.users || [];
-
     const totalGmv = trips.reduce((sum, t) => sum + (t.totalFare || 0), 0);
     const platformRevenue = Math.round(totalGmv * 0.18);
-    const activeTripsCount = trips.filter(t => t.status === 'ACCEPTED' || t.status === 'SEARCHING_DRIVER' || t.status === 'DRIVER_ASSIGNED').length;
-    const completedTripsCount = trips.filter(t => t.status === 'COMPLETED' || t.status === 'DELIVERED').length;
+    const activeTripsCount = trips.filter(t => ['ACCEPTED', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED'].includes(t.status)).length;
+    const completedTripsCount = trips.filter(t => ['COMPLETED', 'DELIVERED'].includes(t.status)).length;
     const onlineDriversCount = drivers.filter(d => d.status === 'ONLINE').length;
     const outstationTripsCount = trips.filter(t => t.isOutstation).length;
-
     return {
-      totalGmv,
-      platformRevenue,
-      totalTrips: trips.length,
-      activeTripsCount,
-      completedTripsCount,
-      onlineDriversCount,
-      totalDrivers: drivers.length,
+      totalGmv, platformRevenue, totalTrips: trips.length, activeTripsCount, completedTripsCount,
+      onlineDriversCount, totalDrivers: drivers.length,
       totalCustomers: users.filter(u => u.role === 'CUSTOMER' || !u.role).length,
       outstationTripsCount,
       fleetUtilizationPercent: Math.round((onlineDriversCount / (drivers.length || 1)) * 100),
-      recentTrips: trips.slice(-5).reverse(),
-      drivers,
-      systemSettings: db.system_settings
+      recentTrips: trips.slice(-5).reverse(), drivers, systemSettings: db.system_settings
     };
   }
 }
@@ -282,99 +239,91 @@ class PostgresDatabaseRepository extends DatabaseRepository {
   }
 
   async createTrip(tripData) {
-    const formatted = {
-      ...tripData,
-      version: tripData.version || 1,
-      createdAt: tripData.createdAt || new Date().toISOString()
-    };
+    const formatted = { ...tripData, version: tripData.version || 1, createdAt: tripData.createdAt || new Date().toISOString() };
     await this.pool.query('INSERT INTO trips', [formatted]);
     return formatted;
   }
 
   async updateTripStatus(tripId, status) {
     const res = await this.pool.query('UPDATE trips SET status = $1 WHERE id = $2', [status, tripId]);
-    if (res.rowCount > 0) {
-      return await this.getTripById(tripId);
-    }
+    if (res.rowCount > 0) return await this.getTripById(tripId);
     return null;
   }
 
   /**
-   * Atomic PostgreSQL Transaction with Optimistic Concurrency Locking
+   * Atomic PostgreSQL transition. All statements run through one leased
+   * client, so BEGIN/COMMIT actually delimit one database transaction.
    */
   async transitionTripState(tripId, expectedVersion, nextState, actor, reason = '', idempotencyKey = null, metadata = {}) {
-    try {
-      await this.pool.query('BEGIN');
-
-      // 1. Optimistic Concurrency Lock Check
-      const updateRes = await this.pool.query(
-        'UPDATE trips SET status = $1, version = version + 1, updated_at = NOW() WHERE id = $2 AND version = $3 RETURNING version',
-        [nextState, tripId, expectedVersion]
+    return this.pool.withTransaction(async (client) => {
+      const tripRes = await client.query(
+        'SELECT * FROM trips WHERE id = $1 FOR UPDATE',
+        [tripId]
       );
+      const currentTrip = tripRes.rows[0];
+      if (!currentTrip) return { success: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } };
 
-      if (updateRes.rowCount === 0) {
-        await this.pool.query('ROLLBACK');
+      const currentVersion = Number(currentTrip.version || 1);
+      if (expectedVersion != null && currentVersion !== Number(expectedVersion)) {
         metricsService.increment('postgres_concurrency_conflict_total');
-        metricsService.increment('postgres_transaction_failures_total');
-        const existingTrip = await this.getTripById(tripId);
-        if (!existingTrip) {
-          return { success: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip not found' } };
-        }
         return {
           success: false,
           error: {
             code: 'CONCURRENCY_CONFLICT',
-            message: `Optimistic concurrency conflict: expected version ${expectedVersion}, but current database version is ${existingTrip.version}`
+            message: `Optimistic concurrency conflict: expected version ${expectedVersion}, but current database version is ${currentVersion}`
           }
         };
       }
 
-      const newVersion = updateRes.rows[0].version;
+      if (idempotencyKey) {
+        const existingRes = await client.query(
+          'SELECT * FROM delivery_audit_logs WHERE order_id = $1 AND idempotency_key = $2 LIMIT 1',
+          [tripId, idempotencyKey]
+        );
+        if (existingRes.rowCount > 0) {
+          return {
+            success: true,
+            trip: currentTrip,
+            version: currentVersion,
+            cachedResult: true,
+            auditLog: existingRes.rows[0]
+          };
+        }
+      }
 
-      // 2. Append Audit Log Record
-      const auditRes = await this.pool.query(
-        'INSERT INTO delivery_audit_logs (order_id, from_state, to_state, actor_type, actor_id, version, idempotency_key, reason, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      const fromState = currentTrip.status;
+      const updateRes = await client.query(
+        'UPDATE trips SET status = $1, version = version + 1, updated_at = NOW() WHERE id = $2 AND version = $3 RETURNING *',
+        [nextState, tripId, currentVersion]
+      );
+      if (updateRes.rowCount !== 1) {
+        metricsService.increment('postgres_concurrency_conflict_total');
+        return { success: false, error: { code: 'CONCURRENCY_CONFLICT', message: 'Trip version changed during transition' } };
+      }
+
+      const updatedTrip = updateRes.rows[0];
+      const auditRes = await client.query(
+        'INSERT INTO delivery_audit_logs (order_id, from_state, to_state, actor_type, actor_id, version, idempotency_key, reason, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
         [
           tripId,
-          'PREVIOUS',
+          fromState,
           nextState,
           actor ? actor.type : 'SYSTEM',
           actor ? actor.id : 'SYSTEM',
-          newVersion,
+          updatedTrip.version,
           idempotencyKey,
           reason,
           JSON.stringify(metadata)
         ]
       );
 
-      await this.pool.query('COMMIT');
-
-      const updatedTrip = await this.getTripById(tripId);
       return {
         success: true,
         trip: updatedTrip,
-        version: newVersion,
+        version: updatedTrip.version,
         auditLog: auditRes.rows[0]
       };
-    } catch (err) {
-      await this.pool.query('ROLLBACK');
-      
-      // Handle Unique Constraint Violation for Idempotency Key
-      if (err.code === '23505') {
-        const existingTrip = await this.getTripById(tripId);
-        const auditLogs = await this.getAuditLogs(tripId);
-        const matchLog = auditLogs.find(l => l.idempotency_key === idempotencyKey);
-        return {
-          success: true,
-          trip: existingTrip,
-          version: existingTrip ? existingTrip.version : expectedVersion,
-          cachedResult: true,
-          auditLog: matchLog
-        };
-      }
-
-      throw err;
-    }
+    });
   }
 
   async getAuditLogs(tripId) {
@@ -382,33 +331,20 @@ class PostgresDatabaseRepository extends DatabaseRepository {
     return res.rows;
   }
 
-  async getAdminAnalytics() {
-    const trips = await this.getTrips();
-    const drivers = await this.getDrivers();
-    const users = await this.getCustomers();
-
-    const totalGmv = trips.reduce((sum, t) => sum + (t.totalFare || 0), 0);
-    const platformRevenue = Math.round(totalGmv * 0.18);
-    const activeTripsCount = trips.filter(t => t.status === 'ACCEPTED' || t.status === 'SEARCHING_DRIVER' || t.status === 'DRIVER_ASSIGNED').length;
-    const completedTripsCount = trips.filter(t => t.status === 'COMPLETED' || t.status === 'DELIVERED').length;
-    const onlineDriversCount = drivers.filter(d => d.status === 'ONLINE').length;
-
-    return {
-      totalGmv,
-      platformRevenue,
-      totalTrips: trips.length,
-      activeTripsCount,
-      completedTripsCount,
-      onlineDriversCount,
-      totalDrivers: drivers.length,
-      totalCustomers: users.length,
-      recentTrips: trips.slice(-5).reverse()
-    };
+  getAdminAnalytics() {
+    return Promise.all([this.getTrips(), this.getDrivers(), this.getCustomers()]).then(([trips, drivers, users]) => {
+      const totalGmv = trips.reduce((sum, t) => sum + (t.totalFare || 0), 0);
+      const platformRevenue = Math.round(totalGmv * 0.18);
+      const activeTripsCount = trips.filter(t => ['ACCEPTED', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED'].includes(t.status)).length;
+      const completedTripsCount = trips.filter(t => ['COMPLETED', 'DELIVERED'].includes(t.status)).length;
+      const onlineDriversCount = drivers.filter(d => d.status === 'ONLINE').length;
+      return {
+        totalGmv, platformRevenue, totalTrips: trips.length, activeTripsCount, completedTripsCount,
+        onlineDriversCount, totalDrivers: drivers.length, totalCustomers: users.length,
+        recentTrips: trips.slice(-5).reverse()
+      };
+    });
   }
 }
 
-module.exports = {
-  DatabaseRepository,
-  JsonDatabaseRepository,
-  PostgresDatabaseRepository
-};
+module.exports = { DatabaseRepository, JsonDatabaseRepository, PostgresDatabaseRepository };
