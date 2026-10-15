@@ -50,6 +50,18 @@ jobs:
           for f in src/services/*.js src/db/*.js src/map-engine/*.js; do node --check "$f"; done
       - name: Unit tests (auth and OTP security)
         run: npm test
+      - name: Concurrency and realtime regression suites
+        env:
+          NODE_ENV: test
+          PERSISTENCE_PROVIDER: postgres
+          DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
+          REDIS_URL: redis://localhost:6379
+          ENABLE_DEV_REDIS: 'true'
+        run: |
+          npm run test:dispatch
+          npm run test:realtime
+          npm run test:cluster
+          npm run test:ledger-pg
       - name: Dependency audit (production, fails on high or critical)
         run: npm audit --omit=dev --audit-level=high
 
