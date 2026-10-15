@@ -183,10 +183,6 @@ function createTripBookingRoutes({
             return res.end(JSON.stringify({ success: false, error: escrowResult.error?.message || 'Wallet payment could not be completed.' }));
           }
 
-          if (db.debitCustomerWallet) {
-            db.debitCustomerWallet(customerId, finalTotalFare, tempOrderId);
-          }
-
           paymentInfo = {
             success: true,
             provider: 'VAAYU_WALLET',
