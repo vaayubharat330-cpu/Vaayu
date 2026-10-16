@@ -22,6 +22,7 @@
     "test:security-audit": "node --test test/unit/financialSecurityAudit.test.js",
     "test:chaos": "node --test test/unit/chaosFaultInjection.test.js",
     "test:dr": "node --test test/unit/databaseDisasterRecovery.test.js",
+    "test:dr-policy": "node --test test/unit/databaseDisasterRecoveryPolicy.test.js",
     "test:trace": "node --test test/unit/financialTraceObservability.test.js",
     "test:runbooks": "node --test test/unit/operationalRunbooksDrill.test.js",
     "test:perf": "node --test test/unit/baselinePerformance.test.js",
