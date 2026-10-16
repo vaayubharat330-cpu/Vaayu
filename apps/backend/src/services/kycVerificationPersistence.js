@@ -17,7 +17,9 @@ function json(value, fallback) {
  *
  * The verification decision, canonical document projection and immutable run
  * history are committed together. A provider response is evidence, not a
- * mutable business-state cache.
+ * mutable business-state cache. Identity values are stored as deterministic
+ * SHA-256 hashes; the legacy vehicle_number_normalized column now contains the
+ * vehicle identity hash for backward-compatible schema usage without plaintext.
  */
 class KycVerificationPersistence {
   constructor({ pool } = {}) {
@@ -77,17 +79,17 @@ class KycVerificationPersistence {
           `UPDATE driver_kyc_documents
              SET driver_id = $1, document_id = $2, document_type = $3,
                  decision = $4, issuer_state = $5, provider = $6,
-                 provider_verification_id = $7, vehicle_number_normalized = NULL,
-                 chassis_hash = $8, engine_hash = $9, license_number_hash = $10,
-                 policy_number_hash = $11, pan_hash = $12, aadhaar_reference_hash = $13,
-                 evidence_hash = $14, reasons = $15::jsonb, warnings = $16::jsonb,
-                 extracted_fields = $17::jsonb, expires_at = $18, updated_at = NOW()
-           WHERE kyc_document_id = $19
+                 provider_verification_id = $7, vehicle_number_normalized = $8,
+                 chassis_hash = $9, engine_hash = $10, license_number_hash = $11,
+                 policy_number_hash = $12, pan_hash = $13, aadhaar_reference_hash = $14,
+                 evidence_hash = $15, reasons = $16::jsonb, warnings = $17::jsonb,
+                 extracted_fields = $18::jsonb, expires_at = $19, updated_at = NOW()
+           WHERE kyc_document_id = $20
            RETURNING *`,
           [
             evaluation.driverId, evaluation.documentId, evaluation.documentType,
             evaluation.decision, issuerState, provider, providerVerificationId,
-            chassisHash, engineHash, licenseHash, policyHash, panHash,
+            vehicleHash, chassisHash, engineHash, licenseHash, policyHash, panHash,
             aadhaarReferenceHash, evidenceHash,
             JSON.stringify(evaluation.reasons || []), JSON.stringify(evaluation.warnings || []),
             JSON.stringify(safeExtractedFields), expiresAt, kycDocumentId
@@ -102,14 +104,14 @@ class KycVerificationPersistence {
               vehicle_number_normalized, chassis_hash, engine_hash, license_number_hash,
               policy_number_hash, pan_hash, aadhaar_reference_hash, evidence_hash,
               reasons, warnings, extracted_fields, expires_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17::jsonb,$18::jsonb,$19)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb,$19::jsonb,$20)
            RETURNING *`,
           [
             kycDocumentId, evaluation.driverId, evaluation.documentId, evaluation.documentType,
             evaluation.decision, issuerState, provider, providerVerificationId,
-            chassisHash, engineHash, licenseHash, policyHash, panHash, aadhaarReferenceHash,
-            evidenceHash, JSON.stringify(evaluation.reasons || []), JSON.stringify(evaluation.warnings || []),
-            JSON.stringify(safeExtractedFields), expiresAt
+            vehicleHash, chassisHash, engineHash, licenseHash, policyHash, panHash,
+            aadhaarReferenceHash, evidenceHash, JSON.stringify(evaluation.reasons || []),
+            JSON.stringify(evaluation.warnings || []), JSON.stringify(safeExtractedFields), expiresAt
           ]
         );
         row = inserted.rows[0];
