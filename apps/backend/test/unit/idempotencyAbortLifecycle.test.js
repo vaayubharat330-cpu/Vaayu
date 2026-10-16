@@ -9,6 +9,13 @@ function uniqueKey(prefix) {
   return `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+test.after(async () => {
+  // The production singleton owns a Redis connection when CI enables REDIS_URL.
+  // These focused lifecycle tests use that singleton directly, so close it after
+  // the suite instead of leaving an ioredis socket alive until CI's timeout.
+  await redisLockManager.redis.disconnect();
+});
+
 test('idempotency abort lifecycle releases the distributed command lease', async () => {
   const service = new IdempotencyService();
   const key = uniqueKey('idempotency-abort');
