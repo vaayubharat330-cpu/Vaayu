@@ -47,7 +47,9 @@ test('verification persistence writes document, decision history and immutable r
   assert.equal(pool.queries.filter(q => q.sql.includes('INSERT INTO driver_kyc_decision_history')).length, 1);
   assert.equal(pool.queries.filter(q => q.sql.includes('INSERT INTO driver_kyc_verification_runs')).length, 1);
   const documentInsert = pool.queries.find(q => q.sql.includes('INSERT INTO driver_kyc_documents'));
-  assert.equal(documentInsert.params[8], 'TS09AB1234');
+  // The durable document projection must never retain a plaintext vehicle identity.
+  assert.equal(documentInsert.params[8], hashIdentity('TS09AB1234'));
+  assert.notEqual(documentInsert.params[8], 'TS09AB1234');
 });
 
 test('unique identity conflicts are normalized to a domain error', async () => {
