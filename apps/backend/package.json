@@ -60,6 +60,7 @@
     "test:document-verification": "node --test test/unit/documentVerificationService.test.js",
     "test:document-decision": "node --test test/unit/documentVerificationDecisionEngine.test.js",
     "test:kyc-orchestration": "node --test test/unit/kycVerificationOrchestrator.test.js",
+    "test:kyc-expiry": "node --test test/unit/kycExpiryService.test.js",
     "test:e2e": "node --test test/integration/lifecycle.test.js",
     "test:e2e:merchant": "node --test test/integration/merchantLifecycle.test.js",
     "migrate:ledger": "node src/db/runLedgerMigrations.js",
