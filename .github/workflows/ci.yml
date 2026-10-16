@@ -66,6 +66,7 @@ jobs:
           npm run test:postgres-transition
           npm run test:payment-routing
           npm run test:payment-status
+          npm run test:payment-ingestion-recovery
           npm run test:idempotency
           npm run test:order-exception-recovery
           npm run test:cluster
