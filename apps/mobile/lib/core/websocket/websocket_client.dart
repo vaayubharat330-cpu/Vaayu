@@ -39,6 +39,11 @@ class WebSocketChannelAdapter implements IWebSocketChannel {
 /// Provides authenticated connection lifecycle, bounded exponential reconnect
 /// with jitter, durable room intent, application heartbeat and heartbeat
 /// watchdog, while leaving all business state authoritative on the server.
+///
+/// Server events carry a stable `eventId`. The bounded deduplication cache is
+/// deliberately transport-local: it protects the UI/state layer from duplicate
+/// delivery after reconnects or multi-node fan-out without pretending that the
+/// WebSocket is a durable event store.
 class WebSocketClient {
   final String serverUrl;
   final Future<String> Function() _tokenProvider;
@@ -56,6 +61,10 @@ class WebSocketClient {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<WebSocketStatus> _statusController =
       StreamController<WebSocketStatus>.broadcast();
+
+  final Map<String, DateTime> _seenEventIds = <String, DateTime>{};
+  static const int _maxSeenEventIds = 512;
+  static const Duration _seenEventTtl = Duration(minutes: 10);
 
   int _reconnectAttempts = 0;
   int _connectionGeneration = 0;
@@ -210,7 +219,32 @@ class WebSocketClient {
       _lastPongAt = DateTime.now().toUtc();
       _heartbeatOutstanding = false;
     }
+
+    final eventId = decoded['eventId'];
+    if (eventId is String && eventId.isNotEmpty && eventId != 'pong') {
+      if (_isDuplicateEvent(eventId)) return;
+    }
+
     _messages.add(decoded);
+  }
+
+  bool _isDuplicateEvent(String eventId) {
+    final now = DateTime.now().toUtc();
+    _pruneSeenEvents(now);
+    final previous = _seenEventIds[eventId];
+    if (previous != null && now.difference(previous) <= _seenEventTtl) {
+      return true;
+    }
+
+    _seenEventIds[eventId] = now;
+    while (_seenEventIds.length > _maxSeenEventIds) {
+      _seenEventIds.remove(_seenEventIds.keys.first);
+    }
+    return false;
+  }
+
+  void _pruneSeenEvents(DateTime now) {
+    _seenEventIds.removeWhere((_, seenAt) => now.difference(seenAt) > _seenEventTtl);
   }
 
   void _resubscribeRooms() {
@@ -258,8 +292,6 @@ class WebSocketClient {
       if (_heartbeatOutstanding &&
           _lastPongAt != null &&
           now.difference(_lastPongAt!) > _heartbeatTimeout) {
-        // The TCP/WebSocket object can remain open while the path is dead.
-        // Force the normal reconnect path instead of waiting for TCP timeout.
         _forceTransportFailure();
         return;
       }
@@ -284,6 +316,7 @@ class WebSocketClient {
 
   Future<void> dispose() async {
     await disconnect();
+    _seenEventIds.clear();
     await _messages.close();
     await _statusController.close();
   }
