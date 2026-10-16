@@ -6,12 +6,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createOrderRoutes } = require('../../src/http/orderRoutes');
-const { createTripBookingRoutes } = require('../../src/http/tripBookingRoutes');
 const { PaymentStateMachine } = require('../../src/services/ledger/paymentStateMachine');
 const { LedgerService, JsonLedgerRepository } = require('../../src/services/ledger/ledgerService');
 const { PaymentIntegrationService } = require('../../src/services/ledger/paymentIntegrationService');
 const { DELIVERY_STATES } = require('../../src/services/deliveryStateMachine');
-const { parseJsonBody, validateFields } = require('../../src/http/helpers');
+const { parseJsonBody } = require('../../src/http/helpers');
 const { EventEmitter } = require('events');
 
 function createE2EHarness() {
@@ -34,7 +33,6 @@ function createE2EHarness() {
     recordDriverTripCompletion: () => true
   };
 
-  // Mock DeliveryStateMachine that simulates Milestone 3 transitions
   const mockDeliveryStateMachine = {
     transition: async (orderId, targetState, actor, options = {}) => {
       let trip = mockDbStore.trips.find(t => t.id === orderId);
@@ -43,12 +41,7 @@ function createE2EHarness() {
         mockDbStore.trips.push(trip);
       }
       trip.status = targetState;
-      return {
-        success: true,
-        orderId,
-        currentState: targetState,
-        version: 2
-      };
+      return { success: true, orderId, currentState: targetState, version: 2 };
     }
   };
 
@@ -70,15 +63,38 @@ function createE2EHarness() {
   return { dir, ledger, psm, paymentIntegrationService, mockDb, mockDbStore, handleOrderRoute };
 }
 
-test('VAAYU Phase D: Trip & Dispatch Lifecycle Payment Integration', async (t) => {
+function makePostRequest(handleOrderRoute, pathname, user, payload) {
+  const req = new EventEmitter();
+  req.method = 'POST';
+  req.url = pathname;
+  req.user = user;
 
+  let resCode = 200;
+  let resBody = '';
+  const res = {
+    writeHead(c) { resCode = c; },
+    setHeader() {},
+    end(chunk) { if (chunk) resBody += chunk; }
+  };
+
+  const routePromise = handleOrderRoute(req, res, { pathname, parsedUrl: {} });
+  process.nextTick(() => {
+    req.emit('data', JSON.stringify(payload));
+    req.emit('end');
+  });
+
+  return routePromise.then(async () => {
+    await new Promise(r => setTimeout(r, 25));
+    return { resCode, body: JSON.parse(resBody) };
+  });
+}
+
+test('VAAYU Phase D: Trip & Dispatch Lifecycle Payment Integration', async (t) => {
   await t.test('1. Trip Booking -> Escrow Hold -> Driver Completion -> Automatic Settle', async () => {
     const { dir, psm, ledger, mockDbStore, handleOrderRoute } = createE2EHarness();
     try {
-      // 1. Customer has ₹1,000 in PSM wallet
       await psm.topUpCustomerWallet({ customerId: 'cust_e2e', amountPaise: 100000 });
 
-      // 2. Customer creates booking with ₹500 fare -> reserves escrow
       const orderId = 'ORD_E2E_COMPLETE_1';
       await psm.reserveEscrow({
         tripId: orderId,
@@ -90,40 +106,23 @@ test('VAAYU Phase D: Trip & Dispatch Lifecycle Payment Integration', async (t) =
       assert.equal(psm.getBalance('escrow:platform'), 50000);
       assert.equal(psm.getCustomerBalance('cust_e2e').paise, 50000);
 
-      // Register trip in DB
       mockDbStore.trips.push({
         id: orderId,
         tripId: orderId,
         customerId: 'cust_e2e',
         status: 'IN_TRANSIT',
         totalFare: 500,
-        driver: { id: 'drv_e2e' }
+        driver: { id: 'drv_e2e' },
+        paymentInfo: { paymentMethod: 'WALLET', provider: 'VAAYU_WALLET' }
       });
 
-      // 3. Driver completes trip (drop-off OTP verified via /api/orders/complete)
-      const req = new EventEmitter();
-      req.method = 'POST';
-      req.url = '/api/orders/complete';
-      req.user = { id: 'drv_e2e', role: 'DRIVER' };
+      const { resCode, body: parsedRes } = await makePostRequest(
+        handleOrderRoute,
+        '/api/orders/complete',
+        { id: 'drv_e2e', role: 'DRIVER' },
+        { orderId, otp: '1234' }
+      );
 
-      let resCode = 200;
-      let resBody = '';
-      const res = {
-        writeHead(c) { resCode = c; },
-        setHeader() {},
-        end(chunk) { if (chunk) resBody += chunk; }
-      };
-
-      const routePromise = handleOrderRoute(req, res, { pathname: '/api/orders/complete', parsedUrl: {} });
-      process.nextTick(() => {
-        req.emit('data', JSON.stringify({ orderId, otp: '1234' }));
-        req.emit('end');
-      });
-
-      await routePromise;
-      await new Promise(r => setTimeout(r, 25));
-
-      const parsedRes = JSON.parse(resBody);
       assert.equal(resCode, 200);
       assert.equal(parsedRes.success, true);
       assert.equal(parsedRes.paymentSettlement.success, true);
@@ -132,14 +131,11 @@ test('VAAYU Phase D: Trip & Dispatch Lifecycle Payment Integration', async (t) =
       assert.equal(parsedRes.paymentSettlement.commissionPaise, 5000);
       assert.equal(parsedRes.paymentSettlement.gstPaise, 900);
 
-      // 4. Verify double-entry ledger state
       assert.equal(psm.getBalance('escrow:platform'), 0);
       assert.equal(psm.getDriverBalance('drv_e2e').paise, 44100);
       assert.equal(psm.getBalance('platform:commission'), 5000);
       assert.equal(psm.getBalance('platform:gst'), 900);
-
-      const audit = ledger.reconcile();
-      assert.equal(audit.ok, true);
+      assert.equal(ledger.reconcile().ok, true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -166,48 +162,87 @@ test('VAAYU Phase D: Trip & Dispatch Lifecycle Payment Integration', async (t) =
         tripId: orderId,
         customerId: 'cust_e2e',
         status: 'SEARCHING_DRIVER',
-        totalFare: 350
+        totalFare: 350,
+        paymentInfo: { paymentMethod: 'WALLET', provider: 'VAAYU_WALLET' }
       });
 
-      // Customer cancels order via /api/orders/cancel
-      const req = new EventEmitter();
-      req.method = 'POST';
-      req.url = '/api/orders/cancel';
-      req.user = { id: 'cust_e2e', role: 'CUSTOMER' };
+      const { resCode, body: parsedRes } = await makePostRequest(
+        handleOrderRoute,
+        '/api/orders/cancel',
+        { id: 'cust_e2e', role: 'CUSTOMER' },
+        { orderId, reason: 'Customer changed plans' }
+      );
 
-      let resCode = 200;
-      let resBody = '';
-      const res = {
-        writeHead(c) { resCode = c; },
-        setHeader() {},
-        end(chunk) { if (chunk) resBody += chunk; }
-      };
-
-      const routePromise = handleOrderRoute(req, res, { pathname: '/api/orders/cancel', parsedUrl: {} });
-      process.nextTick(() => {
-        req.emit('data', JSON.stringify({ orderId, reason: 'Customer changed plans' }));
-        req.emit('end');
-      });
-
-      await routePromise;
-      await new Promise(r => setTimeout(r, 25));
-
-      const parsedRes = JSON.parse(resBody);
       assert.equal(resCode, 200);
       assert.equal(parsedRes.success, true);
       assert.equal(parsedRes.paymentRefund.success, true);
       assert.equal(parsedRes.paymentRefund.state, 'REFUNDED');
       assert.equal(parsedRes.paymentRefund.refundedPaise, 35000);
-
-      // Verify customer wallet is 100% restored
       assert.equal(psm.getBalance('escrow:platform'), 0);
       assert.equal(psm.getCustomerBalance('cust_e2e').paise, 100000);
-
-      const audit = ledger.reconcile();
-      assert.equal(audit.ok, true);
+      assert.equal(ledger.reconcile().ok, true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
+  await t.test('3. Cash booking completion does not invoke the wallet ledger', async () => {
+    const { dir, psm, mockDbStore, handleOrderRoute } = createE2EHarness();
+    try {
+      const orderId = 'ORD_E2E_CASH_COMPLETE_1';
+      mockDbStore.trips.push({
+        id: orderId,
+        tripId: orderId,
+        customerId: 'cust_e2e',
+        status: 'IN_TRANSIT',
+        totalFare: 500,
+        driver: { id: 'drv_e2e' },
+        paymentInfo: { paymentMethod: 'CASH_ON_DELIVERY' }
+      });
+
+      const { resCode, body } = await makePostRequest(
+        handleOrderRoute,
+        '/api/orders/complete',
+        { id: 'drv_e2e', role: 'DRIVER' },
+        { orderId, otp: '1234' }
+      );
+
+      assert.equal(resCode, 200);
+      assert.equal(body.success, true);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'paymentSettlement'), false);
+      assert.equal(psm.getBalance('escrow:platform'), 0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test('4. Cash booking cancellation does not invoke the wallet ledger or provider refund', async () => {
+    const { dir, psm, mockDbStore, handleOrderRoute } = createE2EHarness();
+    try {
+      const orderId = 'ORD_E2E_CASH_CANCEL_1';
+      mockDbStore.trips.push({
+        id: orderId,
+        tripId: orderId,
+        customerId: 'cust_e2e',
+        status: 'SEARCHING_DRIVER',
+        totalFare: 350,
+        paymentInfo: { paymentMethod: 'CASH_ON_DELIVERY' }
+      });
+
+      const { resCode, body } = await makePostRequest(
+        handleOrderRoute,
+        '/api/orders/cancel',
+        { id: 'cust_e2e', role: 'CUSTOMER' },
+        { orderId, reason: 'Cash order cancelled' }
+      );
+
+      assert.equal(resCode, 200);
+      assert.equal(body.success, true);
+      assert.equal(Object.prototype.hasOwnProperty.call(body, 'paymentRefund'), false);
+      assert.equal(body.refundInfo.status, 'NOT_APPLICABLE');
+      assert.equal(psm.getBalance('escrow:platform'), 0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
