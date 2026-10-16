@@ -74,6 +74,7 @@ jobs:
           npm run test:camera-policy
           npm run test:camera-integrity
           npm run test:camera-gateway
+          npm run test:camera-route-security
           npm run test:document-verification
           npm run test:document-decision
           npm run test:document-capture
