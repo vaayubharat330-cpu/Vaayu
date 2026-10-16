@@ -70,6 +70,7 @@
     "test:kyc-license-db": "node --test test/unit/kycLicenseDatabasePolicy.test.js",
     "test:kyc-license-owner-registry": "node --test test/unit/kycLicenseOwnerRegistryMigration.test.js",
     "test:kyc-persistence": "node --test test/unit/kycVerificationPersistence.test.js",
+    "test:kyc-upload-wiring": "node --test test/unit/kycUploadWiring.test.js",
     "test:e2e": "node --test test/integration/lifecycle.test.js",
     "test:e2e:merchant": "node --test test/integration/merchantLifecycle.test.js",
     "migrate:ledger": "node src/db/runLedgerMigrations.js",
