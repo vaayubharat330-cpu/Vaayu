@@ -50,11 +50,27 @@ async function buildPage(page) {
 function buildStyles() {
   const { execFileSync } = require('child_process');
   const bin = path.join(__dirname, '..', 'node_modules', '.bin', process.platform === 'win32' ? 'tailwindcss.cmd' : 'tailwindcss');
-  execFileSync(bin, ['-i', 'src/styles/tailwind.input.css', '-o', 'public/built/tailwind.css', '--minify'], {
-    cwd: path.join(__dirname, '..'),
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-  });
+  const tailwindCli = path.join(__dirname, '..', 'node_modules', 'tailwindcss', 'lib', 'cli.js');
+  const cliArgs = ['-i', 'src/styles/tailwind.input.css', '-o', 'public/built/tailwind.css', '--minify'];
+
+  // npm normally creates node_modules/.bin/tailwindcss. Some CI/npm layouts can
+  // install the package correctly while omitting that convenience shim. Resolve
+  // directly to the pinned Tailwind v3 CLI in that case so portal builds remain
+  // deterministic and do not reach out to an unpinned npx package.
+  if (fs.existsSync(bin)) {
+    execFileSync(bin, cliArgs, {
+      cwd: path.join(__dirname, '..'),
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    });
+  } else if (fs.existsSync(tailwindCli)) {
+    execFileSync(process.execPath, [tailwindCli, ...cliArgs], {
+      cwd: path.join(__dirname, '..'),
+      stdio: 'inherit',
+    });
+  } else {
+    throw new Error('Tailwind CSS CLI is not installed; run npm ci with devDependencies enabled');
+  }
   console.log('styles -> built/tailwind.css');
 }
 
