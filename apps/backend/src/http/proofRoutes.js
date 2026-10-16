@@ -1,16 +1,18 @@
 // Proof-of-delivery photos and authenticated live camera snapshot sessions.
-// Images are stored privately; access is always bound to the trip and authenticated role.
+// KYC/POD files remain private on disk; live camera frames are ephemeral and shared through Redis.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { redisPubSub } = require('../services/redisPubSub');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..', '..');
 const PRIVATE_PROOF_PHOTOS = path.resolve(BACKEND_ROOT, 'private_uploads', 'proof_photos');
 const PRIVATE_CAMERA_STREAMS = path.resolve(BACKEND_ROOT, 'private_uploads', 'camera_streams');
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 7.5 * 1024 * 1024;
-const MAX_CAMERA_FRAME_BYTES = 900 * 1024;
+const MAX_CAMERA_FRAME_BYTES = 750 * 1024;
 const CAMERA_SESSION_TTL_MS = 30 * 60 * 1000;
+const CAMERA_REDIS_PREFIX = 'vaayu:camera:frame:';
 
 function json(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -31,11 +33,7 @@ function readJsonBody(req, maxBytes = MAX_REQUEST_BYTES) {
     let body = '';
     let size = 0;
     let tooLarge = false;
-    req.on('data', chunk => {
-      size += chunk.length;
-      if (size > maxBytes) { tooLarge = true; return; }
-      body += chunk;
-    });
+    req.on('data', chunk => { size += chunk.length; if (size > maxBytes) { tooLarge = true; return; } body += chunk; });
     req.on('end', () => {
       if (tooLarge) return resolve({ error: 'PAYLOAD_TOO_LARGE' });
       try { resolve({ data: JSON.parse(body) }); } catch (_) { resolve({ error: 'INVALID_JSON' }); }
@@ -50,8 +48,13 @@ function getCameraSessions(db) {
   return store.camera_stream_sessions;
 }
 
-function getSession(db, sessionId) {
-  return getCameraSessions(db).find(s => s.id === sessionId) || null;
+function getSession(db, sessionId) { return getCameraSessions(db).find(s => s.id === sessionId) || null; }
+function frameKey(sessionId) { return `${CAMERA_REDIS_PREFIX}${sessionId}`; }
+
+function cleanupOldFrameFile(ref) {
+  if (!ref) return;
+  const file = path.resolve(PRIVATE_CAMERA_STREAMS, path.basename(ref));
+  if (file.startsWith(PRIVATE_CAMERA_STREAMS + path.sep)) { try { fs.unlinkSync(file); } catch (_) {} }
 }
 
 function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
@@ -66,13 +69,10 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
       if (!trip) return json(res, 404, { success: false, error: 'Trip not found.' });
       const driver = (db.getDrivers ? db.getDrivers() : []).find(d => d.userId === req.user.id || d.id === req.user.id || d.id === trip.driver?.id || d.userId === trip.driver?.userId);
       if (req.user.role === 'DRIVER' && (!driver || String(trip.driver?.id || trip.driver?.userId) !== String(driver.id || driver.userId))) return json(res, 403, { success: false, error: 'Camera session is not assigned to this driver.' });
-
       const sessions = getCameraSessions(db);
       const now = Date.now();
       for (const session of sessions) {
-        if (session.tripId === tripId && session.status === 'LIVE' && now - Date.parse(session.updatedAt || session.createdAt) < CAMERA_SESSION_TTL_MS) {
-          return json(res, 200, { success: true, sessionId: session.id, reused: true, expiresAt: session.expiresAt });
-        }
+        if (session.tripId === tripId && session.status === 'LIVE' && now - Date.parse(session.updatedAt || session.createdAt) < CAMERA_SESSION_TTL_MS) return json(res, 200, { success: true, sessionId: session.id, reused: true, expiresAt: session.expiresAt });
       }
       const sessionId = `cam_${crypto.randomBytes(16).toString('hex')}`;
       const session = { id: sessionId, tripId, driverId: driver?.id || req.user.id, status: 'LIVE', sequence: 0, latestFrameRef: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(now + CAMERA_SESSION_TTL_MS).toISOString() };
@@ -90,42 +90,37 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
       if (!session || session.status !== 'LIVE' || Date.now() > Date.parse(session.expiresAt)) return json(res, 410, { success: false, error: 'Camera session expired.' });
       if (!await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN'], targetOrderId: session.tripId })) return true;
       const image = parseImage(data.image_data, MAX_CAMERA_FRAME_BYTES);
-      if (!image) return json(res, 413, { success: false, error: 'Camera frame must be JPEG, PNG, or WebP and <= 900 KB.' });
+      if (!image) return json(res, 413, { success: false, error: 'Camera frame must be JPEG, PNG, or WebP and <= 750 KB.' });
 
-      fs.mkdirSync(PRIVATE_CAMERA_STREAMS, { recursive: true });
       const nextSequence = Number(session.sequence || 0) + 1;
-      const id = `frame_${crypto.randomBytes(16).toString('hex')}`;
-      const extension = image.format === 'jpeg' ? 'jpg' : image.format;
-      const filename = `${id}.${extension}`;
-      fs.writeFileSync(path.join(PRIVATE_CAMERA_STREAMS, filename), image.bytes, { flag: 'wx', mode: 0o600 });
+      const capturedAt = new Date().toISOString();
       const previousRef = session.latestFrameRef;
+      const extension = image.format === 'jpeg' ? 'jpg' : image.format;
+      const filename = `frame_${crypto.randomBytes(16).toString('hex')}.${extension}`;
+      const redisValue = JSON.stringify({ sequence: nextSequence, capturedAt, format: image.format, data: image.bytes.toString('base64') });
+      await redisPubSub.pubClient.set(frameKey(sessionId), redisValue, 'PX', CAMERA_SESSION_TTL_MS);
       session.sequence = nextSequence;
-      session.latestFrameRef = `/private-camera-streams/${filename}`;
-      session.updatedAt = new Date().toISOString();
+      session.latestFrameRef = `/redis-camera-streams/${filename}`;
+      session.updatedAt = capturedAt;
       if (typeof db.saveDb === 'function') db.saveDb();
-      if (previousRef) {
-        const previousFile = path.resolve(PRIVATE_CAMERA_STREAMS, path.basename(previousRef));
-        if (previousFile.startsWith(PRIVATE_CAMERA_STREAMS + path.sep)) { try { fs.unlinkSync(previousFile); } catch (_) {} }
-      }
-      return json(res, 200, { success: true, sequence: nextSequence, capturedAt: session.updatedAt, frameRef: session.latestFrameRef });
+      cleanupOldFrameFile(previousRef);
+      return json(res, 200, { success: true, sequence: nextSequence, capturedAt, frameRef: session.latestFrameRef });
     }
 
     if (pathname === '/api/trip/camera/frame' && req.method === 'GET') {
       const sessionId = String(parsedUrl.query.session_id || '');
       const session = getSession(db, sessionId);
-      if (!session || session.status !== 'LIVE' || !session.latestFrameRef) return json(res, 404, { success: false, error: 'Live camera frame not available.' });
+      if (!session || session.status !== 'LIVE') return json(res, 404, { success: false, error: 'Live camera session not available.' });
       if (Date.now() > Date.parse(session.expiresAt)) return json(res, 410, { success: false, error: 'Camera session expired.' });
       if (!await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'CUSTOMER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN', 'DISPATCH_OPERATOR', 'SUPPORT_AGENT'], targetOrderId: session.tripId })) return true;
-      const filename = path.basename(session.latestFrameRef);
-      const filePath = path.resolve(PRIVATE_CAMERA_STREAMS, filename);
-      if (!filePath.startsWith(PRIVATE_CAMERA_STREAMS + path.sep)) return json(res, 404, { success: false, error: 'Not found.' });
-      fs.readFile(filePath, (error, file) => {
-        if (error) return json(res, 404, { success: false, error: 'Frame unavailable.' });
-        const ext = path.extname(filePath).slice(1).toLowerCase();
-        const types = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
-        res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache', 'X-Frame-Sequence': String(session.sequence), 'X-Captured-At': session.updatedAt, 'X-Content-Type-Options': 'nosniff' });
-        res.end(file);
-      });
+      const stored = await redisPubSub.pubClient.get(frameKey(sessionId));
+      if (!stored) return json(res, 404, { success: false, error: 'Live camera frame not available.' });
+      let frame;
+      try { frame = JSON.parse(stored); } catch (_) { return json(res, 500, { success: false, error: 'Live camera frame is corrupt.' }); }
+      const bytes = Buffer.from(frame.data, 'base64');
+      const types = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+      res.writeHead(200, { 'Content-Type': types[frame.format] || 'image/jpeg', 'Content-Length': bytes.length, 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache', 'X-Frame-Sequence': String(frame.sequence), 'X-Captured-At': frame.capturedAt, 'X-Content-Type-Options': 'nosniff' });
+      res.end(bytes);
       return true;
     }
 
@@ -136,15 +131,14 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
       const session = getSession(db, sessionId);
       if (!session) return json(res, 404, { success: false, error: 'Camera session not found.' });
       if (!await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN'], targetOrderId: session.tripId })) return true;
-      session.status = 'STOPPED';
-      session.updatedAt = new Date().toISOString();
+      session.status = 'STOPPED'; session.updatedAt = new Date().toISOString();
+      await redisPubSub.pubClient.del(frameKey(sessionId));
       if (typeof db.saveDb === 'function') db.saveDb();
       return json(res, 200, { success: true, sessionId, status: session.status });
     }
 
     if (pathname === '/api/trip/proof-photo' && req.method === 'POST') {
-      let body = '';
-      let tooLarge = false;
+      let body = ''; let tooLarge = false;
       req.on('data', chunk => { if (body.length + chunk.length > MAX_REQUEST_BYTES) { tooLarge = true; return; } body += chunk; });
       req.on('end', async () => {
         if (tooLarge) return json(res, 413, { success: false, error: 'Proof photo exceeds the upload size.' });
