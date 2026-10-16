@@ -9,6 +9,8 @@ const { getActiveDriverLocationStore, calcHaversine } = require('./driverLocatio
  * 3. Monotonic sequence protection for duplicate/out-of-order telemetry packets.
  * 4. Replay protection and physical jump/glitch filtering.
  * 5. Trip active protection: telemetry loss never terminates an active delivery state.
+ * 6. Liveness considers both transport freshness and device packet age, so a delayed
+ *    old GPS packet cannot masquerade as a fresh ONLINE driver.
  */
 class DriverLocationService {
   constructor(store = null) {
@@ -65,10 +67,22 @@ class DriverLocationService {
     return { valid: true, lat, lng, speed, accuracy, pingTimestampMs, sequence, serverReceivedAt };
   }
 
-  getLivenessState(lastServerReceivedAt, lastPingMs = null) {
+  getLivenessState(lastServerReceivedAt, lastPingMs = null, packetAgeMs = null) {
     if (!lastServerReceivedAt && !lastPingMs) return 'OFFLINE';
-    const referenceMs = lastServerReceivedAt || lastPingMs;
-    const ageSec = Math.max(0, (Date.now() - referenceMs) / 1000);
+
+    // A request arriving now does not make an old device-generated GPS fix fresh.
+    // Use the most conservative freshness signal so delayed/replayed packets cannot
+    // keep a driver dispatch-eligible merely because the transport is still active.
+    const serverAgeSec = lastServerReceivedAt
+      ? Math.max(0, (Date.now() - lastServerReceivedAt) / 1000)
+      : 0;
+    const deviceAgeSec = lastPingMs
+      ? Math.max(0, (Date.now() - lastPingMs) / 1000)
+      : 0;
+    const packetAgeSec = packetAgeMs === null || packetAgeMs === undefined
+      ? 0
+      : Math.max(0, Number(packetAgeMs) / 1000);
+    const ageSec = Math.max(serverAgeSec, deviceAgeSec, packetAgeSec);
 
     if (ageSec > this.LIVENESS_CONFIG.OFFLINE_THRESHOLD_SEC) return 'OFFLINE';
     if (ageSec > this.LIVENESS_CONFIG.DEGRADED_THRESHOLD_SEC) return 'STALE';
@@ -181,7 +195,7 @@ class DriverLocationService {
     const driver = await this.store.getDriverLocation(driverId);
     if (!driver) return null;
 
-    const livenessState = this.getLivenessState(driver.lastServerReceivedAt, driver.lastPingMs);
+    const livenessState = this.getLivenessState(driver.lastServerReceivedAt, driver.lastPingMs, driver.packetAgeMs);
     return {
       ...driver,
       livenessState,
