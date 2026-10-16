@@ -43,6 +43,7 @@
     "test:redis-lock": "node --test test/unit/redisLockOwnership.test.js",
     "test:dispatch": "node --test test/unit/dispatchCorrectnessConcurrency.test.js",
     "test:dispatch-recovery": "node --test test/unit/dispatchRecovery.test.js",
+    "test:dispatch-race": "node --test test/unit/dispatchOfferRace.test.js",
     "test:location": "node --test test/unit/locationMobilityIntegrity.test.js",
     "test:routing": "node --test test/unit/routingEtaReliability.test.js",
     "test:notification": "node --test test/unit/notificationReliability.test.js",
