@@ -126,6 +126,8 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
       const extension = accepted.format === 'jpeg' ? 'jpg' : accepted.format;
       const filename = `frame_${crypto.randomBytes(16).toString('hex')}.${extension}`;
       await redisPubSub.pubClient.set(frameKey(sessionId), JSON.stringify({ sequence: accepted.sequence, capturedAt: accepted.capturedAt, format: accepted.format, sha256: accepted.sha256, data: accepted.bytes.toString('base64') }), 'PX', CAMERA_SESSION_TTL_MS);
+      const committed = cameraFrameGateway.commitAcceptedFrame(session, { sequence: accepted.sequence, capturedAtMs: accepted.capturedAtMs });
+      if (!committed.allowed) return json(res, 409, { success: false, error: committed.code, message: committed.message });
       session.latestFrameRef = `/redis-camera-streams/${filename}`;
       session.latestFrameSha256 = accepted.sha256;
       cleanupOldFrameFile(previousRef);
