@@ -14,13 +14,14 @@ async function runMigrations() {
   const client = new Client({ connectionString });
   await client.connect();
 
-  console.log('[Migration] Connected to PostgreSQL. Applying ledger schema...');
+  console.log('[Migration] Connected to PostgreSQL. Applying VAAYU schema...');
   try {
     const migrationFiles = [
       '001_create_ledger_and_payment_tables.sql',
       '002_create_payment_provider_events_table.sql',
       '003_create_provider_reconciliation_tables.sql',
-      '004_create_financial_security_audit_tables.sql'
+      '004_create_financial_security_audit_tables.sql',
+      '005_create_kyc_verification_tables.sql'
     ];
 
     for (const fileName of migrationFiles) {
@@ -32,7 +33,6 @@ async function runMigrations() {
       }
     }
 
-    // Seed default system accounts if not present
     const systemAccounts = [
       { id: 'cash:external', type: 'ASSET', normal: 'DEBIT' },
       { id: 'escrow:platform', type: 'LIABILITY', normal: 'CREDIT' },
@@ -50,7 +50,6 @@ async function runMigrations() {
     }
     console.log('[Migration] System accounts initialized.');
 
-    // Grant permissions again in case new accounts or tables were created
     await client.query(`
       DO $$
       BEGIN
