@@ -13,11 +13,11 @@ test('KYC privacy policy masks sensitive structured identity fields', () => {
     nested: { panNumber: 'ABCDE1234F', color: 'WHITE' }
   });
 
-  assert.equal(safe.ownerName, '***********RIVER');
-  assert.equal(safe.licenseNumber, '*********6789');
+  assert.equal(safe.ownerName, '*******IVER');
+  assert.equal(safe.licenseNumber, '********6789');
   assert.equal(safe.phone, '******3210');
   assert.equal(safe.vehicleClass, 'LMV');
-  assert.equal(safe.nested.panNumber, '******1234F');
+  assert.equal(safe.nested.panNumber, '******234F');
   assert.equal(safe.nested.color, 'WHITE');
 });
 
