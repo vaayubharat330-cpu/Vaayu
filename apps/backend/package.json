@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node src/server_bootstrap.js",
     "test": "node --test test/unit/security.test.js test/unit/otp.test.js",
-    "test:psm": "node --test test/unit/paymentStateMachine.test.js test/unit/paymentStep3_4.test.js test/unit/paymentApiContract.test.js test/unit/tripPaymentLifecycle.test.js test/unit/adminFinancialApi.test.js",
+    "test:psm": "node test/unit/paymentStateMachine.test.js test/unit/paymentStep3_4.test.js test/unit/paymentApiContract.test.js test/unit/tripPaymentLifecycle.test.js test/unit/adminFinancialApi.test.js",
     "test:ledger": "node test/payment_simulator/ledger_core.test.js",
     "test:ledger-pg": "node --test test/unit/postgresLedger.test.js",
     "test:postgres-transition": "node --test test/unit/postgresTransitionAtomicity.test.js",
@@ -58,6 +58,7 @@
     "test:camera": "node --test test/unit/cameraStreamRoutes.test.js test/unit/documentExtractionRoute.test.js",
     "test:document-extraction": "node --test test/unit/documentExtractionRoute.test.js",
     "test:document-verification": "node --test test/unit/documentVerificationService.test.js",
+    "test:document-decision": "node --test test/unit/documentVerificationDecisionEngine.test.js",
     "test:e2e": "node --test test/integration/lifecycle.test.js",
     "test:e2e:merchant": "node --test test/integration/merchantLifecycle.test.js",
     "migrate:ledger": "node src/db/runLedgerMigrations.js",
