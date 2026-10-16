@@ -79,6 +79,17 @@ void main() {
     expect((await persistence.getPendingMutations()).single.retryExhausted, isTrue);
   });
 
+  test('manual retry resets exhaustion but keeps business identity', () {
+    final parked = _mutation(retryCount: OfflineQueueFlusher.maxRetryCount, retryExhausted: true);
+    final recovered = parked.copyForManualRetry();
+    expect(recovered.intentId, parked.intentId);
+    expect(recovered.idempotencyKey, parked.idempotencyKey);
+    expect(recovered.retryCount, 0);
+    expect(recovered.retryExhausted, isFalse);
+    expect(recovered.nextAttemptAt, isNull);
+    expect(recovered.lastErrorCode, isNull);
+  });
+
   test('retry exhaustion survives persistence serialization', () {
     final original = _mutation(retryCount: OfflineQueueFlusher.maxRetryCount, retryExhausted: true);
     final restored = PendingMutation.fromJson(original.toJson());
