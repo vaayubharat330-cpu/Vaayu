@@ -1,4 +1,4 @@
-// Proof-of-delivery photos and authenticated live camera snapshot sessions.
+// Proof-of-delivery photos, authenticated live camera snapshot sessions, and client-side KYC extraction persistence.
 // KYC/POD files remain private on disk; live camera frames are ephemeral and shared through Redis.
 const fs = require('fs');
 const path = require('path');
@@ -22,8 +22,68 @@ function getSession(db, sessionId) { return getCameraSessions(db).find(s => s.id
 function frameKey(sessionId) { return `${CAMERA_REDIS_PREFIX}${sessionId}`; }
 function cleanupOldFrameFile(ref) { if (!ref) return; const file = path.resolve(PRIVATE_CAMERA_STREAMS, path.basename(ref)); if (file.startsWith(PRIVATE_CAMERA_STREAMS + path.sep)) { try { fs.unlinkSync(file); } catch (_) {} } }
 
+const EXTRACTION_FIELDS = {
+  DRIVING_LICENSE: new Set(['licenseNumber', 'name', 'dateOfBirth', 'issueDate', 'validUntil', 'transportValidUntil', 'licensingAuthority']),
+  RC: new Set(['vehicleNumber', 'ownerName', 'vehicleClass', 'fuelType', 'registrationDate', 'insuranceValidUntil', 'puccValidUntil', 'chassisLast5', 'engineLast5']),
+  INSURANCE: new Set(['policyNumber', 'vehicleNumber', 'insurer', 'policyStartDate', 'policyEndDate']),
+  AADHAAR: new Set(['name', 'dateOfBirth', 'aadhaarLast4']),
+  PAN: new Set(['panNumber', 'name', 'dateOfBirth']),
+  VEHICLE_PHOTO: new Set(['vehicleNumber']),
+  PROFILE_PHOTO: new Set([])
+};
+function sanitizeExtraction(documentType, fields) {
+  const allowed = EXTRACTION_FIELDS[documentType] || new Set();
+  const output = {};
+  if (!fields || typeof fields !== 'object') return output;
+  for (const [key, value] of Object.entries(fields)) {
+    if (!allowed.has(key) || typeof value !== 'string') continue;
+    const clean = value.trim().replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 160);
+    if (!clean) continue;
+    if (key === 'aadhaarLast4' && !/^\d{4}$/.test(clean)) continue;
+    if (key === 'panNumber' && !/^[A-Z]{5}\d{4}[A-Z]$/i.test(clean)) continue;
+    if (key === 'vehicleNumber') {
+      const plate = clean.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!/^(?:[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{4}|\d{2}BH\d{4}[A-Z]{1,2})$/.test(plate)) continue;
+      output[key] = plate;
+      continue;
+    }
+    output[key] = clean;
+  }
+  return output;
+}
+
 function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
   return async function handleProofRoute(req, res, { pathname, parsedUrl }) {
+    if (pathname === '/api/documents/extraction' && req.method === 'POST') {
+      const parsed = await readJsonBody(req, 256 * 1024);
+      if (parsed.error) return json(res, parsed.error === 'PAYLOAD_TOO_LARGE' ? 413 : 400, { success: false, error: parsed.error });
+      const data = parsed.data || {};
+      const driverId = String(data.driver_id || '');
+      const documentId = String(data.document_id || '');
+      const documentType = String(data.document_type || data.doc_type || '').toUpperCase();
+      if (!driverId || !documentId || !EXTRACTION_FIELDS[documentType]) return json(res, 400, { success: false, error: 'driver_id, document_id and a supported document_type are required.' });
+      if (!await enforceDriverAccess(req, res, driverId, 'driver:documents:extraction')) return true;
+      const effectiveDriverId = String(req.authorizedDriverId || driverId);
+      const docs = db.getDriverDocuments ? db.getDriverDocuments(effectiveDriverId) : [];
+      const document = docs.find(item => String(item.id) === documentId);
+      if (!document) return json(res, 404, { success: false, error: 'Document not found.' });
+      const fields = sanitizeExtraction(documentType, data.fields);
+      const store = db.getDb ? db.getDb() : null;
+      const persisted = store && Array.isArray(store.driver_documents) ? store.driver_documents.find(item => String(item.id) === documentId) : null;
+      if (!persisted) return json(res, 404, { success: false, error: 'Document record is not available for extraction persistence.' });
+      persisted.extractedFields = fields;
+      persisted.extraction = {
+        version: 1,
+        source: 'ON_DEVICE_ML_KIT',
+        processedAt: new Date().toISOString(),
+        fields
+      };
+      // Never persist raw OCR text. Only workflow-required structured fields are stored.
+      if (typeof db.saveDb === 'function') db.saveDb(store);
+      if (typeof db.waitForCommit === 'function') await db.waitForCommit();
+      return json(res, 200, { success: true, documentId, documentType, fields, fieldCount: Object.keys(fields).length });
+    }
+
     if (pathname === '/api/trip/camera/session/active' && req.method === 'GET') {
       const tripId = String(parsedUrl.query.trip_id || '');
       if (!tripId) return json(res, 400, { success: false, error: 'trip_id is required.' });
