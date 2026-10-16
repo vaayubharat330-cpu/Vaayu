@@ -2,6 +2,7 @@
 
 const { validateFrame, recordAcceptedFrame } = require('./cameraSessionPolicy');
 const { parseDataImage, isSequenceForward } = require('./cameraFrameIntegrity');
+const { startCameraSessionJanitor } = require('./cameraSessionJanitor');
 
 /**
  * Single frame acceptance boundary for REST today and WebRTC signalling/media
@@ -15,6 +16,7 @@ class CameraFrameGateway {
   constructor({ now = () => Date.now(), acquireRateSlot = async () => true } = {}) {
     this.now = now;
     this.acquireRateSlot = acquireRateSlot;
+    startCameraSessionJanitor();
   }
 
   async accept({ session, user, imageData, sequence, capturedAt }) {
