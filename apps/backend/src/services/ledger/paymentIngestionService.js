@@ -90,30 +90,71 @@ class PaymentIngestionService {
       throw new Error('providerOrderId, paymentId, tripId, customerId, and expectedAmountPaise are required.');
     }
 
-    const sql = `
-      INSERT INTO payment_provider_mappings (
-        provider, provider_order_id, payment_id, trip_id, order_id,
-        customer_id, expected_amount_paise, currency, status, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'INITIATED', NOW(), NOW())
-      ON CONFLICT (payment_id) DO UPDATE SET
-        provider_order_id = EXCLUDED.provider_order_id,
-        expected_amount_paise = EXCLUDED.expected_amount_paise,
-        updated_at = NOW()
-      RETURNING *;
-    `;
+    const amount = Number(expectedAmountPaise);
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      throw new Error('expectedAmountPaise must be a positive safe integer.');
+    }
+    if (currency !== 'INR') {
+      throw new Error('Only INR payment mappings are supported.');
+    }
 
-    const res = await this.pool.query(sql, [
-      provider,
-      providerOrderId,
-      paymentId,
-      tripId,
-      orderId || tripId,
-      customerId,
-      expectedAmountPaise,
-      currency
-    ]);
+    const client = await this.pool.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Serialize attempts that would bind the same provider order/payment ID.
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `PAYMENT_MAPPING:${String(provider).toLowerCase()}:${providerOrderId}`
+      ]);
+      const existing = await client.query(`
+        SELECT * FROM payment_provider_mappings
+        WHERE payment_id = $1
+        FOR UPDATE;
+      `, [paymentId]);
+      if (existing.rows.length) {
+        const row = existing.rows[0];
+        const sameIdentity =
+          row.provider === String(provider).toLowerCase() &&
+          row.provider_order_id === providerOrderId &&
+          row.trip_id === tripId &&
+          row.order_id === (orderId || tripId) &&
+          row.customer_id === customerId &&
+          Number(row.expected_amount_paise) === amount &&
+          row.currency === currency;
+        if (!sameIdentity) {
+          throw new Error('PAYMENT_MAPPING_CONFLICT: paymentId is already bound to a different order, trip, customer, amount, or currency.');
+        }
+        await client.query('COMMIT');
+        return row;
+      }
 
-    return res.rows[0];
+      const sql = `
+        INSERT INTO payment_provider_mappings (
+          provider, provider_order_id, payment_id, trip_id, order_id,
+          customer_id, expected_amount_paise, currency, status, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'INITIATED', NOW(), NOW())
+        RETURNING *;
+      `;
+      const res = await client.query(sql, [
+        String(provider).toLowerCase(),
+        providerOrderId,
+        paymentId,
+        tripId,
+        orderId || tripId,
+        customerId,
+        amount,
+        currency
+      ]);
+      await client.query('COMMIT');
+      return res.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      if (err?.code === '23505') {
+        throw new Error('PAYMENT_MAPPING_CONFLICT: provider order or paymentId is already bound to another payment.');
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**
