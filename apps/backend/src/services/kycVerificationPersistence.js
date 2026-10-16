@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { sanitizeExtractedFields, isSha256 } = require('./kycPrivacyPolicy');
 
 function hashIdentity(value) {
   if (value == null || value === '') return null;
@@ -34,11 +35,17 @@ class KycVerificationPersistence {
     const pool = this._requirePool();
     const normalized = evaluation.normalizedFields || {};
     const issuer = evaluation.issuerVerification || {};
+    const safeExtractedFields = sanitizeExtractedFields(normalized);
     const kycDocumentId = String(evaluation.kycDocumentId || evaluation.documentId || '');
     const runId = String(evaluation.verificationId || `kyc_${crypto.randomBytes(12).toString('hex')}`);
     if (!evaluation.driverId || !kycDocumentId || !evaluation.documentType) {
       const error = new Error('driverId, documentId and documentType are required for KYC persistence');
       error.code = 'KYC_PERSISTENCE_INPUT_INVALID';
+      throw error;
+    }
+    if (evaluation.evidenceHash != null && !isSha256(evaluation.evidenceHash)) {
+      const error = new Error('evidenceHash must be a SHA-256 hex digest');
+      error.code = 'KYC_EVIDENCE_HASH_INVALID';
       throw error;
     }
 
@@ -83,7 +90,7 @@ class KycVerificationPersistence {
             vehicleHash ? normalized.vehicleNumber : null, chassisHash, engineHash,
             licenseHash, policyHash, panHash, aadhaarReferenceHash, evidenceHash,
             JSON.stringify(evaluation.reasons || []), JSON.stringify(evaluation.warnings || []),
-            JSON.stringify(normalized), expiresAt, kycDocumentId
+            JSON.stringify(safeExtractedFields), expiresAt, kycDocumentId
           ]
         );
         row = updated.rows[0];
@@ -103,7 +110,7 @@ class KycVerificationPersistence {
             vehicleHash ? normalized.vehicleNumber : null, chassisHash, engineHash,
             licenseHash, policyHash, panHash, aadhaarReferenceHash, evidenceHash,
             JSON.stringify(evaluation.reasons || []), JSON.stringify(evaluation.warnings || []),
-            JSON.stringify(normalized), expiresAt
+            JSON.stringify(safeExtractedFields), expiresAt
           ]
         );
         row = inserted.rows[0];
@@ -135,7 +142,7 @@ class KycVerificationPersistence {
           runId, row.kyc_document_id, evaluation.driverId, evaluation.documentId,
           evaluation.documentType, evaluation.decision, issuerState, provider,
           providerVerificationId, evidenceHash, JSON.stringify(evaluation.reasons || []),
-          JSON.stringify(evaluation.warnings || []), JSON.stringify(normalized),
+          JSON.stringify(evaluation.warnings || []), JSON.stringify(safeExtractedFields),
           JSON.stringify(json(evaluation.captureGate, {})),
           JSON.stringify(json(evaluation.consistency, {})), JSON.stringify(issuer),
           evaluation.evaluatedAt || new Date().toISOString()
