@@ -57,6 +57,7 @@
     "test:flutter:all": "node --test --test-force-exit test/unit/flutterSecuritySession.test.js test/unit/flutterNetworkingTransport.test.js test/unit/flutterProjectionPersistence.test.js test/unit/flutterLifecycleRecovery.test.js test/unit/flutterDomainServices.test.js test/unit/flutterPresentationUi.test.js test/unit/flutterIntegrationAssembly.test.js",
     "test:camera": "node --test test/unit/cameraStreamRoutes.test.js test/unit/documentExtractionRoute.test.js",
     "test:document-extraction": "node --test test/unit/documentExtractionRoute.test.js",
+    "test:document-verification": "node --test test/unit/documentVerificationService.test.js",
     "test:e2e": "node --test test/integration/lifecycle.test.js",
     "test:e2e:merchant": "node --test test/integration/merchantLifecycle.test.js",
     "migrate:ledger": "node src/db/runLedgerMigrations.js",
