@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { KycVerificationPersistence } = require('../../src/services/kycVerificationPersistence');
+const { KycVerificationPersistence, hashIdentity } = require('../../src/services/kycVerificationPersistence');
 
 function fakePool() {
   const queries = [];
@@ -18,7 +18,7 @@ function fakePool() {
   return { queries, async withTransaction(work) { return work(client); } };
 }
 
-test('KYC persistence redacts structured identity fields while retaining stable vehicle matching field', async () => {
+test('KYC persistence hashes vehicle identity and redacts structured identity fields', async () => {
   const pool = fakePool();
   const service = new KycVerificationPersistence({ pool });
 
@@ -40,7 +40,9 @@ test('KYC persistence redacts structured identity fields while retaining stable 
 
   const insert = pool.queries.find(q => q.sql.includes('INSERT INTO driver_kyc_documents'));
   const extractedFields = JSON.parse(insert.params[18]);
-  assert.equal(insert.params[8], 'TS09AB1234');
+  assert.equal(insert.params[8], hashIdentity('TS09AB1234'));
+  assert.equal(insert.params[8].length, 64);
+  assert.notEqual(insert.params[8], 'TS09AB1234');
   assert.equal(extractedFields.ownerName, '*******IVER');
   assert.equal(extractedFields.vehicleNumber, '******1234');
   assert.equal(extractedFields.chassisLast5, '****BCDE');
