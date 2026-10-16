@@ -156,10 +156,7 @@ class RedisLockManager {
     return { success: false, key };
   }
 
-  /**
-   * Refresh a scoped command lock without allowing ownership to change during
-   * the refresh. The token remains identical; only the lease expiry moves.
-   */
+  /** Refresh a scoped command lock while preserving the current ownership token. */
   async refreshScopedLock(lock, additionalTtlMs = this.COMMAND_LOCK_TTL_MS) {
     if (!lock || !lock.key || !lock.token) return { success: false, error: 'Invalid lock handle' };
     const updated = await this._compareAndSet(lock.key, lock.token, lock.token, additionalTtlMs);
@@ -182,6 +179,10 @@ class RedisLockManager {
 
   async acquireIdempotencyLock(idempotencyKey, ttlMs = this.COMMAND_LOCK_TTL_MS) {
     return this.acquireScopedLock(this.IDEMPOTENCY_PREFIX, idempotencyKey, ttlMs);
+  }
+
+  async refreshIdempotencyLock(lock, additionalTtlMs = this.COMMAND_LOCK_TTL_MS) {
+    return this.refreshScopedLock(lock, additionalTtlMs);
   }
 
   async releaseIdempotencyLock(lock) {
