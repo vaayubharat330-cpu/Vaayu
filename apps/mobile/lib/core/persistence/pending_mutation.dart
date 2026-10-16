@@ -48,8 +48,11 @@ class PendingMutation {
     );
   }
 
-  bool get isReadyForReplay =>
-      nextAttemptAt == null || !DateTime.now().toUtc().isBefore(nextAttemptAt!.toUtc());
+  bool isReadyForReplay({DateTime? now}) {
+    if (nextAttemptAt == null) return true;
+    final reference = (now ?? DateTime.now()).toUtc();
+    return !reference.isBefore(nextAttemptAt!.toUtc());
+  }
 
   Map<String, dynamic> toJson() => {
         'intentId': intentId,
