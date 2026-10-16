@@ -55,7 +55,7 @@
     "test:flutter:domain": "node --test test/unit/flutterDomainServices.test.js",
     "test:flutter:ui": "node --test test/unit/flutterPresentationUi.test.js",
     "test:flutter:all": "node --test --test-force-exit test/unit/flutterSecuritySession.test.js test/unit/flutterNetworkingTransport.test.js test/unit/flutterProjectionPersistence.test.js test/unit/flutterLifecycleRecovery.test.js test/unit/flutterDomainServices.test.js test/unit/flutterPresentationUi.test.js test/unit/flutterIntegrationAssembly.test.js",
-    "test:camera": "node --test test/unit/cameraStreamRoutes.test.js test/unit/documentExtractionRoute.test.js",
+    "test:camera": "node --test test/unit/cameraStreamRoutes.test.js test/unit/documentExtractionRoute.test.js test/unit/cameraSessionJanitor.test.js",
     "test:camera-policy": "node --test test/unit/cameraSessionPolicy.test.js",
     "test:camera-integrity": "node --test test/unit/cameraFrameIntegrity.test.js",
     "test:camera-gateway": "node --test test/unit/cameraFrameGateway.test.js",
