@@ -84,7 +84,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 DriverDutyToggleCard(profile: profile, isOnline: isOnline, isLoading: _isTogglingDuty, onToggleDuty: _handleDutyToggle),
                 const SizedBox(height: VaayuSpacing.md),
-                VaayuCard(backgroundColor: colors.surface, padding: EdgeInsets.zero, child: Material(color: Colors.transparent, child: ListTile(leading: Icon(Icons.verified_user_outlined, color: colors.primary), title: const Text('Identity & KYC', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Capture and securely submit identity and vehicle documents for verification.', style: TextStyle(fontSize: 12)), trailing: const Icon(Icons.chevron_right), onTap: _openKyc))),
+                Material(
+                  color: colors.surface,
+                  shape: RoundedRectangleBorder(borderRadius: VaayuRadius.mdBorder, side: BorderSide(color: colors.border)),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    leading: Icon(Icons.verified_user_outlined, color: colors.primary),
+                    title: const Text('Identity & KYC', style: TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: const Text('Capture and securely submit identity and vehicle documents for verification.', style: TextStyle(fontSize: 12)),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _openKyc,
+                  ),
+                ),
                 const SizedBox(height: VaayuSpacing.md),
                 if (isOnline) StreamBuilder<ViewState<List<DriverOffer>>>(stream: widget.controller.offersStream, initialData: widget.controller.offersState, builder: (context, offersSnapshot) {
                   final offers = (offersSnapshot.data ?? widget.controller.offersState).data ?? <DriverOffer>[];
