@@ -4,6 +4,8 @@
 /// - `idempotencyKey` never changes across retries or app restarts.
 /// - retry scheduling is persisted so reconnects cannot create a hot retry loop.
 /// - the original `createdAt` is retained for deterministic FIFO ordering.
+/// - retry exhaustion is durable: a poisoned mutation is parked for explicit recovery
+///   instead of being executed forever every five minutes.
 class PendingMutation {
   final String intentId;
   final String idempotencyKey;
@@ -15,6 +17,7 @@ class PendingMutation {
   final DateTime? nextAttemptAt;
   final String? lastErrorCode;
   final DateTime? lastFailureAt;
+  final bool retryExhausted;
 
   const PendingMutation({
     required this.intentId,
@@ -27,12 +30,14 @@ class PendingMutation {
     this.nextAttemptAt,
     this.lastErrorCode,
     this.lastFailureAt,
+    this.retryExhausted = false,
   });
 
   PendingMutation copyWithRetry({
     DateTime? nextAttemptAt,
     String? lastErrorCode,
     DateTime? lastFailureAt,
+    bool? retryExhausted,
   }) {
     return PendingMutation(
       intentId: intentId,
@@ -45,10 +50,12 @@ class PendingMutation {
       nextAttemptAt: nextAttemptAt,
       lastErrorCode: lastErrorCode,
       lastFailureAt: lastFailureAt,
+      retryExhausted: retryExhausted ?? this.retryExhausted,
     );
   }
 
   bool isReadyForReplay({DateTime? now}) {
+    if (retryExhausted) return false;
     if (nextAttemptAt == null) return true;
     final reference = (now ?? DateTime.now()).toUtc();
     return !reference.isBefore(nextAttemptAt!.toUtc());
@@ -65,6 +72,7 @@ class PendingMutation {
         if (nextAttemptAt != null) 'nextAttemptAt': nextAttemptAt!.toIso8601String(),
         if (lastErrorCode != null) 'lastErrorCode': lastErrorCode,
         if (lastFailureAt != null) 'lastFailureAt': lastFailureAt!.toIso8601String(),
+        if (retryExhausted) 'retryExhausted': true,
       };
 
   factory PendingMutation.fromJson(Map<String, dynamic> json) => PendingMutation(
@@ -78,5 +86,6 @@ class PendingMutation {
         nextAttemptAt: json['nextAttemptAt'] == null ? null : DateTime.parse(json['nextAttemptAt'] as String),
         lastErrorCode: json['lastErrorCode'] as String?,
         lastFailureAt: json['lastFailureAt'] == null ? null : DateTime.parse(json['lastFailureAt'] as String),
+        retryExhausted: json['retryExhausted'] == true,
       );
 }
