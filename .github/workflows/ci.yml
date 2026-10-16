@@ -81,6 +81,7 @@ jobs:
           npm run test:kyc-orchestration
           npm run test:kyc-expiry
           npm run test:kyc-review
+          npm run test:kyc-review-evidence
           npm run test:kyc-review-routes
           npm run test:kyc-license-db
           npm run test:kyc-license-owner-registry
