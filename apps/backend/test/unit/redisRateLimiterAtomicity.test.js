@@ -49,6 +49,43 @@ test('rate limiter preserves bounded development fallback and quota semantics', 
   assert.equal(calls.filter(call => call[0] === 'expire').length, 1);
 });
 
+test('Redis outage uses a bounded local window instead of failing open', async () => {
+  const fakeRedis = {
+    async eval() { throw new Error('ECONNREFUSED'); },
+    async disconnect() {}
+  };
+  const limiter = new RedisRateLimiter(fakeRedis);
+
+  const first = await limiter.checkRateLimit(request('redis-down'), null, 'outage', 2, 30);
+  const second = await limiter.checkRateLimit(request('redis-down'), null, 'outage', 2, 30);
+  const third = await limiter.checkRateLimit(request('redis-down'), null, 'outage', 2, 30);
+
+  assert.equal(first.allowed, true);
+  assert.equal(first.degraded, true);
+  assert.equal(second.allowed, true);
+  assert.equal(second.current, 2);
+  assert.equal(third.allowed, false);
+  assert.equal(third.code, 'RATE_LIMIT_EXCEEDED');
+  assert.equal(third.degraded, true);
+  assert.equal(limiter.fallbackWindows.size, 1);
+});
+
+test('Redis outage rejects new identifiers when bounded fallback capacity is exhausted', async () => {
+  const fakeRedis = {
+    async eval() { throw new Error('ECONNREFUSED'); },
+    async disconnect() {}
+  };
+  const limiter = new RedisRateLimiter(fakeRedis);
+  limiter.maxFallbackEntries = 1;
+
+  const first = await limiter.checkRateLimit(request('capacity-1'), null, 'capacity', 10, 30);
+  const second = await limiter.checkRateLimit(request('capacity-2'), null, 'capacity', 10, 30);
+
+  assert.equal(first.allowed, true);
+  assert.equal(second.allowed, false);
+  assert.equal(second.code, 'RATE_LIMIT_FALLBACK_CAPACITY_EXHAUSTED');
+});
+
 test('custom zero limits are honored instead of falling back to route defaults', async () => {
   const fakeRedis = {
     async eval() { return [1, 10]; },
