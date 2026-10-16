@@ -22,7 +22,8 @@ async function runMigrations() {
       '003_create_provider_reconciliation_tables.sql',
       '004_create_financial_security_audit_tables.sql',
       '005_create_kyc_verification_tables.sql',
-      '006_fix_kyc_license_reuse.sql'
+      '006_fix_kyc_license_reuse.sql',
+      '007_kyc_license_owner_registry.sql'
     ];
 
     for (const fileName of migrationFiles) {
