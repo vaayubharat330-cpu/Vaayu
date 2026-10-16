@@ -1,3 +1,5 @@
+'use strict';
+
 const { RedisClient } = require('./redisClient');
 const { metricsService } = require('./metricsService');
 const { logger } = require('./logger');
@@ -36,6 +38,13 @@ class RedisRateLimiter {
       'default': { maxRequests: 60, windowSec: 60 }
     };
 
+    // Redis is the authoritative distributed limiter in production. If it becomes
+    // unavailable, keep a bounded per-process window rather than silently failing open.
+    // A hard capacity limit also prevents an attacker from turning degraded mode into
+    // an unbounded memory-growth vector by generating arbitrary identifiers.
+    this.fallbackWindows = new Map();
+    this.maxFallbackEntries = 10000;
+
     if (process.env.VAAYU_OTP_CONSOLE === 'true' || (process.env.NODE_ENV !== 'production' && process.env.ENABLE_TEST_ENDPOINTS === 'true')) {
       const qaDefaultLimit = Number(process.env.VAAYU_QA_RATE_LIMIT_DEFAULT);
       if (Number.isInteger(qaDefaultLimit) && qaDefaultLimit >= 60 && qaDefaultLimit <= 1000) {
@@ -55,6 +64,39 @@ class RedisRateLimiter {
     return `ip_${req.socket ? req.socket.remoteAddress : '127.0.0.1'}`;
   }
 
+  _incrementFallbackWindow(key, windowSec) {
+    const now = Date.now();
+    const existing = this.fallbackWindows.get(key);
+
+    if (existing && existing.expiresAt > now) {
+      existing.count += 1;
+      return {
+        count: existing.count,
+        resetSec: Math.max(1, Math.ceil((existing.expiresAt - now) / 1000)),
+        degraded: true
+      };
+    }
+
+    if (existing) this.fallbackWindows.delete(key);
+
+    // Opportunistically reclaim expired entries. If the bounded store is still full,
+    // reject a new key rather than evicting a live client's quota and creating a bypass.
+    if (this.fallbackWindows.size >= this.maxFallbackEntries) {
+      for (const [entryKey, entry] of this.fallbackWindows) {
+        if (entry.expiresAt <= now) this.fallbackWindows.delete(entryKey);
+      }
+      if (this.fallbackWindows.size >= this.maxFallbackEntries) {
+        const error = new Error('Rate limiter fallback capacity exhausted.');
+        error.code = 'RATE_LIMIT_FALLBACK_CAPACITY_EXHAUSTED';
+        throw error;
+      }
+    }
+
+    const expiresAt = now + (windowSec * 1000);
+    this.fallbackWindows.set(key, { count: 1, expiresAt });
+    return { count: 1, resetSec: Math.max(1, windowSec), degraded: true };
+  }
+
   async _incrementWindow(key, windowSec) {
     try {
       const result = await withTimeout(this.redis.eval(RATE_LIMIT_SCRIPT, 1, key, windowSec), 1500);
@@ -63,15 +105,18 @@ class RedisRateLimiter {
       if (!Number.isSafeInteger(count) || count < 1 || !Number.isFinite(ttl) || ttl < 0) {
         throw new Error('Redis returned an invalid rate-limit result.');
       }
-      return { count, resetSec: ttl };
+      return { count, resetSec: ttl, degraded: false };
     } catch (err) {
       // The in-memory development engine intentionally does not implement EVAL.
       if (err && err.message === 'EVAL_UNSUPPORTED_BY_MEMORY_ENGINE') {
         const count = await withTimeout(this.redis.incr(key), 1500);
         if (count === 1) await withTimeout(this.redis.expire(key, windowSec), 1500);
-        return { count, resetSec: windowSec };
+        return { count, resetSec: windowSec, degraded: false };
       }
-      throw err;
+
+      // Real Redis failures use a bounded local window. This preserves a meaningful
+      // quota during an outage while acknowledging that the fallback is process-local.
+      return this._incrementFallbackWindow(key, windowSec);
     }
   }
 
@@ -83,12 +128,16 @@ class RedisRateLimiter {
     const key = `${this.KEY_PREFIX}${routeName}:${identifier}`;
 
     try {
-      const { count: currentCount, resetSec } = await this._incrementWindow(key, windowSec);
+      const { count: currentCount, resetSec, degraded } = await this._incrementWindow(key, windowSec);
       const remaining = Math.max(0, maxRequests - currentCount);
       if (res && typeof res.setHeader === 'function') {
         res.setHeader('X-RateLimit-Limit', maxRequests);
         res.setHeader('X-RateLimit-Remaining', remaining);
         res.setHeader('X-RateLimit-Reset', resetSec);
+      }
+      if (degraded) {
+        metricsService.increment('rate_limit_degraded_total');
+        logger.warn('rate_limit_degraded', `Using bounded local rate-limit fallback for route ${routeName}`, { routeName });
       }
       if (currentCount > maxRequests) {
         metricsService.increment('rate_limit_rejected_total');
@@ -100,17 +149,24 @@ class RedisRateLimiter {
           limit: maxRequests,
           current: currentCount,
           remaining: 0,
-          resetSec
+          resetSec,
+          degraded: Boolean(degraded)
         };
       }
-      return { allowed: true, limit: maxRequests, current: currentCount, remaining, resetSec };
+      return { allowed: true, limit: maxRequests, current: currentCount, remaining, resetSec, degraded: Boolean(degraded) };
     } catch (err) {
-      logger.warn('rate_limit_unavailable', `Rate limiter unavailable: ${err.message}`, { routeName });
-      return { allowed: true, error: err.message };
+      logger.error('rate_limit_unavailable', `Rate limiter unavailable: ${err.message}`, { routeName });
+      metricsService.increment('rate_limit_fail_closed_total');
+      return {
+        allowed: false,
+        code: err.code || 'RATE_LIMIT_UNAVAILABLE',
+        message: 'Rate limiter temporarily unavailable. Please retry shortly.'
+      };
     }
   }
 
   async disconnect() {
+    this.fallbackWindows.clear();
     if (this.redis && typeof this.redis.disconnect === 'function') await this.redis.disconnect();
   }
 }
