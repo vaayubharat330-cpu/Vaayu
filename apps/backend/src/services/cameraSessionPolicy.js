@@ -42,9 +42,17 @@ function validateFrame({ session, user, nowMs = Date.now(), capturedAtMs = nowMs
 function recordAcceptedFrame(session, { capturedAtMs, sequence }) {
   if (!session) return false;
   const previousCapture = Number(session.lastCapturedAtMs || 0);
+  const previousSequence = Number(session.sequence || 0);
+  const nextSequence = Number(sequence);
+  if (!Number.isSafeInteger(previousSequence) || previousSequence < 0) return false;
+  // Commit-time check closes the TOCTOU window where two concurrent requests
+  // both read the same sequence before either request mutates the session.
+  if (!Number.isSafeInteger(nextSequence) || nextSequence !== previousSequence + 1) return false;
+  if (!Number.isFinite(capturedAtMs)) return false;
   if (previousCapture > 0 && capturedAtMs < previousCapture) return false;
+  if (previousCapture > 0 && capturedAtMs - previousCapture < CAMERA_FRAME_MIN_INTERVAL_MS) return false;
   session.lastCapturedAtMs = capturedAtMs;
-  session.sequence = Math.max(Number(session.sequence || 0), Number(sequence || 0));
+  session.sequence = nextSequence;
   session.updatedAt = new Date(capturedAtMs).toISOString();
   return true;
 }
