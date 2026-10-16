@@ -6,16 +6,19 @@ const { metricsService } = require('../metricsService');
 const { logger } = require('../logger');
 
 /**
- * VAAYU TRANSACTIONAL OUTBOX DISPATCHER WORKER (Phase F.3)
- * 
- * Responsibilities:
- * 1. Polls `payment_outbox` periodically using `FOR UPDATE SKIP LOCKED`
- *    so multiple clustered workers never compete or double-dispatch.
- * 2. Emits domain events to WebSocket streams (Trip, Driver, Customer, Fleet) and registered handlers.
- * 3. Enforces exponential backoff retry on transient dispatch failures with jitter.
- * 4. Moves continuously failing records to 'FAILED' (Dead Letter Queue) after `maxAttempts`.
- * 5. Provides manual retry/replay functionality for DLQ inspection and recovery.
- * 6. Clean graceful shutdown support (draining inflight batch before termination).
+ * VAAYU TRANSACTIONAL OUTBOX DISPATCHER WORKER
+ *
+ * Hardening model:
+ * 1. Rows are claimed in a short PostgreSQL transaction with FOR UPDATE SKIP LOCKED.
+ * 2. Claimed rows move to PROCESSING with a unique lease token before any downstream
+ *    WebSocket/custom handler is awaited. The database transaction is never held open
+ *    across network/application work.
+ * 3. A crashed worker leaves a PROCESSING lease behind; a later worker reclaims stale
+ *    leases and counts the abandoned attempt so events cannot remain stuck forever.
+ * 4. Completion/failure updates require the claim token, preventing an old worker from
+ *    overwriting a newer worker's result after lease recovery.
+ * 5. The outbox event_id is forwarded as the WebSocket event identity, so a retry/replay
+ *    can be deduplicated by clients and cross-node subscribers.
  */
 class OutboxDispatcher {
   constructor({
@@ -26,6 +29,7 @@ class OutboxDispatcher {
     maxAttempts = 5,
     backoffBaseMs = 2000,
     backoffMaxMs = 60000,
+    processingLeaseMs = 120000,
     aggregateTypeFilter = null,
     loggerInstance = null
   } = {}) {
@@ -41,8 +45,9 @@ class OutboxDispatcher {
     this.maxAttempts = maxAttempts;
     this.backoffBaseMs = backoffBaseMs;
     this.backoffMaxMs = backoffMaxMs;
-    this.logger = loggerInstance || logger;
+    this.processingLeaseMs = processingLeaseMs;
     this.aggregateTypeFilter = aggregateTypeFilter || null;
+    this.logger = loggerInstance || logger;
 
     this.isRunning = false;
     this.isPolling = false;
@@ -51,26 +56,20 @@ class OutboxDispatcher {
 
     this.stats = {
       batchesProcessed: 0,
+      eventsClaimed: 0,
       eventsPublished: 0,
       eventsRetried: 0,
+      eventsRecovered: 0,
       eventsFailed: 0,
       lastPollAt: null
     };
   }
 
-  /**
-   * Register a custom domain event listener (e.g. for external webhooks or telemetry)
-   */
   registerHandler(eventType, handlerFn) {
-    if (!this.customHandlers.has(eventType)) {
-      this.customHandlers.set(eventType, []);
-    }
+    if (!this.customHandlers.has(eventType)) this.customHandlers.set(eventType, []);
     this.customHandlers.get(eventType).push(handlerFn);
   }
 
-  /**
-   * Start the background dispatcher loop
-   */
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
@@ -78,21 +77,17 @@ class OutboxDispatcher {
     this.logger.info('outbox_dispatcher_started', 'Transactional Outbox Dispatcher started', {
       intervalMs: this.pollIntervalMs,
       batchSize: this.batchSize,
-      maxAttempts: this.maxAttempts
+      maxAttempts: this.maxAttempts,
+      processingLeaseMs: this.processingLeaseMs
     });
   }
 
-  /**
-   * Stop the background dispatcher loop and wait for any active poll to complete
-   */
   async stop() {
     this.isRunning = false;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-
-    // Wait if a poll cycle is actively running
     const start = Date.now();
     while (this.isPolling && (Date.now() - start < 5000)) {
       await new Promise(res => setTimeout(res, 50));
@@ -108,201 +103,241 @@ class OutboxDispatcher {
       } catch (err) {
         this.logger.error('outbox_dispatcher_poll_error', `Outbox poll cycle error: ${err.message}`, { error: err.stack });
       } finally {
-        if (this.isRunning) {
-          this.scheduleNextPoll(this.pollIntervalMs);
-        }
+        if (this.isRunning) this.scheduleNextPoll(this.pollIntervalMs);
       }
     }, delayMs);
     if (this.timer.unref) this.timer.unref();
   }
 
-  /**
-   * Compute exponential backoff with jitter
-   */
   _calculateNextAttempt(attemptCount) {
     const exp = Math.min(attemptCount, 6);
     const delay = Math.min(this.backoffBaseMs * Math.pow(2, exp), this.backoffMaxMs);
     const jitter = Math.floor(Math.random() * (delay * 0.2));
-    const totalDelay = delay + jitter;
-    return new Date(Date.now() + totalDelay);
+    return new Date(Date.now() + delay + jitter);
   }
 
-  /**
-   * Execute single poll-and-dispatch batch
-   * Uses `FOR UPDATE SKIP LOCKED` inside a transaction for multi-worker safety.
-   */
+  async _recoverStaleProcessing() {
+    const recoveryThreshold = new Date(Date.now() - this.processingLeaseMs);
+    const client = await this.pool.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const staleRes = await client.query(`
+        SELECT outbox_id, event_id, attempt_count
+        FROM payment_outbox
+        WHERE status = 'PROCESSING'
+          AND processing_started_at IS NOT NULL
+          AND processing_started_at < $1
+        FOR UPDATE SKIP LOCKED;
+      `, [recoveryThreshold]);
+
+      let recovered = 0;
+      let failed = 0;
+      for (const row of staleRes.rows) {
+        const nextAttemptCount = Number(row.attempt_count || 0) + 1;
+        if (nextAttemptCount >= this.maxAttempts) {
+          await client.query(`
+            UPDATE payment_outbox
+            SET status = 'FAILED',
+                attempt_count = $1,
+                processing_started_at = NULL,
+                claim_token = NULL,
+                last_error = $2
+            WHERE outbox_id = $3;
+          `, [nextAttemptCount, 'Processing lease expired before the worker completed dispatch.', row.outbox_id]);
+          failed++;
+        } else {
+          await client.query(`
+            UPDATE payment_outbox
+            SET status = 'PENDING',
+                attempt_count = $1,
+                processing_started_at = NULL,
+                claim_token = NULL,
+                next_attempt_at = NOW(),
+                last_error = $2
+            WHERE outbox_id = $3;
+          `, [nextAttemptCount, 'Processing lease expired; event returned to the retry queue.', row.outbox_id]);
+          recovered++;
+        }
+      }
+
+      await client.query('COMMIT');
+      this.stats.eventsRecovered += recovered;
+      this.stats.eventsFailed += failed;
+      if (recovered) metricsService.increment('outbox_processing_leases_recovered_total', recovered);
+      if (failed) metricsService.increment('outbox_processing_leases_failed_total', failed);
+      return { recovered, failed };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async _claimBatch() {
+    const claimToken = crypto.randomUUID();
+    const client = await this.pool.pool.connect();
+    try {
+      await client.query('BEGIN');
+      let sql = `
+        WITH candidates AS (
+          SELECT outbox_id
+          FROM payment_outbox
+          WHERE status = 'PENDING'
+            AND next_attempt_at <= NOW()
+      `;
+      const params = [];
+      if (this.aggregateTypeFilter) {
+        params.push(this.aggregateTypeFilter);
+        sql += ` AND aggregate_type = $${params.length}`;
+      }
+      params.push(this.batchSize);
+      sql += `
+          ORDER BY created_at ASC
+          LIMIT $${params.length}
+          FOR UPDATE SKIP LOCKED
+        )
+        UPDATE payment_outbox o
+        SET status = 'PROCESSING',
+            processing_started_at = NOW(),
+            claim_token = $${params.length + 1}
+        FROM candidates
+        WHERE o.outbox_id = candidates.outbox_id
+        RETURNING o.outbox_id, o.event_id, o.aggregate_type, o.aggregate_id,
+                  o.event_type, o.payload, o.attempt_count, o.created_at,
+                  o.status, o.claim_token;
+      `;
+      params.push(claimToken);
+      const result = await client.query(sql, params);
+      await client.query('COMMIT');
+      this.stats.eventsClaimed += result.rows.length;
+      if (result.rows.length) metricsService.increment('outbox_events_claimed_total', result.rows.length);
+      return result.rows;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async pollAndDispatch() {
     if (this.isPolling) return 0;
     this.isPolling = true;
     this.stats.lastPollAt = new Date().toISOString();
 
-    let client;
     try {
-      client = await this.pool.pool.connect();
-    } catch (err) {
-      this.isPolling = false;
-      throw err;
-    }
-
-    try {
-      await client.query('BEGIN');
-
-      // 1. Fetch pending events ready for dispatch using SKIP LOCKED
-      let selectSql = `
-        SELECT outbox_id, event_id, aggregate_type, aggregate_id, event_type, payload,
-               attempt_count, created_at, status
-        FROM payment_outbox
-        WHERE status = 'PENDING'
-          AND next_attempt_at <= NOW()
-      `;
-      const params = [];
-      if (this.aggregateTypeFilter) {
-        params.push(this.aggregateTypeFilter);
-        selectSql += ` AND aggregate_type = $${params.length} `;
-      }
-      params.push(this.batchSize);
-      selectSql += `
-        ORDER BY created_at ASC
-        LIMIT $${params.length}
-        FOR UPDATE SKIP LOCKED;
-      `;
-      const res = await client.query(selectSql, params);
-      const events = res.rows;
-
-      if (events.length === 0) {
-        await client.query('COMMIT');
-        return 0;
-      }
-
+      await this._recoverStaleProcessing();
+      const events = await this._claimBatch();
+      if (events.length === 0) return 0;
       this.stats.batchesProcessed++;
 
-      // 2. Dispatch each event
       for (const ev of events) {
-        const payload = typeof ev.payload === 'string' ? JSON.parse(ev.payload) : ev.payload;
-        let dispatchSuccess = false;
-        let dispatchError = null;
-
+        let payload;
         try {
-          await this._dispatchEvent(ev.event_type, ev.aggregate_type, ev.aggregate_id, payload);
-          dispatchSuccess = true;
+          payload = typeof ev.payload === 'string' ? JSON.parse(ev.payload) : ev.payload;
+          await this._dispatchEvent(ev.event_type, ev.aggregate_type, ev.aggregate_id, payload, ev.event_id);
+          await this._markPublished(ev);
         } catch (err) {
-          dispatchSuccess = false;
-          dispatchError = err.message;
-        }
-
-        if (dispatchSuccess) {
-          // Mark as published
-          await client.query(`
-            UPDATE payment_outbox
-            SET status = 'PUBLISHED',
-                published_at = NOW(),
-                last_error = NULL
-            WHERE outbox_id = $1;
-          `, [ev.outbox_id]);
-
-          this.stats.eventsPublished++;
-          metricsService.increment('outbox_events_published_total');
-        } else {
-          // Handle retry or DLQ failure
-          const nextAttemptCount = ev.attempt_count + 1;
-          if (nextAttemptCount >= this.maxAttempts) {
-            // Move to Dead Letter Queue (FAILED)
-            await client.query(`
-              UPDATE payment_outbox
-              SET status = 'FAILED',
-                  attempt_count = $1,
-                  last_error = $2
-              WHERE outbox_id = $3;
-            `, [nextAttemptCount, dispatchError, ev.outbox_id]);
-
-            this.stats.eventsFailed++;
-            metricsService.increment('outbox_events_dlq_failed_total');
-            this.logger.error('outbox_event_dlq_failed', `Event ${ev.event_id} failed permanently after ${nextAttemptCount} attempts: ${dispatchError}`, {
-              eventId: ev.event_id,
-              eventType: ev.event_type,
-              error: dispatchError
-            });
-          } else {
-            // Schedule next attempt with exponential backoff
-            const nextAttemptAt = this._calculateNextAttempt(nextAttemptCount);
-            await client.query(`
-              UPDATE payment_outbox
-              SET attempt_count = $1,
-                  next_attempt_at = $2,
-                  last_error = $3
-              WHERE outbox_id = $4;
-            `, [nextAttemptCount, nextAttemptAt, dispatchError, ev.outbox_id]);
-
-            this.stats.eventsRetried++;
-            metricsService.increment('outbox_events_retried_total');
-          }
+          await this._markFailed(ev, err.message);
         }
       }
-
-      await client.query('COMMIT');
       return events.length;
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
     } finally {
-      client.release();
       this.isPolling = false;
     }
   }
 
-  /**
-   * Internal dispatcher logic: sends to WebSockets, Redis, and custom event handlers
-   */
-  async _dispatchEvent(eventType, aggregateType, aggregateId, payload) {
-    // 1. Broadcast via WebSocket if available
+  async _markPublished(ev) {
+    const result = await this.pool.query(`
+      UPDATE payment_outbox
+      SET status = 'PUBLISHED',
+          published_at = NOW(),
+          processing_started_at = NULL,
+          claim_token = NULL,
+          last_error = NULL
+      WHERE outbox_id = $1 AND status = 'PROCESSING' AND claim_token = $2;
+    `, [ev.outbox_id, ev.claim_token]);
+
+    if (result.rowCount !== 1) {
+      metricsService.increment('outbox_stale_claim_completion_total');
+      this.logger.warn('outbox_stale_claim_completion', `Outbox event ${ev.event_id} was no longer owned by this worker`, { eventId: ev.event_id });
+      return false;
+    }
+    this.stats.eventsPublished++;
+    metricsService.increment('outbox_events_published_total');
+    return true;
+  }
+
+  async _markFailed(ev, dispatchError) {
+    const nextAttemptCount = Number(ev.attempt_count || 0) + 1;
+    const exhausted = nextAttemptCount >= this.maxAttempts;
+    const nextAttemptAt = exhausted ? null : this._calculateNextAttempt(nextAttemptCount);
+    const result = await this.pool.query(`
+      UPDATE payment_outbox
+      SET status = $1,
+          attempt_count = $2,
+          next_attempt_at = COALESCE($3, next_attempt_at),
+          processing_started_at = NULL,
+          claim_token = NULL,
+          last_error = $4
+      WHERE outbox_id = $5 AND status = 'PROCESSING' AND claim_token = $6;
+    `, [exhausted ? 'FAILED' : 'PENDING', nextAttemptCount, nextAttemptAt, dispatchError, ev.outbox_id, ev.claim_token]);
+
+    if (result.rowCount !== 1) {
+      metricsService.increment('outbox_stale_claim_failure_total');
+      this.logger.warn('outbox_stale_claim_failure', `Outbox event ${ev.event_id} lost its processing lease before failure was recorded`, { eventId: ev.event_id });
+      return false;
+    }
+
+    if (exhausted) {
+      this.stats.eventsFailed++;
+      metricsService.increment('outbox_events_dlq_failed_total');
+      this.logger.error('outbox_event_dlq_failed', `Event ${ev.event_id} failed permanently after ${nextAttemptCount} attempts: ${dispatchError}`, {
+        eventId: ev.event_id,
+        eventType: ev.event_type,
+        error: dispatchError
+      });
+    } else {
+      this.stats.eventsRetried++;
+      metricsService.increment('outbox_events_retried_total');
+    }
+    return true;
+  }
+
+  async _dispatchEvent(eventType, aggregateType, aggregateId, payload, eventId) {
     if (this.websocketService) {
-      // Determine relevant target rooms based on event context
       const rooms = [];
-
-      // Trip room
-      const tripId = payload.tripId || (aggregateType === 'PAYMENT' && aggregateId.startsWith('PAY_TRIP_') ? aggregateId.replace('PAY_TRIP_', 'TRIP_') : null);
+      const tripId = payload.tripId || (aggregateType === 'PAYMENT' && String(aggregateId).startsWith('PAY_TRIP_') ? String(aggregateId).replace('PAY_TRIP_', 'TRIP_') : null);
       if (tripId) rooms.push(`trip:${tripId}`);
-
-      // Customer stream room
       if (payload.customerId) rooms.push(`customer:${payload.customerId}`);
-
-      // Driver stream room
       if (payload.driverId) rooms.push(`driver:${payload.driverId}`);
-
-      // Admin / Fleet rooms for settlements & disputes
       rooms.push('fleet:all');
       rooms.push('admin:financial');
 
+      const failures = [];
       for (const room of [...new Set(rooms)]) {
         try {
           await this.websocketService.broadcastToRoom(room, eventType, {
             aggregateType,
             aggregateId,
             ...payload
-          });
+          }, { eventId });
         } catch (wsErr) {
-          // Log but do not break other channels
-          this.logger.warn('outbox_ws_broadcast_warning', `WebSocket broadcast failed for room ${room}: ${wsErr.message}`);
+          failures.push({ room, error: wsErr.message });
+          this.logger.warn('outbox_ws_broadcast_warning', `WebSocket broadcast failed for room ${room}: ${wsErr.message}`, { eventId, room });
         }
       }
+      if (failures.length) throw new Error(`WebSocket delivery failed for ${failures.length} room(s): ${failures.map(f => `${f.room}: ${f.error}`).join('; ')}`);
     }
 
-    // 2. Invoke any custom registered domain handlers
     const handlers = this.customHandlers.get(eventType) || [];
-    for (const fn of handlers) {
-      await fn({ eventType, aggregateType, aggregateId, payload });
-    }
+    for (const fn of handlers) await fn({ eventType, aggregateType, aggregateId, payload, eventId });
 
-    // 3. Handlers for universal wildcard '*'
     const wildcards = this.customHandlers.get('*') || [];
-    for (const fn of wildcards) {
-      await fn({ eventType, aggregateType, aggregateId, payload });
-    }
+    for (const fn of wildcards) await fn({ eventType, aggregateType, aggregateId, payload, eventId });
   }
 
-  /**
-   * DLQ Inspection: Query failed events
-   */
   async getDeadLetterEvents({ limit = 50, offset = 0 } = {}) {
     const res = await this.pool.query(`
       SELECT outbox_id, event_id, aggregate_type, aggregate_id, event_type, payload,
@@ -325,15 +360,14 @@ class OutboxDispatcher {
     }));
   }
 
-  /**
-   * DLQ Manual Recovery: Reset failed event(s) back to PENDING for re-dispatching
-   */
   async retryDeadLetterEvent(eventId) {
     const res = await this.pool.query(`
       UPDATE payment_outbox
       SET status = 'PENDING',
           attempt_count = 0,
           next_attempt_at = NOW(),
+          processing_started_at = NULL,
+          claim_token = NULL,
           last_error = NULL
       WHERE event_id = $1 AND status = 'FAILED'
       RETURNING event_id;
@@ -341,19 +375,14 @@ class OutboxDispatcher {
     return res.rowCount > 0;
   }
 
-  /**
-   * Get outbox metrics / status
-   */
   async getStatus() {
     const countsRes = await this.pool.query(`
       SELECT status, COUNT(*) as count
       FROM payment_outbox
       GROUP BY status;
     `);
-    const statusCounts = { PENDING: 0, PUBLISHED: 0, FAILED: 0 };
-    for (const row of countsRes.rows) {
-      statusCounts[row.status] = parseInt(row.count, 10);
-    }
+    const statusCounts = { PENDING: 0, PROCESSING: 0, PUBLISHED: 0, FAILED: 0 };
+    for (const row of countsRes.rows) statusCounts[row.status] = parseInt(row.count, 10);
 
     return {
       isRunning: this.isRunning,
@@ -364,6 +393,4 @@ class OutboxDispatcher {
   }
 }
 
-module.exports = {
-  OutboxDispatcher
-};
+module.exports = { OutboxDispatcher };
