@@ -6,9 +6,10 @@ const { redisPubSub } = require('../../src/services/redisPubSub');
 
 const ONE_PIXEL_JPEG = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/AP/EABQQAQAAAAAAAAAAAAAAAAAAACD/2gAIAQEAAQUCf//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8Bf//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8Bf//EABQQAQAAAAAAAAAAAAAAAAAAACD/2gAIAQEABj8Cf//Z';
 
-function makeReq(body, user = { id: 'user_driver_1', role: 'DRIVER' }) {
+function makeReq(body, user = { id: 'user_driver_1', role: 'DRIVER' }, method = body === undefined ? 'GET' : 'POST') {
   const req = new EventEmitter();
   req.user = user;
+  req.method = method;
   req.headers = {};
   req.emitBody = () => { if (body !== undefined) req.emit('data', Buffer.from(JSON.stringify(body))); req.emit('end'); };
   return req;
@@ -58,14 +59,14 @@ test('live camera route: start -> frame -> read -> stop', async () => {
     assert.equal(frameRes.statusCode, 200);
     assert.equal(JSON.parse(frameRes.body.toString()).sequence, 1);
 
-    const getReq = makeReq(undefined);
+    const getReq = makeReq(undefined, undefined, 'GET');
     const getRes = makeRes();
     await invoke(handler, getReq, getRes, { pathname: '/api/trip/camera/frame', parsedUrl: { query: { session_id: start.sessionId } } });
     assert.equal(getRes.statusCode, 200);
     assert.ok(getRes.body.length > 10);
     assert.equal(getRes.headers['Content-Type'], 'image/jpeg');
 
-    const stopReq = makeReq({ session_id: start.sessionId });
+    const stopReq = makeReq({ session_id: start.sessionId }, undefined, 'POST');
     const stopRes = makeRes();
     await invoke(handler, stopReq, stopRes, { pathname: '/api/trip/camera/session/stop', parsedUrl: { query: {} } });
     assert.equal(stopRes.statusCode, 200);
@@ -97,7 +98,7 @@ test('live camera route rejects tampered Redis frame instead of serving it', asy
     stored.data = bytes.toString('base64');
     redis.set(key, JSON.stringify(stored));
 
-    const getReq = makeReq(undefined);
+    const getReq = makeReq(undefined, undefined, 'GET');
     const getRes = makeRes();
     await invoke(handler, getReq, getRes, { pathname: '/api/trip/camera/frame', parsedUrl: { query: { session_id: sessionId } } });
     assert.equal(getRes.statusCode, 500);
