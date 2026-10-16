@@ -22,8 +22,8 @@ const SENSITIVE_FIELD_PATTERNS = [
   /^account(number|no)?$/i,
   /^ifsc$/i,
   /^policy(number|no)?$/i,
-  /^chassis(number|no)?$/i,
-  /^engine(number|no)?$/i,
+  /^chassis(?:number|no|last\d+)?$/i,
+  /^engine(?:number|no|last\d+)?$/i,
   /^vehicle(?:[_-]?(number|no|registration|reg))?$/i,
 ];
 
