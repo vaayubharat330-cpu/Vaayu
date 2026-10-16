@@ -49,3 +49,18 @@ test('gateway rejects sequence replay and rate-slot denial', async () => {
   const limitedResult = await limited.accept({ session: session(), user: { id: 'driver-1', role: 'DRIVER' }, imageData: jpegData, sequence: 1 });
   assert.equal(limitedResult.code, 'CAMERA_FRAME_RATE_LIMITED');
 });
+
+test('gateway commit rejects duplicate acceptance after another request wins the cursor', async () => {
+  const s = session();
+  const gateway = new CameraFrameGateway({ acquireRateSlot: async () => true });
+  const capturedAt = new Date().toISOString();
+  const first = await gateway.accept({ session: s, user: { id: 'driver-1', role: 'DRIVER' }, imageData: jpegData, sequence: 1, capturedAt });
+  const second = await gateway.accept({ session: s, user: { id: 'driver-1', role: 'DRIVER' }, imageData: jpegData, sequence: 1, capturedAt });
+  assert.equal(first.allowed, true);
+  assert.equal(second.allowed, true);
+  assert.equal(gateway.commitAcceptedFrame(s, { sequence: first.sequence, capturedAtMs: first.capturedAtMs }).allowed, true);
+  const loser = gateway.commitAcceptedFrame(s, { sequence: second.sequence, capturedAtMs: second.capturedAtMs });
+  assert.equal(loser.allowed, false);
+  assert.equal(loser.code, 'CAMERA_FRAME_STATE_CONFLICT');
+  assert.equal(s.sequence, 1);
+});
