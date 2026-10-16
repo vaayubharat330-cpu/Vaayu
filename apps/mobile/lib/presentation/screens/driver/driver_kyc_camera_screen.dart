@@ -1,269 +1,30 @@
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-
+import 'package:image/image.dart' as img;
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/vaayu_theme.dart';
 import '../../../core/theme/vaayu_tokens.dart';
 
 class DriverKycCameraScreen extends StatefulWidget {
-  final ApiClient apiClient;
-  final String driverId;
-
-  const DriverKycCameraScreen({
-    super.key,
-    required this.apiClient,
-    required this.driverId,
-  });
-
-  @override
-  State<DriverKycCameraScreen> createState() => _DriverKycCameraScreenState();
+  final ApiClient apiClient; final String driverId;
+  const DriverKycCameraScreen({super.key, required this.apiClient, required this.driverId});
+  @override State<DriverKycCameraScreen> createState() => _DriverKycCameraScreenState();
 }
 
 class _DriverKycCameraScreenState extends State<DriverKycCameraScreen> {
-  CameraController? _camera;
-  bool _initializing = true;
-  bool _capturing = false;
-  String? _error;
-  String _selectedDocument = 'DRIVING_LICENSE';
-  XFile? _captured;
-  Map<String, dynamic>? _kycSummary;
-
-  static const _documentTypes = <String, String>{
-    'DRIVING_LICENSE': 'Driving licence',
-    'RC': 'Vehicle RC',
-    'INSURANCE': 'Vehicle insurance',
-    'AADHAAR': 'Aadhaar',
-    'PAN': 'PAN card',
-    'PROFILE_PHOTO': 'Profile photo',
-  };
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeCamera();
-    _loadKyc();
-  }
-
-  @override
-  void dispose() {
-    _camera?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _initializeCamera() async {
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) throw StateError('No camera is available on this device.');
-      final preferred = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
-      final controller = CameraController(
-        preferred,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-      await controller.initialize();
-      if (!mounted) return;
-      setState(() {
-        _camera = controller;
-        _initializing = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _initializing = false;
-        _error = 'Camera could not be started: $error';
-      });
-    }
-  }
-
-  Future<void> _loadKyc() async {
-    final response = await widget.apiClient.get('/api/documents', queryParameters: {'driver_id': widget.driverId});
-    if (!mounted || !response.isSuccess || response.data is! Map) return;
-    final data = Map<String, dynamic>.from(response.data as Map);
-    setState(() => _kycSummary = data['kyc_summary'] is Map ? Map<String, dynamic>.from(data['kyc_summary']) : null);
-  }
-
-  Future<void> _capture() async {
-    final camera = _camera;
-    if (camera == null || !camera.value.isInitialized || _capturing) return;
-    setState(() => _capturing = true);
-    try {
-      final file = await camera.takePicture();
-      if (!mounted) return;
-      setState(() => _captured = file);
-    } catch (error) {
-      if (mounted) _showError('Capture failed: $error');
-    } finally {
-      if (mounted) setState(() => _capturing = false);
-    }
-  }
-
-  Future<void> _upload() async {
-    final captured = _captured;
-    if (captured == null || _capturing) return;
-    setState(() => _capturing = true);
-    try {
-      final bytes = await File(captured.path).readAsBytes();
-      final payload = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-      final response = await widget.apiClient.post(
-        '/api/documents/upload',
-        body: {
-          'driver_id': widget.driverId,
-          'doc_type': _selectedDocument,
-          'document_type': _selectedDocument,
-          'image_data': payload,
-        },
-        idempotencyKey: 'kyc-${widget.driverId}-$_selectedDocument-${DateTime.now().millisecondsSinceEpoch}',
-      );
-      if (!mounted) return;
-      if (response.isSuccess) {
-        setState(() => _captured = null);
-        await _loadKyc();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Document securely uploaded. It is now queued for verification.')),
-        );
-      } else {
-        _showError(_extractError(response.data));
-      }
-    } catch (error) {
-      if (mounted) _showError('Upload failed: $error');
-    } finally {
-      if (mounted) setState(() => _capturing = false);
-    }
-  }
-
-  String _extractError(dynamic data) {
-    if (data is Map) {
-      final error = data['error'];
-      if (error is Map) return error['message']?.toString() ?? 'Request rejected.';
-      return error?.toString() ?? data['message']?.toString() ?? 'Request rejected.';
-    }
-    return 'Request rejected.';
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red.shade700));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = VaayuTheme.colorsOf(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Driver KYC & Identity')),
-      body: _initializing
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _ErrorState(message: _error!, onRetry: _initializeCamera)
-              : SafeArea(
-                  child: ListView(
-                    padding: const EdgeInsets.all(VaayuSpacing.md),
-                    children: [
-                      VaayuCard(
-                        backgroundColor: colors.surface,
-                        child: Padding(
-                          padding: const EdgeInsets.all(VaayuSpacing.md),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Verification document', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: colors.textPrimary)),
-                              const SizedBox(height: 8),
-                              DropdownButtonFormField<String>(
-                                value: _selectedDocument,
-                                items: _documentTypes.entries.map((entry) => DropdownMenuItem(value: entry.key, child: Text(entry.value))).toList(),
-                                onChanged: (value) {
-                                  if (value != null) setState(() { _selectedDocument = value; _captured = null; });
-                                },
-                                decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Document type'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: VaayuSpacing.md),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: AspectRatio(
-                          aspectRatio: _camera?.value.aspectRatio ?? 1.0,
-                          child: _captured != null
-                              ? Image.file(File(_captured!.path), fit: BoxFit.cover)
-                              : CameraPreview(_camera!),
-                        ),
-                      ),
-                      const SizedBox(height: VaayuSpacing.sm),
-                      Text(
-                        _captured == null
-                            ? 'Place the entire document inside the frame. Avoid glare and keep all corners visible.'
-                            : 'Review the captured image before submitting it for verification.',
-                        style: TextStyle(fontSize: 12, color: colors.textSecondary),
-                      ),
-                      const SizedBox(height: VaayuSpacing.md),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _capturing ? null : (_captured == null ? _capture : () => setState(() => _captured = null)),
-                              icon: Icon(_captured == null ? Icons.camera_alt : Icons.refresh),
-                              label: Text(_captured == null ? 'Capture' : 'Retake'),
-                            ),
-                          ),
-                          const SizedBox(width: VaayuSpacing.sm),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _captured == null || _capturing ? null : _upload,
-                              icon: _capturing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.verified_user),
-                              label: Text(_capturing ? 'Uploading…' : 'Submit securely'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: VaayuSpacing.lg),
-                      if (_kycSummary != null)
-                        VaayuCard(
-                          backgroundColor: colors.surface,
-                          child: Padding(
-                            padding: const EdgeInsets.all(VaayuSpacing.md),
-                            child: Row(
-                              children: [
-                                Icon(Icons.fact_check_outlined, color: colors.primary),
-                                const SizedBox(width: VaayuSpacing.sm),
-                                Expanded(child: Text('KYC status: ${_kycSummary!['status'] ?? 'PENDING'}', style: TextStyle(fontWeight: FontWeight.w700, color: colors.textPrimary))),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-    );
-  }
+  CameraController? _camera; bool _initializing = true; bool _capturing = false; String? _error; String _selectedDocument = 'DRIVING_LICENSE'; XFile? _captured; Map<String, dynamic>? _kycSummary; String? _uploadIntent;
+  static const _documentTypes = <String, String>{'DRIVING_LICENSE':'Driving licence','RC':'Vehicle RC','INSURANCE':'Vehicle insurance','AADHAAR':'Aadhaar','PAN':'PAN card','PROFILE_PHOTO':'Profile photo'};
+  @override void initState(){super.initState();_initializeCamera();_loadKyc();}
+  @override void dispose(){_camera?.dispose();super.dispose();}
+  Future<void> _initializeCamera() async { try { final cameras=await availableCameras(); if(cameras.isEmpty)throw StateError('No camera is available on this device.'); final preferred=cameras.firstWhere((camera)=>camera.lensDirection==CameraLensDirection.back,orElse:()=>cameras.first); final controller=CameraController(preferred,ResolutionPreset.high,enableAudio:false,imageFormatGroup:ImageFormatGroup.jpeg); await controller.initialize(); if(!mounted)return; setState(()=>_camera=controller..value); setState(()=>_initializing=false); } catch(error){if(mounted)setState((){_initializing=false;_error='Camera could not be started: $error';});} }
+  Future<void> _loadKyc() async { final response=await widget.apiClient.get('/api/documents',queryParameters:{'driver_id':widget.driverId}); if(!mounted||!response.isSuccess||response.data is! Map)return; final data=Map<String,dynamic>.from(response.data as Map); setState(()=>_kycSummary=data['kyc_summary'] is Map?Map<String,dynamic>.from(data['kyc_summary']):null); }
+  Future<void> _capture() async { final camera=_camera; if(camera==null||!camera.value.isInitialized||_capturing)return; setState(()=>_capturing=true); try{final file=await camera.takePicture(); if(!mounted)return; setState((){_captured=file;_uploadIntent='kyc-${widget.driverId}-$_selectedDocument-${DateTime.now().microsecondsSinceEpoch}';});}catch(error){if(mounted)_showError('Capture failed: $error');}finally{if(mounted)setState(()=>_capturing=false);}}
+  Future<String> _compressedDataUri(String path) async { final source=await File(path).readAsBytes(); final decoded=img.decodeImage(source); if(decoded==null)throw StateError('Captured image could not be decoded.'); final oriented=img.bakeOrientation(decoded); var width=oriented.width; var height=oriented.height; if(width>1800){height=(height*1800/width).round();width=1800;} final resized=width==oriented.width?oriented:img.copyResize(oriented,width:width,height:height,interpolation:img.Interpolation.linear); var quality=82; var bytes=img.encodeJpg(resized,quality:quality); while(bytes.length>850*1024&&quality>45){quality-=7;bytes=img.encodeJpg(resized,quality:quality);} if(bytes.length>900*1024)throw StateError('Captured document is too large. Move closer and retake the image.'); return 'data:image/jpeg;base64,${base64Encode(bytes)}'; }
+  Future<void> _upload() async { final captured=_captured; final intent=_uploadIntent; if(captured==null||intent==null||_capturing)return; setState(()=>_capturing=true); try{final payload=await _compressedDataUri(captured.path); final response=await widget.apiClient.post('/api/documents/upload',body:{'driver_id':widget.driverId,'doc_type':_selectedDocument,'document_type':_selectedDocument,'image_data':payload},idempotencyKey:intent); if(!mounted)return; if(response.isSuccess){setState((){_captured=null;_uploadIntent=null;});await _loadKyc();ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Document securely uploaded and queued for verification.')));}else{_showError(_extractError(response.data));}}catch(error){if(mounted)_showError('Upload failed: $error');}finally{if(mounted)setState(()=>_capturing=false);}}
+  String _extractError(dynamic data){if(data is Map){final error=data['error'];if(error is Map)return error['message']?.toString()??'Request rejected.';return error?.toString()??data['message']?.toString()??'Request rejected.';}return 'Request rejected.';}
+  void _showError(String message)=>ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(message),backgroundColor:Colors.red.shade700));
+  @override Widget build(BuildContext context){final colors=VaayuTheme.colorsOf(context); return Scaffold(appBar:AppBar(title:const Text('Driver KYC & Identity')),body:_initializing?const Center(child:CircularProgressIndicator()):_error!=null?_ErrorState(message:_error!,onRetry:_initializeCamera):SafeArea(child:ListView(padding:const EdgeInsets.all(VaayuSpacing.md),children:[VaayuCard(backgroundColor:colors.surface,child:Padding(padding:const EdgeInsets.all(VaayuSpacing.md),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Verification document',style:TextStyle(fontSize:16,fontWeight:FontWeight.w800,color:colors.textPrimary)),const SizedBox(height:8),DropdownButtonFormField<String>(value:_selectedDocument,items:_documentTypes.entries.map((entry)=>DropdownMenuItem(value:entry.key,child:Text(entry.value))).toList(),onChanged:(value){if(value!=null)setState((){_selectedDocument=value;_captured=null;_uploadIntent=null;});},decoration:const InputDecoration(border:OutlineInputBorder(),labelText:'Document type'))])),const SizedBox(height:VaayuSpacing.md),ClipRRect(borderRadius:BorderRadius.circular(18),child:AspectRatio(aspectRatio:_camera?.value.aspectRatio??1.0,child:_captured!=null?Image.file(File(_captured!.path),fit:BoxFit.cover):CameraPreview(_camera!))),const SizedBox(height:VaayuSpacing.sm),Text(_captured==null?'Place the entire document inside the frame. Avoid glare and keep all corners visible.':'Review the captured image before submitting it for verification.',style:TextStyle(fontSize:12,color:colors.textSecondary)),const SizedBox(height:VaayuSpacing.md),Row(children:[Expanded(child:OutlinedButton.icon(onPressed:_capturing?null:(_captured==null?_capture:()=>setState((){_captured=null;_uploadIntent=null;})),icon:Icon(_captured==null?Icons.camera_alt:Icons.refresh),label:Text(_captured==null?'Capture':'Retake'))),const SizedBox(width:VaayuSpacing.sm),Expanded(child:FilledButton.icon(onPressed:_captured==null||_capturing?null:_upload,icon:_capturing?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.verified_user),label:Text(_capturing?'Uploading…':'Submit securely')))]),const SizedBox(height:VaayuSpacing.lg),if(_kycSummary!=null)VaayuCard(backgroundColor:colors.surface,child:Padding(padding:const EdgeInsets.all(VaayuSpacing.md),child:Row(children:[Icon(Icons.fact_check_outlined,color:colors.primary),const SizedBox(width:VaayuSpacing.sm),Expanded(child:Text('KYC status: ${_kycSummary!['status']??'PENDING'}',style:TextStyle(fontWeight:FontWeight.w700,color:colors.textPrimary)))]))) ]));}
 }
-
-class _ErrorState extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _ErrorState({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.no_photography_outlined, size: 48),
-              const SizedBox(height: 12),
-              Text(message, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton(onPressed: onRetry, child: const Text('Try again')),
-            ],
-          ),
-        ),
-      );
-}
+class _ErrorState extends StatelessWidget{final String message;final VoidCallback onRetry;const _ErrorState({required this.message,required this.onRetry});@override Widget build(BuildContext context)=>Center(child:Padding(padding:const EdgeInsets.all(24),child:Column(mainAxisSize:MainAxisSize.min,children:[const Icon(Icons.no_photography_outlined,size:48),const SizedBox(height:12),Text(message,textAlign:TextAlign.center),const SizedBox(height:16),FilledButton(onPressed:onRetry,child:const Text('Try again'))])));}
