@@ -5,13 +5,26 @@ const assert = require('node:assert/strict');
 const { RedisLockManager } = require('../../src/services/redisLockManager');
 const { RedisClient } = require('../../src/services/redisClient');
 
+const testClients = new Set();
+
 function uniqueLockName(prefix) {
   return `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-test('Redis lock ownership: stale owner cannot release a newer lock', async () => {
+function createTestLocks() {
   const client = new RedisClient();
-  const locks = new RedisLockManager(client);
+  testClients.add(client);
+  return { client, locks: new RedisLockManager(client) };
+}
+
+test.afterEach(async () => {
+  const clients = Array.from(testClients);
+  testClients.clear();
+  await Promise.all(clients.map(client => client.disconnect()));
+});
+
+test('Redis lock ownership: stale owner cannot release a newer lock', async () => {
+  const { client, locks } = createTestLocks();
   const lockName = uniqueLockName('trip-lock-test');
 
   const first = await locks.acquireTripLock(lockName, 1000);
@@ -33,8 +46,7 @@ test('Redis lock ownership: stale owner cannot release a newer lock', async () =
 });
 
 test('Redis lock ownership: refresh rejects a different reservation and preserves owner', async () => {
-  const client = new RedisClient();
-  const locks = new RedisLockManager(client);
+  const { client, locks } = createTestLocks();
   const lockName = uniqueLockName('refresh');
 
   const owner = await locks.acquireScopedLock('test-lock:', lockName, 1000);
@@ -52,8 +64,7 @@ test('Redis lock ownership: refresh rejects a different reservation and preserve
 });
 
 test('Redis lock ownership: scoped lease refresh extends only the current owner', async () => {
-  const client = new RedisClient();
-  const locks = new RedisLockManager(client);
+  const { client, locks } = createTestLocks();
   const lockName = uniqueLockName('lease-refresh');
 
   const owner = await locks.acquireIdempotencyLock(lockName, 1000);
