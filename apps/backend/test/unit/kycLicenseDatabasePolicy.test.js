@@ -11,24 +11,30 @@ const migration = fs.readFileSync(
 );
 
 function getCreateIndexStatement(indexName) {
-  const match = migration.match(
-    new RegExp(
-      `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName}\\b[\\s\\S]*?;`,
-      'i'
-    )
-  );
-  assert.ok(match, `missing ${indexName} definition`);
-  return match[0];
+  const prefix = `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName}`;
+  const start = migration.indexOf(prefix);
+  assert.notEqual(start, -1, `missing ${indexName} definition`);
+
+  const end = migration.indexOf(';', start);
+  assert.notEqual(end, -1, `unterminated ${indexName} definition`);
+
+  return migration.slice(start, end + 1);
 }
 
 test('KYC database policy allows the same driver to reuse a driving licence', () => {
   const ownerIndex = getCreateIndexStatement('uq_kyc_license_owner');
 
-  assert.match(ownerIndex, /ON driver_kyc_documents\\(license_number_hash, driver_id\\)/);
-  assert.doesNotMatch(ownerIndex, /ON driver_kyc_documents\\(license_number_hash\\)/);
+  assert.ok(
+    ownerIndex.includes('ON driver_kyc_documents(license_number_hash, driver_id)'),
+    'owner index must be scoped by both licence hash and driver'
+  );
+  assert.ok(
+    !ownerIndex.includes('ON driver_kyc_documents(license_number_hash)'),
+    'owner index must not be globally unique by licence hash'
+  );
 });
 
 test('KYC database policy retains global lookup for licence ownership conflicts', () => {
-  assert.match(migration, /CREATE INDEX IF NOT EXISTS idx_kyc_license_lookup/);
-  assert.match(migration, /idx_kyc_license_lookup[\\s\\S]*?ON driver_kyc_documents\\(license_number_hash\\)/);
+  assert.ok(migration.includes('CREATE INDEX IF NOT EXISTS idx_kyc_license_lookup'));
+  assert.ok(migration.includes('ON driver_kyc_documents(license_number_hash)'));
 });
