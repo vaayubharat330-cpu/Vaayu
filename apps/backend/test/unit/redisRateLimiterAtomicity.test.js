@@ -22,9 +22,10 @@ test('rate limiter uses one atomic Redis script for increment and first expiry',
 
 test('rate limiter preserves bounded development fallback and quota semantics', async () => {
   const calls = [];
+  let count = 0;
   const fakeRedis = {
     async eval() { throw new Error('EVAL_UNSUPPORTED_BY_MEMORY_ENGINE'); },
-    async incr(key) { calls.push(['incr', key]); return calls.length; },
+    async incr(key) { calls.push(['incr', key]); return ++count; },
     async expire(key, seconds) { calls.push(['expire', key, seconds]); return 1; },
     async disconnect() {}
   };
