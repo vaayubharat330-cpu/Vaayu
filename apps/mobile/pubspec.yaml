@@ -23,6 +23,10 @@ dependencies:
   # State Management & Reactive UI (P15A.4 / P15A.5)
   flutter_bloc: ^8.1.3
 
+  # Device camera and image capture
+  camera: ^0.11.0+2
+  image: ^4.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
