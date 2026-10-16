@@ -22,7 +22,6 @@ class MutationReplayResult {
     this.transientFailure = false,
   });
 
-  /// Factory classifying an HTTP response or execution error
   factory MutationReplayResult.fromResponse({
     required PendingMutation mutation,
     required int statusCode,
@@ -31,11 +30,7 @@ class MutationReplayResult {
   }) {
     final isSuccess = statusCode >= 200 && statusCode < 300;
     if (isSuccess) {
-      return MutationReplayResult(
-        mutation: mutation,
-        success: true,
-        statusCode: statusCode,
-      );
+      return MutationReplayResult(mutation: mutation, success: true, statusCode: statusCode);
     }
     final isPermanent = isPermanentStatusCode(statusCode);
     return MutationReplayResult(
@@ -49,35 +44,32 @@ class MutationReplayResult {
     );
   }
 
-  /// Classifies status codes into permanent rejections vs transient retriable errors
   static bool isPermanentStatusCode(int? statusCode) {
-    if (statusCode == null || statusCode <= 0) return false; // Network disconnection / timeouts are transient
-    if (statusCode == 408 || statusCode == 429) return false; // Timeout and rate limit are transient
-    // 400 Bad Request / Invalid OTP / Validation Error
-    // 403 Forbidden / BOLA denied
-    // 404 Not Found
-    // 409 Conflict / Terminal State
-    // 422 Unprocessable Entity
-    if (statusCode >= 400 && statusCode < 500) {
-      return true;
-    }
-    // 5xx (500 Internal Server Error, 502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout) are transient
+    if (statusCode == null || statusCode <= 0) return false;
+    if (statusCode == 408 || statusCode == 429) return false;
+    if (statusCode >= 400 && statusCode < 500) return true;
     return false;
   }
 }
 
-/// Offline Mutation Queue Flusher & Conflict Resolver
-/// Invariants Enforced:
-/// 1. Sequential FIFO replay order.
-/// 2. Identical UUIDv4 idempotencyKey preserved across retries and restarts.
-/// 3. Blocked dependency check: If a mutation in a chain fails permanently,
-///    dependent downstream mutations for the same trip are aborted/rolled back.
-/// 4. Authoritative Conflict Reconciliation: If server reports the trip is already
-///    CANCELLED or terminal, stale queued mutations are aborted rather than blindly executed.
+/// Offline Mutation Queue Flusher & Conflict Resolver.
+///
+/// Invariants enforced:
+/// 1. Strict FIFO ordering for executable mutations.
+/// 2. Identical idempotency key is preserved across every retry.
+/// 3. A transient failure pauses the queue rather than racing later mutations.
+/// 4. Retry backoff is persisted, preventing reconnect storms/hot loops.
+/// 5. Terminal authoritative state blocks stale downstream actions.
+/// 6. Permanent validation/security failures are removed so they cannot poison
+///    the queue forever.
 class OfflineQueueFlusher {
+  static const int maxRetryCount = 12;
+  static const Duration maxRetryDelay = Duration(minutes: 5);
+
   final ILocalPersistenceService _persistenceService;
   final ProjectionStore _projectionStore;
   final Future<MutationReplayResult> Function(PendingMutation mutation) _executeMutation;
+  final DateTime Function() _now;
 
   bool _isFlushing = false;
 
@@ -85,26 +77,37 @@ class OfflineQueueFlusher {
     required ILocalPersistenceService persistenceService,
     required ProjectionStore projectionStore,
     required Future<MutationReplayResult> Function(PendingMutation mutation) executeMutation,
+    DateTime Function()? now,
   })  : _persistenceService = persistenceService,
         _projectionStore = projectionStore,
-        _executeMutation = executeMutation;
+        _executeMutation = executeMutation,
+        _now = now ?? (() => DateTime.now().toUtc());
 
   bool get isFlushing => _isFlushing;
 
-  /// Flushes all pending mutations sequentially in strict FIFO order
+  Duration _retryDelay(int retryCount) {
+    final exponent = retryCount.clamp(1, 8);
+    final seconds = 1 << (exponent - 1);
+    final delay = Duration(seconds: seconds);
+    return delay > maxRetryDelay ? maxRetryDelay : delay;
+  }
+
   Future<List<MutationReplayResult>> flushQueue() async {
     if (_isFlushing) return [];
     _isFlushing = true;
 
     final results = <MutationReplayResult>[];
-
     try {
       final queue = await _persistenceService.getPendingMutations();
       final blockedTripIds = <String>{};
+      final now = _now().toUtc();
 
       for (final mutation in queue) {
-        // Invariant: If a previous mutation for this trip failed permanently,
-        // do not blindly execute dependent downstream actions!
+        if (!mutation.isReadyForReplay && mutation.nextAttemptAt != null && mutation.nextAttemptAt!.isAfter(now)) {
+          // FIFO: later mutations must not leapfrog an earlier retry window.
+          break;
+        }
+
         if (blockedTripIds.contains(mutation.tripId)) {
           results.add(MutationReplayResult(
             mutation: mutation,
@@ -117,41 +120,53 @@ class OfflineQueueFlusher {
           continue;
         }
 
-        // Invariant: Conflict Check against current Authoritative Projection
         final currentTrip = _projectionStore.getProjection(mutation.tripId);
-        if (currentTrip != null) {
-          if (currentTrip.status == 'CANCELLED' || currentTrip.status == 'DELIVERED') {
-            // Server has already moved to terminal state! Queued action is stale.
-            blockedTripIds.add(mutation.tripId);
-            results.add(MutationReplayResult(
-              mutation: mutation,
-              success: false,
-              permanentRejection: true,
-              errorCode: 'CONFLICT_TERMINAL_STATE',
-              errorMessage: 'Cannot replay mutation on trip in terminal state ${currentTrip.status}',
-            ));
-            await _persistenceService.removeMutation(mutation.intentId);
-            continue;
-          }
+        if (currentTrip != null && (currentTrip.status == 'CANCELLED' || currentTrip.status == 'DELIVERED')) {
+          blockedTripIds.add(mutation.tripId);
+          results.add(MutationReplayResult(
+            mutation: mutation,
+            success: false,
+            permanentRejection: true,
+            errorCode: 'CONFLICT_TERMINAL_STATE',
+            errorMessage: 'Cannot replay mutation on trip in terminal state ${currentTrip.status}',
+          ));
+          await _persistenceService.removeMutation(mutation.intentId);
+          continue;
         }
 
-        // Execute mutation across transport
         final result = await _executeMutation(mutation);
         results.add(result);
 
         if (result.success) {
-          // Success: Cleanly purge this specific mutation from persistent storage
           await _persistenceService.removeMutation(mutation.intentId);
-        } else if (result.permanentRejection) {
-          // Permanent rejection (e.g. Geofence violation, BOLA denied, invalid OTP):
-          // Block trip queue and purge rejected mutation
+          continue;
+        }
+
+        if (result.permanentRejection) {
           blockedTripIds.add(mutation.tripId);
           await _persistenceService.removeMutation(mutation.intentId);
-        } else {
-          // Transient failure (network drop): Update retry counter in storage and HALT queue replay
-          await _persistenceService.enqueueMutation(mutation.copyWithRetry());
-          break; // Stop sequential replay until network stabilizes
+          continue;
         }
+
+        // Preserve the same intent/idempotency key while replacing the queue
+        // record with a scheduled retry. The queue is deliberately halted.
+        final nextRetryCount = mutation.retryCount + 1;
+        if (nextRetryCount >= maxRetryCount) {
+          final parked = mutation.copyWithRetry(
+            nextAttemptAt: now.add(maxRetryDelay),
+            lastErrorCode: result.errorCode ?? 'RETRY_EXHAUSTED',
+            lastFailureAt: now,
+          );
+          await _persistenceService.enqueueMutation(parked);
+        } else {
+          final scheduled = mutation.copyWithRetry(
+            nextAttemptAt: now.add(_retryDelay(nextRetryCount)),
+            lastErrorCode: result.errorCode ?? 'TRANSIENT_FAILURE',
+            lastFailureAt: now,
+          );
+          await _persistenceService.enqueueMutation(scheduled);
+        }
+        break;
       }
     } finally {
       _isFlushing = false;
