@@ -50,7 +50,7 @@ jobs:
           for f in src/services/*.js src/db/*.js src/map-engine/*.js; do node --check "$f"; done
       - name: Unit tests (auth and OTP security)
         run: npm test
-      - name: Concurrency, realtime, payment and media regression suites
+      - name: Concurrency, realtime, payment, media and KYC regression suites
         env:
           NODE_ENV: test
           PERSISTENCE_PROVIDER: postgres
@@ -71,6 +71,12 @@ jobs:
           npm run test:cluster
           npm run test:ledger-pg
           npm run test:camera
+          npm run test:document-verification
+          npm run test:document-decision
+          npm run test:document-capture
+          npm run test:kyc-orchestration
+          npm run test:kyc-expiry
+          npm run test:kyc-review
       - name: Full HTTP delivery lifecycle E2E
         env:
           NODE_ENV: test
