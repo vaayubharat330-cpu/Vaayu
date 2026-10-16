@@ -131,3 +131,26 @@ jobs:
       - name: Bundles parse
         run: |
           for f in public/built/*.js public/driver/app.js; do node --check "$f"; done
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+      - name: Flutter toolchain
+        run: flutter --version
+      - name: Resolve packages
+        run: flutter pub get
+      - name: Static analysis
+        run: flutter analyze --no-fatal-infos
+      - name: Formatting gate
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Mobile unit and regression tests
+        run: flutter test --reporter expanded
