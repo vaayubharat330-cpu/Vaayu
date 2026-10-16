@@ -182,6 +182,24 @@ class IdempotencyService {
   async saveResponse(idempotencyKey, orderId, statusCode, body) {
     if (!idempotencyKey || typeof idempotencyKey !== 'string') return;
 
+    // A physical command may already have committed while a dependent side effect
+    // (settlement/refund/provider work) is still pending. Persisting that response as
+    // the final idempotent replay would prevent the same command from retrying the
+    // unresolved financial side effect. The authoritative business state remains
+    // committed; only the replay record is deliberately withheld.
+    const dependentPaymentPending = Boolean(
+      body && (
+        (body.paymentSettlement && body.paymentSettlement.success === false) ||
+        (body.paymentRefund && body.paymentRefund.success === false)
+      )
+    );
+    if (dependentPaymentPending) {
+      metricsService.increment('idempotency_response_deferred_total');
+      logger.warn('idempotency_response_deferred_for_pending_payment', 'Command response was not cached because a dependent payment operation failed; retry remains allowed.', { idempotencyKey, orderId });
+      await this.abortResponse(idempotencyKey);
+      return;
+    }
+
     let persisted = false;
     try {
       const dbStore = db.getDb();
