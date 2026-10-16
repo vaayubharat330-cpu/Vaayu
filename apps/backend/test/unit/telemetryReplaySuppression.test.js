@@ -21,7 +21,20 @@ function createMockSocket() {
 // subscriber and keep the standalone unit-test process alive.
 const testPubSub = {
   PRIMARY_CHANNEL: 'vaayu:test:ws:events',
-  async subscribe() { return true; }
+  async subscribe() { return true; },
+  async publish(eventType, targetRoom, payload, options = {}) {
+    return {
+      success: true,
+      eventId: options.eventId,
+      envelope: {
+        eventType,
+        targetRoom,
+        timestamp: options.timestamp,
+        eventId: options.eventId,
+        payload
+      }
+    };
+  }
 };
 
 test('historical telemetry replay is persisted but not broadcast as live location', async () => {
