@@ -27,7 +27,6 @@ class DriverDashboardScreen extends StatefulWidget {
 class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   bool _isTogglingDuty = false;
   bool _isAcceptingOffer = false;
-
   @override
   void initState() { super.initState(); _loadInitialData(); }
   void _loadInitialData() { widget.controller.loadProfile(); widget.controller.loadOffers(); }
@@ -85,7 +84,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 DriverDutyToggleCard(profile: profile, isOnline: isOnline, isLoading: _isTogglingDuty, onToggleDuty: _handleDutyToggle),
                 const SizedBox(height: VaayuSpacing.md),
-                VaayuCard(backgroundColor: colors.surface, child: ListTile(leading: Icon(Icons.verified_user_outlined, color: colors.primary), title: const Text('Identity & KYC', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(profile?.kycStatus == 'APPROVED' ? 'KYC approved' : 'Complete document verification before commercial duty', style: const TextStyle(fontSize: 12)), trailing: const Icon(Icons.chevron_right), onTap: _openKyc)),
+                VaayuCard(backgroundColor: colors.surface, child: ListTile(leading: Icon(Icons.verified_user_outlined, color: colors.primary), title: const Text('Identity & KYC', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: const Text('Capture and securely submit identity and vehicle documents for verification.', style: TextStyle(fontSize: 12)), trailing: const Icon(Icons.chevron_right), onTap: _openKyc)),
                 const SizedBox(height: VaayuSpacing.md),
                 if (isOnline) StreamBuilder<ViewState<List<DriverOffer>>>(stream: widget.controller.offersStream, initialData: widget.controller.offersState, builder: (context, offersSnapshot) {
                   final offers = (offersSnapshot.data ?? widget.controller.offersState).data ?? <DriverOffer>[];
