@@ -46,6 +46,7 @@ jobs:
       - name: Syntax check (production entry and services)
         run: |
           node --check src/server_production.js
+          node --check src/server_bootstrap.js
           for f in src/services/*.js src/db/*.js src/map-engine/*.js; do node --check "$f"; done
       - name: Unit tests (auth and OTP security)
         run: npm test
@@ -58,6 +59,7 @@ jobs:
           ENABLE_DEV_REDIS: 'true'
         run: |
           npm run test:dispatch
+          npm run test:dispatch-recovery
           npm run test:realtime
           npm run test:telemetry-replay
           npm run test:redis-lock
