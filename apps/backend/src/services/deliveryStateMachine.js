@@ -5,13 +5,8 @@ const { calcHaversine } = require('./driverLocationStore');
 const { redisLockManager } = require('./redisLockManager');
 const { metricsService } = require('./metricsService');
 const { logger } = require('./logger');
+const { DELIVERY_STATES } = require('./deliveryStates');
 
-const DELIVERY_STATES = {
-  CREATED: 'CREATED', SEARCHING_DRIVER: 'SEARCHING_DRIVER', DRIVER_ASSIGNED: 'DRIVER_ASSIGNED',
-  DRIVER_ACCEPTED: 'DRIVER_ACCEPTED', DRIVER_ARRIVING: 'DRIVER_ARRIVING', DRIVER_AT_PICKUP: 'DRIVER_AT_PICKUP',
-  PICKUP_CONFIRMED: 'PICKUP_CONFIRMED', IN_TRANSIT: 'IN_TRANSIT', DRIVER_AT_DROPOFF: 'DRIVER_AT_DROPOFF',
-  DELIVERED: 'DELIVERED', CANCELLED: 'CANCELLED', FAILED: 'FAILED'
-};
 const TRANSITION_MATRIX = {
   [DELIVERY_STATES.CREATED]: [DELIVERY_STATES.SEARCHING_DRIVER, DELIVERY_STATES.CANCELLED],
   [DELIVERY_STATES.SEARCHING_DRIVER]: [DELIVERY_STATES.DRIVER_ASSIGNED, DELIVERY_STATES.CANCELLED],
@@ -97,7 +92,7 @@ class DeliveryStateMachine {
       }
       if (nextState === DELIVERY_STATES.DELIVERED) { trip.completedAt = updatedAt; if (proof) trip.proofOfDelivery = { podPhotoUrl: proof.podPhotoUrl || null, receiverName: typeof proof.receiverName === 'string' ? proof.receiverName.trim().slice(0, 120) || null : null, capturedAt: updatedAt, capturedBy: actorId }; }
       else if (nextState === DELIVERY_STATES.CANCELLED) { trip.cancelledAt = updatedAt; trip.cancelReason = reason || 'User requested cancellation'; }
-      const databaseStore = db.getDb(); const dbTrip = databaseStore.trips.find(t => t.id === tripId); if (!dbTrip) return { success: false, error: { code: 'TRIP_NOT_FOUND', message: `Trip ${tripId} disappeared during transition` } }; Object.assign(dbTrip, trip);
+      const databaseStore = db.getDb(); const dbTrip = databaseStore.trips.find(t => t.id === tripId); if (!dbTrip) return { success: false, error: { code: 'TRIP_NOT_FOUND', message: 'Trip disappeared during transition' } }; Object.assign(dbTrip, trip);
       const auditLogRecord = { id: `AUDIT_${Date.now()}_${Math.floor(Math.random() * 1000)}`, orderId: tripId, fromState: currentState, toState: nextState, actorType, actorId, version: newVersion, idempotencyKey, reason: reason || null, timestamp: Date.now(), isoTime: updatedAt, metadata };
       if (!databaseStore.delivery_audit_logs) databaseStore.delivery_audit_logs = []; databaseStore.delivery_audit_logs.push(auditLogRecord); db.saveDb(databaseStore);
       try { await db.waitForCommit(); } catch (error) { logger.error('delivery_transition_persistence_failed', `Order ${tripId} transition was not durably committed`, { orderId: tripId, fromState: currentState, toState: nextState, version: newVersion, error: error.message }); return { success: false, error: { code: 'PERSISTENCE_COMMIT_FAILED', message: 'Delivery state transition could not be durably committed. Retry the same command.' } }; }
