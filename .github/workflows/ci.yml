@@ -11,9 +11,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: '22'
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: apps/backend
@@ -41,10 +45,10 @@ jobs:
           --health-timeout=5s
           --health-retries=5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: apps/backend/package-lock.json
       - run: npm ci
@@ -61,7 +65,7 @@ jobs:
         run: npm run migrate:ledger
       - name: Unit tests (auth and OTP security)
         run: npm test
-      - name: Concurrency, realtime, payment, media and KYC regression suites
+      - name: Dispatch and concurrency regression
         env:
           NODE_ENV: test
           PERSISTENCE_PROVIDER: postgres
@@ -69,38 +73,100 @@ jobs:
           REDIS_URL: redis://localhost:6379
           ENABLE_DEV_REDIS: 'true'
         run: |
-          npm run test:dispatch
-          npm run test:dispatch-recovery
-          npm run test:realtime
-          npm run test:telemetry-replay
-          npm run test:redis-lock
-          npm run test:postgres-transition
-          npm run test:payment-routing
-          npm run test:payment-status
-          npm run test:payment-ingestion-recovery
-          npm run test:idempotency
-          npm run test:order-exception-recovery
-          npm run test:cluster
-          npm run test:ledger-pg
-          npm run test:outbox
-          npm run test:recon
-          npm run test:camera
-          npm run test:camera-policy
-          npm run test:camera-integrity
-          npm run test:camera-gateway
-          npm run test:camera-route-security
-          npm run test:document-verification
-          npm run test:document-decision
-          npm run test:document-capture
-          npm run test:kyc-orchestration
-          npm run test:kyc-expiry
-          npm run test:kyc-review
-          npm run test:kyc-review-evidence
-          npm run test:kyc-review-routes
-          npm run test:kyc-license-db
-          npm run test:kyc-license-owner-registry
-          npm run test:kyc-persistence
-          npm run test:kyc-upload-wiring
+          set -euo pipefail
+          run_test() {
+            echo "::group::Running $1"
+            timeout --signal=TERM 5m npm run "$1"
+            echo "::endgroup::"
+          }
+          run_test test:dispatch
+          run_test test:dispatch-recovery
+          run_test test:realtime
+          run_test test:telemetry-replay
+          run_test test:redis-lock
+          run_test test:postgres-transition
+      - name: Payment and order regression
+        env:
+          NODE_ENV: test
+          PERSISTENCE_PROVIDER: postgres
+          DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
+          REDIS_URL: redis://localhost:6379
+          ENABLE_DEV_REDIS: 'true'
+        run: |
+          set -euo pipefail
+          run_test() {
+            echo "::group::Running $1"
+            timeout --signal=TERM 5m npm run "$1"
+            echo "::endgroup::"
+          }
+          run_test test:payment-routing
+          run_test test:payment-status
+          run_test test:payment-ingestion-recovery
+          run_test test:idempotency
+          run_test test:order-exception-recovery
+      - name: Ledger, outbox and reconciliation regression
+        env:
+          NODE_ENV: test
+          PERSISTENCE_PROVIDER: postgres
+          DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
+          REDIS_URL: redis://localhost:6379
+          ENABLE_DEV_REDIS: 'true'
+        run: |
+          set -euo pipefail
+          run_test() {
+            echo "::group::Running $1"
+            timeout --signal=TERM 5m npm run "$1"
+            echo "::endgroup::"
+          }
+          run_test test:cluster
+          run_test test:ledger-pg
+          run_test test:outbox
+          run_test test:recon
+      - name: Camera integrity and route regression
+        env:
+          NODE_ENV: test
+          PERSISTENCE_PROVIDER: postgres
+          DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
+          REDIS_URL: redis://localhost:6379
+          ENABLE_DEV_REDIS: 'true'
+        run: |
+          set -euo pipefail
+          run_test() {
+            echo "::group::Running $1"
+            timeout --signal=TERM 5m npm run "$1"
+            echo "::endgroup::"
+          }
+          run_test test:camera
+          run_test test:camera-policy
+          run_test test:camera-integrity
+          run_test test:camera-gateway
+          run_test test:camera-route-security
+      - name: Document and KYC regression
+        env:
+          NODE_ENV: test
+          PERSISTENCE_PROVIDER: postgres
+          DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
+          REDIS_URL: redis://localhost:6379
+          ENABLE_DEV_REDIS: 'true'
+        run: |
+          set -euo pipefail
+          run_test() {
+            echo "::group::Running $1"
+            timeout --signal=TERM 5m npm run "$1"
+            echo "::endgroup::"
+          }
+          run_test test:document-verification
+          run_test test:document-decision
+          run_test test:document-capture
+          run_test test:kyc-orchestration
+          run_test test:kyc-expiry
+          run_test test:kyc-review
+          run_test test:kyc-review-evidence
+          run_test test:kyc-review-routes
+          run_test test:kyc-license-db
+          run_test test:kyc-license-owner-registry
+          run_test test:kyc-persistence
+          run_test test:kyc-upload-wiring
       - name: Full HTTP delivery lifecycle E2E
         env:
           NODE_ENV: test
@@ -113,31 +179,34 @@ jobs:
           PORT: '4000'
           HOST: 127.0.0.1
         run: |
-          npm run db:seed
+          set -euo pipefail
+          timeout --signal=TERM 5m npm run db:seed
           node src/server_bootstrap.js > /tmp/vaayu-e2e.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID 2>/dev/null || true; cat /tmp/vaayu-e2e.log' EXIT
+          STATUS=000
           for i in $(seq 1 30); do
             STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4000/ || true)
             if [ "$STATUS" != "000" ]; then break; fi
             sleep 1
           done
           test "$STATUS" != "000"
-          npm run test:e2e
-          npm run test:e2e:merchant
+          timeout --signal=TERM 5m npm run test:e2e
+          timeout --signal=TERM 5m npm run test:e2e:merchant
       - name: Dependency audit (production, fails on high or critical)
-        run: npm audit --omit=dev --audit-level=high
+        run: timeout --signal=TERM 5m npm audit --omit=dev --audit-level=high
 
   portals:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: apps/backend/package-lock.json
       - run: npm ci
@@ -149,23 +218,24 @@ jobs:
 
   mobile:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.47.7'
           channel: stable
           cache: true
       - name: Flutter toolchain
         run: flutter --version
       - name: Resolve packages
-        run: flutter pub get
+        run: timeout --signal=TERM 10m flutter pub get
       - name: Static analysis
-        run: flutter analyze --no-fatal-infos
+        run: timeout --signal=TERM 10m flutter analyze --no-fatal-infos
       - name: Formatting gate
-        run: dart format --output=none --set-exit-if-changed lib test
+        run: timeout --signal=TERM 5m dart format --output=none --set-exit-if-changed lib test
       - name: Mobile unit and regression tests
-        run: flutter test --reporter expanded
+        run: timeout --signal=TERM 10m flutter test --reporter expanded
