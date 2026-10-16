@@ -70,6 +70,29 @@ jobs:
           npm run test:order-exception-recovery
           npm run test:cluster
           npm run test:ledger-pg
+      - name: Full HTTP delivery lifecycle E2E
+        env:
+          NODE_ENV: test
+          PERSISTENCE_PROVIDER: postgres
+          DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
+          REDIS_URL: redis://localhost:6379
+          ENABLE_DEV_REDIS: 'true'
+          JWT_SECRET: ci-e2e-jwt-secret-0123456789-abcdefghijklmnopqrstuvwxyz
+          VAAYU_TEST_JWT_SECRET: ci-e2e-jwt-secret-0123456789-abcdefghijklmnopqrstuvwxyz
+          PORT: '4000'
+          HOST: 127.0.0.1
+        run: |
+          npm run db:seed
+          node src/server_bootstrap.js > /tmp/vaayu-e2e.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true; cat /tmp/vaayu-e2e.log' EXIT
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4000/ || true)
+            if [ "$STATUS" != "000" ]; then break; fi
+            sleep 1
+          done
+          test "$STATUS" != "000"
+          npm run test:e2e
       - name: Dependency audit (production, fails on high or critical)
         run: npm audit --omit=dev --audit-level=high
 
