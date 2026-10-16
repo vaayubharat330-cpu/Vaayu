@@ -158,7 +158,7 @@ test('E2E: Merchant booking -> dispatch -> driver accept -> recipient tracking -
   assert.ok(fleetData.success);
   const fleetDriver = (fleetData.drivers || []).find(d => d.driverId === driver.id);
   assert.ok(fleetDriver, 'Control Tower fleet projection must include the online driver');
-  assert.equal(fleetDriver.livenessState, 'ONLINE');
+  assert.equal(fleetDriver.livenessState, 'HEALTHY');
 
   const { response: activeRes, body: activeData } = await jsonRequest('/api/admin/trips/active', {
     headers: { Authorization: 'Bearer ' + adminToken }
