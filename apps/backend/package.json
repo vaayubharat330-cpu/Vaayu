@@ -40,7 +40,7 @@
     "test:p19": "node --test --test-force-exit test/unit/fullPlatformCapacityEconomics.test.js",
     "test:final": "node --test --test-force-exit test/unit/finalProductionGate.test.js",
     "test:realtime": "node --test --test-force-exit test/unit/realtimeStreamResilience.test.js",
-    "test:telemetry-replay": "node --test test/unit/telemetryReplaySuppression.test.js",
+    "test:telemetry-replay": "node --test --test-force-exit test/unit/telemetryReplaySuppression.test.js",
     "test:redis-lock": "node --test test/unit/redisLockOwnership.test.js",
     "test:dispatch": "node --test --test-force-exit test/unit/dispatchCorrectnessConcurrency.test.js",
     "test:dispatch-recovery": "node --test --test-force-exit test/unit/dispatchRecovery.test.js",
@@ -97,7 +97,6 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "puppeteer-core": "^25.13.0",
-    "tailwindcss": "^3.4.19"
+    "puppeteer-core": "^25.13.0"
   }
 }
