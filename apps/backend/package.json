@@ -82,7 +82,8 @@
     "simulate:payment": "node test/payment_simulator/runner.js",
     "test:all": "node scripts/run-all-tests.js",
     "start": "node src/server_bootstrap.js",
-    "db:seed": "node src/db/seedPostgres.js"
+    "db:seed": "node src/db/seedPostgres.js",
+    "test:payment-ingestion-recovery": "node --test test/unit/paymentIngestionRecovery.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
