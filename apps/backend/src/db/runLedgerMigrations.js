@@ -20,7 +20,8 @@ async function runMigrations() {
       '005_create_kyc_verification_tables.sql',
       '006_fix_kyc_license_reuse.sql',
       '007_kyc_license_owner_registry.sql',
-      '008_kyc_verification_run_history.sql'
+      '008_kyc_verification_run_history.sql',
+      '009_harden_payment_outbox_leases.sql'
     ];
     for (const fileName of migrationFiles) {
       const sqlPath = path.join(__dirname, 'migrations', fileName);
