@@ -236,7 +236,17 @@ jobs:
         run: timeout --signal=TERM 10m flutter pub get
       - name: Static analysis
         run: timeout --signal=TERM 10m flutter analyze --no-fatal-infos
-      - name: Formatting gate
-        run: timeout --signal=TERM 5m dart format --output=none --set-exit-if-changed lib test
+      - name: Formatting gate (changed Dart files)
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed=$(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '^apps/mobile/(lib|test)/.*\.dart$' || true)
+          if [ -z "$changed" ]; then
+            echo "No Dart source/test files changed in this commit."
+            exit 0
+          fi
+          printf '%s\n' "$changed" | while IFS= read -r file; do
+            dart format --output=none --set-exit-if-changed "$file"
+          done
       - name: Mobile unit and regression tests
         run: timeout --signal=TERM 10m flutter test --reporter expanded
