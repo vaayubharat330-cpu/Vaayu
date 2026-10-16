@@ -36,40 +36,30 @@ async function loadAuthoritativeOtpAndTracking(tripId) {
     assert.ok(stored.pickupOtp, 'Authoritative trip must contain pickup OTP');
     assert.ok(stored.deliveryOtp, 'Authoritative trip must contain delivery OTP');
     assert.ok(stored.trackingToken, 'Authoritative trip must contain tracking token');
-    return {
-      pickupOtp: stored.pickupOtp,
-      deliveryOtp: stored.deliveryOtp,
-      trackingToken: stored.trackingToken
-    };
+    return { pickupOtp: stored.pickupOtp, deliveryOtp: stored.deliveryOtp, trackingToken: stored.trackingToken };
   } finally {
     await pool.end();
   }
 }
 
-test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tracking and OTP privacy', async () => {
+test('E2E: Full delivery lifecycle with automatic dispatch, geofenced telemetry, public tracking and OTP privacy', async () => {
   assert.ok(secret.length >= 32, 'JWT secret must be at least 32 chars');
 
   const adminToken = makeToken({ id: 'adm_e2e_super', name: 'Ops Admin', phone: '9999999999', role: 'ADMIN' });
 
-  // 1. Create Driver via Admin HTTP API
+  // 1. Create Driver via Admin HTTP API.
   const driverPhone = '90000' + Math.floor(10000 + Math.random() * 90000);
   const createDrvRes = await fetch(base + '/api/admin/drivers/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
-    body: JSON.stringify({
-      name: 'Ramesh Captain',
-      phone: driverPhone,
-      vehicleId: 'v_2w',
-      vehicleNumber: 'TS09UB8899',
-      city: 'Hyderabad'
-    })
+    body: JSON.stringify({ name: 'Ramesh Captain', phone: driverPhone, vehicleId: 'v_2w', vehicleNumber: 'TS09UB8899', city: 'Hyderabad' })
   });
   const drvData = await createDrvRes.json();
   assert.equal(createDrvRes.status, 201, 'Driver creation must succeed');
   assert.ok(drvData.success, 'Driver create success flag');
   const driver = drvData.driver;
 
-  // 2. Approve KYC via Admin HTTP API
+  // 2. Approve KYC.
   const kycRes = await fetch(base + '/api/admin/drivers/update-kyc', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
@@ -79,7 +69,7 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   assert.equal(kycRes.status, 200, 'KYC approval must succeed');
   assert.ok(kycData.success, 'KYC approved flag');
 
-  // 3. Driver goes ONLINE with pickup coordinates
+  // 3. Driver goes ONLINE with pickup coordinates.
   const driverToken = makeToken({ id: driver.userId, name: driver.name, phone: driver.phone, role: 'DRIVER' });
   const onlineRes = await fetch(base + '/api/driver/update', {
     method: 'POST',
@@ -90,7 +80,7 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   assert.equal(onlineRes.status, 200, 'Driver online must succeed');
   assert.ok(onlineData.success, 'Driver online flag');
 
-  // 4. Create customer booking with an idempotency key.
+  // 4. Customer booking. Dispatch is automatic in the booking transaction flow.
   const customerToken = makeToken({ id: 'cust_auto_1', name: 'Ananya Sharma', phone: '9876543211', role: 'CUSTOMER' });
   const bookingIdempotencyKey = `e2e-booking-${Date.now()}`;
   const bookingPayload = {
@@ -106,11 +96,7 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   };
   const bookRes = await fetch(base + '/api/trips/create', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + customerToken,
-      'X-Idempotency-Key': bookingIdempotencyKey
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + customerToken, 'X-Idempotency-Key': bookingIdempotencyKey },
     body: JSON.stringify(bookingPayload)
   });
   const bookData = await bookRes.json();
@@ -120,15 +106,13 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   assert.ok(trip.pickupOtp, 'Pickup OTP may be returned for the authenticated booking flow');
   assert.equal(Object.prototype.hasOwnProperty.call(trip, 'deliveryOtp'), false, 'Delivery OTP must not be returned in booking response');
   assert.ok(trip.trackingToken, 'Tracking token must be returned');
+  assert.ok(bookData.dispatch?.success, 'Booking flow must execute automatic dispatch');
+  assert.equal(bookData.dispatch?.assignedDriver?.driverId, driver.id, 'Automatic dispatch must select the online eligible driver');
 
-  // 5. Replay the exact command: idempotency must return the same trip rather than create another one.
+  // 5. Replay the exact booking command: no duplicate trip may be created.
   const replayRes = await fetch(base + '/api/trips/create', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + customerToken,
-      'X-Idempotency-Key': bookingIdempotencyKey
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + customerToken, 'X-Idempotency-Key': bookingIdempotencyKey },
     body: JSON.stringify(bookingPayload)
   });
   const replayData = await replayRes.json();
@@ -138,27 +122,15 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   // 6. Read authoritative OTPs and tracking token from PostgreSQL, never from the HTTP response.
   const secrets = await loadAuthoritativeOtpAndTracking(trip.id);
   assert.equal(secrets.trackingToken, trip.trackingToken, 'Public tracking token must match durable trip state');
-  const pickupOtp = secrets.pickupOtp;
-  const deliveryOtp = secrets.deliveryOtp;
 
-  // 7. Public recipient tracking is token-gated and must expose delivery state without OTPs.
+  // 7. Public recipient tracking is token-gated and must not expose delivery OTP.
   const trackingRes = await fetch(base + '/api/public/tracking/' + encodeURIComponent(secrets.trackingToken));
   const trackingData = await trackingRes.json();
   assert.equal(trackingRes.status, 200, 'Public tracking endpoint must succeed with valid token');
   assert.equal(trackingData.trip.id, trip.id, 'Tracking endpoint must resolve the correct trip');
   assert.equal(Object.prototype.hasOwnProperty.call(trackingData.trip, 'deliveryOtp'), false, 'Tracking endpoint must never expose delivery OTP');
 
-  // 8. Admin assigns the reserved driver to the order.
-  const assignRes = await fetch(base + '/api/admin/dispatch/assign', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
-    body: JSON.stringify({ orderId: trip.id, driverId: driver.id })
-  });
-  const assignData = await assignRes.json();
-  assert.equal(assignRes.status, 200, 'Admin assignment must succeed');
-  assert.ok(assignData.success, 'Driver assignment flag');
-
-  // 9. Driver accepts the offer.
+  // 8. Driver accepts the automatically created dispatch offer.
   const acceptRes = await fetch(base + '/api/orders/accept', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + driverToken },
@@ -168,7 +140,7 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   assert.equal(acceptRes.status, 200, 'Driver accept must succeed');
   assert.ok(acceptData.success, 'Accept success flag');
 
-  // 10. Driver starts arriving to pickup.
+  // 9. Driver starts arriving to pickup.
   const startArriveRes = await fetch(base + '/api/orders/start-arriving', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + driverToken },
@@ -178,7 +150,7 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   assert.equal(startArriveRes.status, 200, 'Start arriving must succeed');
   assert.ok(startArriveData.success, 'Start arriving flag');
 
-  // 11. Telemetry at pickup, then geofenced pickup confirmation.
+  // 10. Telemetry at pickup and geofenced arrival.
   const pickupTelemetryRes = await fetch(base + '/api/driver/location/update', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + driverToken },
@@ -195,17 +167,18 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   assert.equal(arriveRes.status, 200, 'Arrived at pickup must succeed');
   assert.ok(arriveData.success, 'Arrived pickup flag');
 
-  // 12. Confirm pickup with the authoritative pickup OTP.
+  // 11. Confirm pickup with authoritative pickup OTP.
+  const pickupSecrets = await loadAuthoritativeOtpAndTracking(trip.id);
   const pickupRes = await fetch(base + '/api/orders/confirm-pickup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + driverToken },
-    body: JSON.stringify({ orderId: trip.id, otp: pickupOtp, idempotencyKey: `e2e-pickup-${trip.id}` })
+    body: JSON.stringify({ orderId: trip.id, otp: pickupSecrets.pickupOtp, idempotencyKey: `e2e-pickup-${trip.id}` })
   });
   const pickupData = await pickupRes.json();
   assert.equal(pickupRes.status, 200, 'Pickup confirmation must succeed');
   assert.ok(pickupData.success, 'Pickup confirmation flag');
 
-  // 13. Start transit.
+  // 12. Start transit.
   const transitRes = await fetch(base + '/api/orders/start-transit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + driverToken },
@@ -215,7 +188,7 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   assert.equal(transitRes.status, 200, 'Start transit must succeed');
   assert.ok(transitData.success, 'Start transit flag');
 
-  // 14. Telemetry at destination and geofenced dropoff.
+  // 13. Telemetry at destination and geofenced dropoff.
   const dropTelemetryRes = await fetch(base + '/api/driver/location/update', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + driverToken },
@@ -232,16 +205,12 @@ test('E2E: Full delivery lifecycle with dispatch, geofenced telemetry, public tr
   assert.equal(dropRes.status, 200, 'Arrived at dropoff must succeed');
   assert.ok(dropData.success, 'Arrived dropoff flag');
 
-  // 15. Complete delivery with authoritative Delivery OTP + receiver name.
+  // 14. Complete delivery with authoritative Delivery OTP + receiver name.
+  const completionSecrets = await loadAuthoritativeOtpAndTracking(trip.id);
   const completeRes = await fetch(base + '/api/orders/complete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + driverToken },
-    body: JSON.stringify({
-      orderId: trip.id,
-      otp: deliveryOtp,
-      idempotencyKey: `e2e-complete-${trip.id}`,
-      proof: { receiverName: 'Ananya Sharma' }
-    })
+    body: JSON.stringify({ orderId: trip.id, otp: completionSecrets.deliveryOtp, idempotencyKey: `e2e-complete-${trip.id}`, proof: { receiverName: 'Ananya Sharma' } })
   });
   const completeData = await completeRes.json();
   assert.equal(completeRes.status, 200, 'Complete delivery must succeed');
