@@ -5,7 +5,10 @@ const { sanitizeExtractedFields, isSha256 } = require('./kycPrivacyPolicy');
 
 function hashIdentity(value) {
   if (value == null || value === '') return null;
-  return crypto.createHash('sha256').update(String(value).trim().toUpperCase()).digest('hex');
+  // Identity matching is format-insensitive: remove whitespace before hashing
+  // so OCR/provider formatting variants cannot create different identities.
+  const canonical = String(value).trim().toUpperCase().replace(/\s+/g, '');
+  return canonical ? crypto.createHash('sha256').update(canonical).digest('hex') : null;
 }
 
 function json(value, fallback) {
