@@ -31,13 +31,18 @@ async function invoke(handler, req, res, route) {
   await pending;
 }
 
-test('live camera route: start -> frame -> read -> stop', async () => {
-  const db = makeDb();
+function installRedisMap() {
   const redis = new Map();
   const original = { set: redisPubSub.pubClient.set, get: redisPubSub.pubClient.get, del: redisPubSub.pubClient.del };
   redisPubSub.pubClient.set = async (key, value) => { redis.set(key, String(value)); return 'OK'; };
   redisPubSub.pubClient.get = async key => redis.get(key) || null;
   redisPubSub.pubClient.del = async key => { redis.delete(key); return 1; };
+  return { redis, restore() { redisPubSub.pubClient.set = original.set; redisPubSub.pubClient.get = original.get; redisPubSub.pubClient.del = original.del; } };
+}
+
+test('live camera route: start -> frame -> read -> stop', async () => {
+  const db = makeDb();
+  const { redis, restore } = installRedisMap();
   try {
     const handler = createProofRoutes({ db, enforceDriverAccess: async () => true, enforceSecurityChecks: async () => true });
     const startReq = makeReq({ trip_id: 'trip_1' });
@@ -66,8 +71,41 @@ test('live camera route: start -> frame -> read -> stop', async () => {
     assert.equal(stopRes.statusCode, 200);
     assert.equal(redis.size, 0);
   } finally {
-    redisPubSub.pubClient.set = original.set;
-    redisPubSub.pubClient.get = original.get;
-    redisPubSub.pubClient.del = original.del;
+    restore();
+  }
+});
+
+test('live camera route rejects tampered Redis frame instead of serving it', async () => {
+  const db = makeDb();
+  const { redis, restore } = installRedisMap();
+  try {
+    const handler = createProofRoutes({ db, enforceDriverAccess: async () => true, enforceSecurityChecks: async () => true });
+    const startReq = makeReq({ trip_id: 'trip_1' });
+    const startRes = makeRes();
+    await invoke(handler, startReq, startRes, { pathname: '/api/trip/camera/session/start', parsedUrl: { query: {} } });
+    const sessionId = JSON.parse(startRes.body.toString()).sessionId;
+
+    const frameReq = makeReq({ session_id: sessionId, image_data: `data:image/jpeg;base64,${ONE_PIXEL_JPEG}` });
+    const frameRes = makeRes();
+    await invoke(handler, frameReq, frameRes, { pathname: '/api/trip/camera/frame', parsedUrl: { query: {} } });
+    assert.equal(frameRes.statusCode, 200);
+
+    const key = `vaayu:camera:frame:${sessionId}`;
+    const stored = JSON.parse(redis.get(key));
+    const bytes = Buffer.from(stored.data, 'base64');
+    bytes[bytes.length - 1] ^= 0xff;
+    stored.data = bytes.toString('base64');
+    redis.set(key, JSON.stringify(stored));
+
+    const getReq = makeReq(undefined);
+    const getRes = makeRes();
+    await invoke(handler, getReq, getRes, { pathname: '/api/trip/camera/frame', parsedUrl: { query: { session_id: sessionId } } });
+    assert.equal(getRes.statusCode, 500);
+    const error = JSON.parse(getRes.body.toString());
+    assert.equal(error.error, 'Live camera frame failed integrity verification.');
+    assert.equal(error.code, 'CAMERA_FRAME_INTEGRITY_MISMATCH');
+    assert.equal(getRes.body.length > 0, true);
+  } finally {
+    restore();
   }
 });
