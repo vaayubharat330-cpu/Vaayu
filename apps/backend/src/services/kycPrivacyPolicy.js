@@ -24,6 +24,7 @@ const SENSITIVE_FIELD_PATTERNS = [
   /^policy(number|no)?$/i,
   /^chassis(number|no)?$/i,
   /^engine(number|no)?$/i,
+  /^vehicle(number|no|registration|reg)?$/i,
 ];
 
 function isSensitiveField(key) {
