@@ -67,6 +67,7 @@
     "test:kyc-orchestration": "node --test test/unit/kycVerificationOrchestrator.test.js",
     "test:kyc-expiry": "node --test test/unit/kycExpiryService.test.js",
     "test:kyc-review": "node --test test/unit/kycReviewService.test.js",
+    "test:kyc-review-routes": "node --test test/unit/kycReviewRoutes.test.js",
     "test:kyc-license-db": "node --test test/unit/kycLicenseDatabasePolicy.test.js",
     "test:kyc-license-owner-registry": "node --test test/unit/kycLicenseOwnerRegistryMigration.test.js",
     "test:kyc-persistence": "node --test test/unit/kycVerificationPersistence.test.js",
