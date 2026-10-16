@@ -30,21 +30,20 @@ test('rate limiter preserves bounded development fallback and quota semantics', 
     async disconnect() {}
   };
   const limiter = new RedisRateLimiter(fakeRedis);
-  limiter.ROUTE_CONFIGS.test = { maxRequests: 2, windowSec: 30 };
 
   const first = responseHeaders();
-  const allowed = await limiter.checkRateLimit(request(), first, 'test');
+  const allowed = await limiter.checkRateLimit(request(), first, 'test', 2, 30);
   assert.equal(allowed.allowed, true);
   assert.equal(allowed.current, 1);
   assert.equal(first.headers['X-RateLimit-Reset'], 30);
 
   const second = responseHeaders();
-  const rejected = await limiter.checkRateLimit(request(), second, 'test');
-  assert.equal(rejected.allowed, true);
-  assert.equal(rejected.current, 2);
+  const stillAllowed = await limiter.checkRateLimit(request(), second, 'test', 2, 30);
+  assert.equal(stillAllowed.allowed, true);
+  assert.equal(stillAllowed.current, 2);
 
   const third = responseHeaders();
-  const over = await limiter.checkRateLimit(request(), third, 'test');
+  const over = await limiter.checkRateLimit(request(), third, 'test', 2, 30);
   assert.equal(over.allowed, false);
   assert.equal(over.code, 'RATE_LIMIT_EXCEEDED');
   assert.equal(calls.filter(call => call[0] === 'expire').length, 1);
