@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('crypto');
 const { PostgresPool } = require('../../db/postgresClient');
 const { metricsService } = require('../metricsService');
 const { logger } = require('../logger');
@@ -10,13 +9,13 @@ const { logger } = require('../logger');
  *
  * Hardening model:
  * 1. Rows are claimed in a short PostgreSQL transaction with FOR UPDATE SKIP LOCKED.
- * 2. Claimed rows move to PROCESSING with a unique lease token before any downstream
- *    WebSocket/custom handler is awaited. The database transaction is never held open
- *    across network/application work.
+ * 2. Claimed rows move to PROCESSING with a unique per-row lease token before any
+ *    downstream WebSocket/custom handler is awaited. The database transaction is
+ *    never held open across network/application work.
  * 3. A crashed worker leaves a PROCESSING lease behind; a later worker reclaims stale
  *    leases and counts the abandoned attempt so events cannot remain stuck forever.
- * 4. Completion/failure updates require the claim token, preventing an old worker from
- *    overwriting a newer worker's result after lease recovery.
+ * 4. Completion/failure updates require the exact claim token, preventing an old worker
+ *    from overwriting a newer worker's result after lease recovery.
  * 5. The outbox event_id is forwarded as the WebSocket event identity, so a retry/replay
  *    can be deduplicated by clients and cross-node subscribers.
  */
@@ -141,6 +140,7 @@ class OutboxDispatcher {
                 attempt_count = $1,
                 processing_started_at = NULL,
                 claim_token = NULL,
+                next_attempt_at = NULL,
                 last_error = $2
             WHERE outbox_id = $3;
           `, [nextAttemptCount, 'Processing lease expired before the worker completed dispatch.', row.outbox_id]);
@@ -175,7 +175,6 @@ class OutboxDispatcher {
   }
 
   async _claimBatch() {
-    const claimToken = crypto.randomUUID();
     const client = await this.pool.pool.connect();
     try {
       await client.query('BEGIN');
@@ -200,14 +199,13 @@ class OutboxDispatcher {
         UPDATE payment_outbox o
         SET status = 'PROCESSING',
             processing_started_at = NOW(),
-            claim_token = $${params.length + 1}
+            claim_token = md5(random()::text || clock_timestamp()::text || o.outbox_id::text)
         FROM candidates
         WHERE o.outbox_id = candidates.outbox_id
         RETURNING o.outbox_id, o.event_id, o.aggregate_type, o.aggregate_id,
                   o.event_type, o.payload, o.attempt_count, o.created_at,
                   o.status, o.claim_token;
       `;
-      params.push(claimToken);
       const result = await client.query(sql, params);
       await client.query('COMMIT');
       this.stats.eventsClaimed += result.rows.length;
@@ -277,7 +275,7 @@ class OutboxDispatcher {
       UPDATE payment_outbox
       SET status = $1,
           attempt_count = $2,
-          next_attempt_at = COALESCE($3, next_attempt_at),
+          next_attempt_at = $3,
           processing_started_at = NULL,
           claim_token = NULL,
           last_error = $4
