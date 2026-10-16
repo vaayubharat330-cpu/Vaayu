@@ -54,7 +54,15 @@ function createTripBookingRoutes({
           const customerId=req.user&&req.user.id;if(!customerId){res.writeHead(401,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:false,error:'Sign in to book a trip.'}));}
           const portalContext=req.portalContext||portalContextService.extractPortalContext(req);
           const tempOrderId=orderIdService.generateOrderId({portal:portalContext.portalId,category:data.isRecurring?'RECURRING':(data.isEmergency?'EMERGENCY':'EXPRESS'),region:'HYD'}); tempOrderIdForRollback=tempOrderId;
-          const paymentMethod=String(data.paymentMethod||'CASH_ON_DELIVERY').toUpperCase();let paymentInfo;
+          const paymentMethod=String(data.paymentMethod||'CASH_ON_DELIVERY').toUpperCase();
+          const isCashPayment=['CASH','COD','CASH_ON_DELIVERY'].includes(paymentMethod);
+          if(paymentMethod!=='WALLET'&&!isCashPayment){
+            if(effKey) await idempotencyService.abortResponse(effKey);
+            idempotencyOwned=false;
+            res.writeHead(402,{'Content-Type':'application/json'});
+            return res.end(JSON.stringify({success:false,error:{code:'PAYMENT_METHOD_NOT_READY',message:'This payment method is not enabled for booking yet. Use CASH_ON_DELIVERY or WALLET.'}}));
+          }
+          let paymentInfo;
           if(paymentMethod==='WALLET'){
             const farePaise=Math.round(Number(finalTotalFare)*100);walletEscrowKey=effKey?`VAAYU:${effKey}:ESCROW`:`VAAYU:${tempOrderId}:ESCROW`;
             const escrowResult=await paymentService.reserveEscrow({tripId:tempOrderId,orderId:tempOrderId,customerId,amountPaise:farePaise,idempotencyKey:walletEscrowKey});
