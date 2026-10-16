@@ -71,12 +71,17 @@ jobs:
           npm run test:cluster
           npm run test:ledger-pg
           npm run test:camera
+          npm run test:camera-policy
+          npm run test:camera-integrity
           npm run test:document-verification
           npm run test:document-decision
           npm run test:document-capture
           npm run test:kyc-orchestration
           npm run test:kyc-expiry
           npm run test:kyc-review
+          npm run test:kyc-license-db
+          npm run test:kyc-license-owner-registry
+          npm run test:kyc-persistence
       - name: Full HTTP delivery lifecycle E2E
         env:
           NODE_ENV: test
