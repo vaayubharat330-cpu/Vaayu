@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { redisPubSub } = require('../services/redisPubSub');
+const { CameraFrameGateway } = require('../services/cameraFrameGateway');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..', '..');
 const PRIVATE_PROOF_PHOTOS = path.resolve(BACKEND_ROOT, 'private_uploads', 'proof_photos');
@@ -13,6 +14,7 @@ const MAX_REQUEST_BYTES = 7.5 * 1024 * 1024;
 const MAX_CAMERA_FRAME_BYTES = 750 * 1024;
 const CAMERA_SESSION_TTL_MS = 30 * 60 * 1000;
 const CAMERA_REDIS_PREFIX = 'vaayu:camera:frame:';
+const cameraFrameGateway = new CameraFrameGateway();
 
 function json(res, status, payload) { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(payload)); }
 function parseImage(data, maxBytes) { if (typeof data !== 'string') return null; const match = data.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/); if (!match) return null; const bytes = Buffer.from(match[2], 'base64'); if (!bytes.length || bytes.length > maxBytes) return null; return { format: match[1], bytes }; }
@@ -52,6 +54,15 @@ function sanitizeExtraction(documentType, fields) {
   return output;
 }
 
+function cameraErrorStatus(code) {
+  if (code === 'CAMERA_SESSION_EXPIRED') return 410;
+  if (code === 'CAMERA_FRAME_RATE_LIMITED') return 429;
+  if (code === 'CAMERA_FRAME_TOO_LARGE') return 413;
+  if (code === 'CAMERA_DRIVER_MISMATCH') return 403;
+  if (code === 'CAMERA_SESSION_NOT_LIVE') return 409;
+  return 400;
+}
+
 function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
   return async function handleProofRoute(req, res, { pathname, parsedUrl }) {
     if (pathname === '/api/documents/extraction' && req.method === 'POST') {
@@ -72,13 +83,7 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
       const persisted = store && Array.isArray(store.driver_documents) ? store.driver_documents.find(item => String(item.id) === documentId) : null;
       if (!persisted) return json(res, 404, { success: false, error: 'Document record is not available for extraction persistence.' });
       persisted.extractedFields = fields;
-      persisted.extraction = {
-        version: 1,
-        source: 'ON_DEVICE_ML_KIT',
-        processedAt: new Date().toISOString(),
-        fields
-      };
-      // Never persist raw OCR text. Only workflow-required structured fields are stored.
+      persisted.extraction = { version: 1, source: 'ON_DEVICE_ML_KIT', processedAt: new Date().toISOString(), fields };
       if (typeof db.saveDb === 'function') db.saveDb(store);
       if (typeof db.waitForCommit === 'function') await db.waitForCommit();
       return json(res, 200, { success: true, documentId, documentType, fields, fieldCount: Object.keys(fields).length });
@@ -103,7 +108,7 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
       const sessions = getCameraSessions(db); const now = Date.now();
       for (const session of sessions) if (session.tripId === tripId && session.status === 'LIVE' && now - Date.parse(session.updatedAt || session.createdAt) < CAMERA_SESSION_TTL_MS) return json(res, 200, { success: true, sessionId: session.id, reused: true, expiresAt: session.expiresAt });
       const sessionId = `cam_${crypto.randomBytes(16).toString('hex')}`;
-      sessions.push({ id: sessionId, tripId, driverId: driver?.id || req.user.id, status: 'LIVE', sequence: 0, latestFrameRef: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(now + CAMERA_SESSION_TTL_MS).toISOString() });
+      sessions.push({ id: sessionId, tripId, driverId: driver?.id || req.user.id, driverUserId: driver?.userId || req.user.id, status: 'LIVE', sequence: 0, lastCapturedAtMs: 0, latestFrameRef: null, latestFrameSha256: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(now + CAMERA_SESSION_TTL_MS).toISOString() });
       if (typeof db.saveDb === 'function') db.saveDb();
       return json(res, 201, { success: true, sessionId, expiresAt: sessions[sessions.length - 1].expiresAt });
     }
@@ -113,12 +118,18 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
       const data = parsed.data || {}; const sessionId = typeof data.session_id === 'string' ? data.session_id : ''; const session = getSession(db, sessionId);
       if (!session || session.status !== 'LIVE' || Date.now() > Date.parse(session.expiresAt)) return json(res, 410, { success: false, error: 'Camera session expired.' });
       if (!await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN'], targetOrderId: session.tripId })) return true;
-      const image = parseImage(data.image_data, MAX_CAMERA_FRAME_BYTES); if (!image) return json(res, 413, { success: false, error: 'Camera frame must be JPEG, PNG, or WebP and <= 750 KB.' });
-      const nextSequence = Number(session.sequence || 0) + 1; const capturedAt = new Date().toISOString(); const previousRef = session.latestFrameRef; const extension = image.format === 'jpeg' ? 'jpg' : image.format; const filename = `frame_${crypto.randomBytes(16).toString('hex')}.${extension}`;
-      await redisPubSub.pubClient.set(frameKey(sessionId), JSON.stringify({ sequence: nextSequence, capturedAt, format: image.format, data: image.bytes.toString('base64') }), 'PX', CAMERA_SESSION_TTL_MS);
-      session.sequence = nextSequence; session.latestFrameRef = `/redis-camera-streams/${filename}`; session.updatedAt = capturedAt;
+      const nextSequence = Number(session.sequence || 0) + 1;
+      const capturedAt = typeof data.captured_at === 'string' ? data.captured_at : new Date().toISOString();
+      const accepted = await cameraFrameGateway.accept({ session, user: req.user, imageData: data.image_data, sequence: nextSequence, capturedAt });
+      if (!accepted.allowed) return json(res, cameraErrorStatus(accepted.code), { success: false, error: accepted.code, message: accepted.message });
+      const previousRef = session.latestFrameRef;
+      const extension = accepted.format === 'jpeg' ? 'jpg' : accepted.format;
+      const filename = `frame_${crypto.randomBytes(16).toString('hex')}.${extension}`;
+      await redisPubSub.pubClient.set(frameKey(sessionId), JSON.stringify({ sequence: accepted.sequence, capturedAt: accepted.capturedAt, format: accepted.format, sha256: accepted.sha256, data: accepted.bytes.toString('base64') }), 'PX', CAMERA_SESSION_TTL_MS);
+      session.latestFrameRef = `/redis-camera-streams/${filename}`;
+      session.latestFrameSha256 = accepted.sha256;
       cleanupOldFrameFile(previousRef);
-      return json(res, 200, { success: true, sequence: nextSequence, capturedAt, frameRef: session.latestFrameRef });
+      return json(res, 200, { success: true, sequence: accepted.sequence, capturedAt: accepted.capturedAt, sha256: accepted.sha256, frameRef: session.latestFrameRef });
     }
 
     if (pathname === '/api/trip/camera/frame' && req.method === 'GET') {
@@ -129,7 +140,7 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
       const stored = await redisPubSub.pubClient.get(frameKey(sessionId)); if (!stored) return json(res, 404, { success: false, error: 'Live camera frame not available.' });
       let frame; try { frame = JSON.parse(stored); } catch (_) { return json(res, 500, { success: false, error: 'Live camera frame is corrupt.' }); }
       const bytes = Buffer.from(frame.data, 'base64'); const types = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
-      res.writeHead(200, { 'Content-Type': types[frame.format] || 'image/jpeg', 'Content-Length': bytes.length, 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache', 'X-Frame-Sequence': String(frame.sequence), 'X-Captured-At': frame.capturedAt, 'X-Content-Type-Options': 'nosniff' }); res.end(bytes); return true;
+      res.writeHead(200, { 'Content-Type': types[frame.format] || 'image/jpeg', 'Content-Length': bytes.length, 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache', 'X-Frame-Sequence': String(frame.sequence), 'X-Captured-At': frame.capturedAt, 'X-Frame-SHA256': frame.sha256 || '', 'X-Content-Type-Options': 'nosniff' }); res.end(bytes); return true;
     }
 
     if (pathname === '/api/trip/camera/session/stop' && req.method === 'POST') {
