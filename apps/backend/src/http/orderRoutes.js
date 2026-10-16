@@ -3,14 +3,16 @@
 // here, including when a guard has refused the request. Per-role permission is enforced by the delivery state
 // machine's actor table, not by these routes.
 
-const { paymentIntegrationService: defaultPaymentIntegrationService } = require('../services/ledger/paymentIntegrationService');
-
 function createOrderRoutes({
   db, deliveryStateMachine, redisLockManager, otpService, paymentProvider, idempotencyService, dispatchService,
   driverLocationService, DELIVERY_STATES, enforceSecurityChecks, parseJsonBody,
   paymentIntegrationService: injectedPaymentService
 }) {
-  const paymentService = injectedPaymentService || defaultPaymentIntegrationService;
+  // Resolve the production payment integration lazily. Unit tests frequently inject a
+  // lightweight payment service; eagerly requiring the default PostgreSQL ledger here
+  // would otherwise open a real DB pool before the injected dependency is considered,
+  // leaving standalone Node test processes with a live handle after assertions finish.
+  const paymentService = injectedPaymentService || require('../services/ledger/paymentIntegrationService').paymentIntegrationService;
   const hasLedgerPayment = (trip) => {
     const method = String(trip?.paymentInfo?.paymentMethod || '').trim().toUpperCase();
     return method === 'WALLET' || Boolean(trip?.paymentInfo?.provider === 'VAAYU_WALLET');
