@@ -17,6 +17,7 @@ const db = require('../db/database');
  * 5. Redis Pub/Sub Distributed Event Forwarding across Multi-Instance Backend Nodes
  * 6. JWT Handshake Authentication & BOLA Authorization Enforcement
  * 7. Historical telemetry replay is persisted but never flooded into live-map streams.
+ * 8. Stable event IDs across local + cross-node delivery, allowing clients to safely deduplicate.
  */
 class WebSocketService {
   constructor(pubSubInstance = null, options = {}) {
@@ -61,14 +62,15 @@ class WebSocketService {
   async initPubSub() {
     if (!this.pubSub) return;
     if (!this._pubSubInitPromise) {
-      this._pubSubInitPromise = (async () => {
-        this._pubSubHandler = envelope => {
-          if (envelope && envelope.targetRoom && envelope.eventType) {
-            this.broadcastToRoomLocal(envelope.targetRoom, envelope.eventType, envelope.payload);
-          }
-        };
-        await this.pubSub.subscribe(this.pubSub.PRIMARY_CHANNEL, this._pubSubHandler);
-      })();
+      this._pubSubHandler = envelope => {
+        if (envelope && envelope.targetRoom && envelope.eventType) {
+          this.broadcastToRoomLocal(envelope.targetRoom, envelope.eventType, envelope.payload, {
+            eventId: envelope.eventId,
+            timestamp: envelope.timestamp,
+          });
+        }
+      };
+      this._pubSubInitPromise = this.pubSub.subscribe(this.pubSub.PRIMARY_CHANNEL, this._pubSubHandler);
     }
     return this._pubSubInitPromise;
   }
@@ -238,12 +240,22 @@ class WebSocketService {
     return trips.find(t => t.customerId === userId && !['DELIVERED', 'CANCELLED', 'FAILED'].includes(t.status)) || null;
   }
 
-  broadcastToRoomLocal(roomName, eventName, payload) {
+  broadcastToRoomLocal(roomName, eventName, payload, metadata = {}) {
     const subscriberIds = this.rooms.get(roomName);
     if (!subscriberIds || subscriberIds.size === 0) return 0;
-    let deliveredCount = 0;
-    const messageStr = JSON.stringify({ event: eventName, room: roomName, timestamp: new Date().toISOString(), data: payload });
+    const eventId = typeof metadata.eventId === 'string' && metadata.eventId.trim()
+      ? metadata.eventId.trim()
+      : `evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const timestamp = Number.isFinite(Number(metadata.timestamp)) ? Number(metadata.timestamp) : Date.now();
+    const messageStr = JSON.stringify({
+      event: eventName,
+      eventId,
+      room: roomName,
+      timestamp: new Date(timestamp).toISOString(),
+      data: payload
+    });
 
+    let deliveredCount = 0;
     for (const clientId of subscriberIds) {
       const client = this.clients.get(clientId);
       if (!client || !client.socket) continue;
@@ -280,14 +292,18 @@ class WebSocketService {
   }
 
   async broadcastToRoom(roomName, eventName, payload, isLocalOnly = false) {
-    const localDelivered = this.broadcastToRoomLocal(roomName, eventName, payload);
+    const eventId = `evt_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+    const timestamp = Date.now();
+    let publishResult = null;
+
     if (!isLocalOnly && this.pubSub) {
-      try {
-        await this.pubSub.publish(eventName, roomName, payload);
-      } catch (err) {
-        console.warn(`[WebSocketService] Non-critical PubSub publish error: ${err.message}`);
-      }
+      publishResult = await this.pubSub.publish(eventName, roomName, payload, { eventId, timestamp });
     }
+
+    const localDelivered = this.broadcastToRoomLocal(roomName, eventName, payload, {
+      eventId: publishResult?.eventId || eventId,
+      timestamp: publishResult?.envelope?.timestamp || timestamp,
+    });
     return localDelivered;
   }
 
@@ -299,8 +315,6 @@ class WebSocketService {
     const packetAgeMs = Number(driverState.packetAgeMs || 0);
     const isHistoricalReplay = packetAgeMs > this.TELEMETRY_LIVE_MAX_PACKET_AGE_MS;
 
-    // Persisted replay packets are authoritative raw telemetry, but they are not live events.
-    // This prevents reconnect/offline queues from flooding the live map with historical positions.
     if (isHistoricalReplay) {
       metricsService.increment('websocket_historical_telemetry_suppressed_total');
       return { success: true, driverState, liveBroadcastSuppressed: true };
