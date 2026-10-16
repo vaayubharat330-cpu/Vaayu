@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { redisPubSub } = require('../services/redisPubSub');
 const { CameraFrameGateway } = require('../services/cameraFrameGateway');
+const { verifyBinaryFrame } = require('../services/cameraFrameIntegrity');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..', '..');
 const PRIVATE_PROOF_PHOTOS = path.resolve(BACKEND_ROOT, 'private_uploads', 'proof_photos');
@@ -141,8 +142,10 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
       if (!await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'CUSTOMER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN', 'DISPATCH_OPERATOR', 'SUPPORT_AGENT'], targetOrderId: session.tripId })) return true;
       const stored = await redisPubSub.pubClient.get(frameKey(sessionId)); if (!stored) return json(res, 404, { success: false, error: 'Live camera frame not available.' });
       let frame; try { frame = JSON.parse(stored); } catch (_) { return json(res, 500, { success: false, error: 'Live camera frame is corrupt.' }); }
-      const bytes = Buffer.from(frame.data, 'base64'); const types = { jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
-      res.writeHead(200, { 'Content-Type': types[frame.format] || 'image/jpeg', 'Content-Length': bytes.length, 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache', 'X-Frame-Sequence': String(frame.sequence), 'X-Captured-At': frame.capturedAt, 'X-Frame-SHA256': frame.sha256 || '', 'X-Content-Type-Options': 'nosniff' }); res.end(bytes); return true;
+      let bytes; try { bytes = Buffer.from(frame.data, 'base64'); } catch (_) { return json(res, 500, { success: false, error: 'Live camera frame is corrupt.' }); }
+      const verified = verifyBinaryFrame({ format: frame.format, bytes, expectedSha256: frame.sha256 }, MAX_CAMERA_FRAME_BYTES);
+      if (!verified.ok) return json(res, 500, { success: false, error: 'Live camera frame failed integrity verification.', code: verified.code });
+      res.writeHead(200, { 'Content-Type': verified.contentType, 'Content-Length': bytes.length, 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache', 'X-Frame-Sequence': String(frame.sequence), 'X-Captured-At': frame.capturedAt, 'X-Frame-SHA256': verified.sha256, 'X-Content-Type-Options': 'nosniff' }); res.end(bytes); return true;
     }
 
     if (pathname === '/api/trip/camera/session/stop' && req.method === 'POST') {
