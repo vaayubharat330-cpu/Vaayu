@@ -9,7 +9,7 @@ function session() {
   return { id: 'cam-1', status: 'LIVE', driverId: 'driver-1', sequence: 0, expiresAt: new Date(Date.now() + 60_000).toISOString() };
 }
 
-test('gateway accepts a valid owned frame and advances state', async () => {
+test('gateway validates a valid owned frame without mutating the cursor', async () => {
   const s = session();
   const gateway = new CameraFrameGateway({ acquireRateSlot: async () => true });
   const result = await gateway.accept({
@@ -21,8 +21,12 @@ test('gateway accepts a valid owned frame and advances state', async () => {
   });
   assert.equal(result.allowed, true);
   assert.equal(result.sequence, 1);
-  assert.equal(s.sequence, 1);
+  assert.equal(s.sequence, 0);
   assert.equal(result.sha256.length, 64);
+
+  const committed = gateway.commitAcceptedFrame(s, { sequence: result.sequence, capturedAtMs: result.capturedAtMs });
+  assert.equal(committed.allowed, true);
+  assert.equal(s.sequence, 1);
 });
 
 test('gateway rejects another driver and does not mutate session', async () => {
