@@ -84,6 +84,7 @@ jobs:
           npm run test:kyc-license-db
           npm run test:kyc-license-owner-registry
           npm run test:kyc-persistence
+          npm run test:kyc-upload-wiring
       - name: Full HTTP delivery lifecycle E2E
         env:
           NODE_ENV: test
