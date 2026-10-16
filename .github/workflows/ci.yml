@@ -93,6 +93,7 @@ jobs:
           done
           test "$STATUS" != "000"
           npm run test:e2e
+          npm run test:e2e:merchant
       - name: Dependency audit (production, fails on high or critical)
         run: npm audit --omit=dev --audit-level=high
 
