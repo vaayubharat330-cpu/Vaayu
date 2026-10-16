@@ -153,11 +153,11 @@ class _DriverKycCameraScreenState extends State<DriverKycCameraScreen> {
     return labels[key] ?? key;
   }
 
-  Widget _buildExtractionCard(VaayuThemeColors colors) {
+  Widget _buildExtractionCard(VaayuColors colors) {
     final extraction = _extraction;
-    if (_extracting) return VaayuCard(backgroundColor: colors.surface, child: const Padding(padding: EdgeInsets.all(VaayuSpacing.md), child: Row(children: [SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)), SizedBox(width: 12), Expanded(child: Text('Reading the captured image and extracting only required fields…'))])));
+    if (_extracting) return Card(color: colors.surface, child: const Padding(padding: EdgeInsets.all(VaayuSpacing.md), child: Row(children: [SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)), SizedBox(width: 12), Expanded(child: Text('Reading the captured image and extracting only required fields…'))])));
     if (extraction == null) return const SizedBox.shrink();
-    return VaayuCard(backgroundColor: colors.surface, child: Padding(padding: const EdgeInsets.all(VaayuSpacing.md), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    return Card(color: colors.surface, child: Padding(padding: const EdgeInsets.all(VaayuSpacing.md), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [Icon(Icons.document_scanner_outlined, color: colors.primary), const SizedBox(width: 8), Expanded(child: Text(extraction.hasUsefulFields ? 'Detected information' : 'No required fields detected', style: TextStyle(fontWeight: FontWeight.w800, color: colors.textPrimary)))]),
       const SizedBox(height: 10),
       if (extraction.fields.isEmpty) Text('Retake the image with better lighting, less glare and the full document/number plate inside the frame.', style: TextStyle(color: colors.textSecondary, fontSize: 13))
@@ -173,10 +173,10 @@ class _DriverKycCameraScreenState extends State<DriverKycCameraScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Driver KYC & Identity')),
       body: _initializing ? const Center(child: CircularProgressIndicator()) : _error != null ? _ErrorState(message: _error!, onRetry: _initializeCamera) : SafeArea(child: ListView(padding: const EdgeInsets.all(VaayuSpacing.md), children: [
-        VaayuCard(backgroundColor: colors.surface, child: Padding(padding: const EdgeInsets.all(VaayuSpacing.md), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Card(color: colors.surface, child: Padding(padding: const EdgeInsets.all(VaayuSpacing.md), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Verification document', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: colors.textPrimary)),
           const SizedBox(height: 8),
-          DropdownButtonFormField<String>(value: _selectedDocument, items: _documentTypes.entries.map((entry) => DropdownMenuItem(value: entry.key, child: Text(entry.value))).toList(), onChanged: (value) { if (value != null) setState(() { _selectedDocument = value; _captured = null; _extraction = null; _uploadIntent = null; }); }, decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Document / image type')),
+          DropdownButtonFormField<String>(initialValue: _selectedDocument, items: _documentTypes.entries.map((entry) => DropdownMenuItem(value: entry.key, child: Text(entry.value))).toList(), onChanged: (value) { if (value != null) setState(() { _selectedDocument = value; _captured = null; _extraction = null; _uploadIntent = null; }); }, decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Document / image type')),
         ]))),
         const SizedBox(height: VaayuSpacing.md),
         ClipRRect(borderRadius: BorderRadius.circular(18), child: AspectRatio(aspectRatio: _camera?.value.aspectRatio ?? 1.0, child: _captured != null ? Image.file(File(_captured!.path), fit: BoxFit.cover) : CameraPreview(_camera!))),
@@ -191,7 +191,7 @@ class _DriverKycCameraScreenState extends State<DriverKycCameraScreen> {
           Expanded(child: FilledButton.icon(onPressed: _captured == null || _capturing || _extracting ? null : _upload, icon: _capturing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.verified_user), label: Text(_capturing ? 'Processing…' : 'Submit securely'))),
         ]),
         const SizedBox(height: VaayuSpacing.lg),
-        if (_kycSummary != null) VaayuCard(backgroundColor: colors.surface, child: Padding(padding: const EdgeInsets.all(VaayuSpacing.md), child: Row(children: [Icon(Icons.fact_check_outlined, color: colors.primary), const SizedBox(width: VaayuSpacing.sm), Expanded(child: Text('KYC status: ${_kycSummary!['status'] ?? 'PENDING'}', style: TextStyle(fontWeight: FontWeight.w700, color: colors.textPrimary)))]))),
+        if (_kycSummary != null) Card(color: colors.surface, child: Padding(padding: const EdgeInsets.all(VaayuSpacing.md), child: Row(children: [Icon(Icons.fact_check_outlined, color: colors.primary), const SizedBox(width: VaayuSpacing.sm), Expanded(child: Text('KYC status: ${_kycSummary!['status'] ?? 'PENDING'}', style: TextStyle(fontWeight: FontWeight.w700, color: colors.textPrimary)))]))),
       ])),
     );
   }
