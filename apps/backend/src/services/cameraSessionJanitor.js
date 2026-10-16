@@ -58,4 +58,21 @@ class CameraSessionJanitor {
   }
 }
 
-module.exports = { CameraSessionJanitor };
+let started = false;
+function startCameraSessionJanitor({ intervalMs = 60_000 } = {}) {
+  if (started || process.env.NODE_ENV === 'test') return null;
+  // Lazy imports keep unit tests side-effect free and avoid making camera
+  // policy modules responsible for application bootstrap dependencies.
+  const db = require('../db/database');
+  const { redisPubSub } = require('./redisPubSub');
+  const janitor = new CameraSessionJanitor({ db, redisClient: redisPubSub.pubClient });
+  started = true;
+  const timer = setInterval(() => {
+    janitor.reap().catch(() => {});
+  }, intervalMs);
+  if (timer.unref) timer.unref();
+  janitor.reap().catch(() => {});
+  return janitor;
+}
+
+module.exports = { CameraSessionJanitor, startCameraSessionJanitor };
