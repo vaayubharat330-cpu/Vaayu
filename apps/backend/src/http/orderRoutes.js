@@ -11,6 +11,10 @@ function createOrderRoutes({
   paymentIntegrationService: injectedPaymentService
 }) {
   const paymentService = injectedPaymentService || defaultPaymentIntegrationService;
+  const hasLedgerPayment = (trip) => {
+    const method = String(trip?.paymentInfo?.paymentMethod || '').trim().toUpperCase();
+    return method === 'WALLET' || Boolean(trip?.paymentInfo?.provider === 'VAAYU_WALLET');
+  };
   return async function handleOrderRoute(req, res, { pathname, parsedUrl }) {
     if (pathname === '/api/orders/transition' && req.method === 'POST') {
       let body = '';
@@ -44,7 +48,7 @@ function createOrderRoutes({
           const completedTrip = db.getTripById ? db.getTripById(orderId) : null;
           const assignedDriverId = completedTrip?.driver?.id || completedTrip?.driver?.userId;
           const fare = completedTrip?.totalFare ?? completedTrip?.fareBreakdown?.total ?? 0;
-          if (assignedDriverId) {
+          if (assignedDriverId && hasLedgerPayment(completedTrip)) {
             try {
               result.paymentSettlement = await paymentService.settleTrip({ tripId: orderId, driverId: assignedDriverId, amountPaise: Math.round(Number(fare) * 100), idempotencyKey: `VAAYU:${orderId}:SETTLEMENT` });
             } catch (error) {
@@ -52,10 +56,13 @@ function createOrderRoutes({
             }
           }
         } else if (result.success && nextState === DELIVERY_STATES.CANCELLED) {
-          try {
-            result.paymentRefund = await paymentService.refundTrip({ tripId: orderId, reason: reason || 'Order cancelled', idempotencyKey: `VAAYU:${orderId}:REFUND` });
-          } catch (error) {
-            result.paymentRefund = { success: false, error: { code: 'REFUND_EXCEPTION', message: error.message || 'Refund could not be completed.' } };
+          const cancelledTrip = db.getTripById ? db.getTripById(orderId) : null;
+          if (hasLedgerPayment(cancelledTrip)) {
+            try {
+              result.paymentRefund = await paymentService.refundTrip({ tripId: orderId, reason: reason || 'Order cancelled', idempotencyKey: `VAAYU:${orderId}:REFUND` });
+            } catch (error) {
+              result.paymentRefund = { success: false, error: { code: 'REFUND_EXCEPTION', message: error.message || 'Refund could not be completed.' } };
+            }
           }
         }
 
@@ -126,7 +133,7 @@ function createOrderRoutes({
         if (result.success && action === 'complete') {
           const completedTrip = db.getTripById ? db.getTripById(orderId) : null;
           const assignedDriverId = completedTrip?.driver?.id || completedTrip?.driver?.userId;
-          if (assignedDriverId) {
+          if (assignedDriverId && hasLedgerPayment(completedTrip)) {
             try {
               const fare = completedTrip?.totalFare ?? completedTrip?.fareBreakdown?.total ?? 0;
               result.paymentSettlement = await paymentService.settleTrip({ tripId: orderId, driverId: assignedDriverId, amountPaise: Math.round(Number(fare) * 100), idempotencyKey: `VAAYU:${orderId}:SETTLEMENT` });
@@ -151,10 +158,12 @@ function createOrderRoutes({
             const lockInfo = await redisLockManager.getDriverLock(currentTrip.driver.id);
             if (lockInfo && lockInfo.orderId === orderId) await redisLockManager.releaseDriverLock(currentTrip.driver.id, lockInfo.reservationId);
           }
-          try {
-            result.paymentRefund = await paymentService.refundTrip({ tripId: orderId, reason: reason || 'Customer Order Cancellation', idempotencyKey: `VAAYU:${orderId}:REFUND` });
-          } catch (error) {
-            result.paymentRefund = { success: false, error: { code: 'REFUND_EXCEPTION', message: error.message || 'Refund could not be completed.' } };
+          if (hasLedgerPayment(currentTrip)) {
+            try {
+              result.paymentRefund = await paymentService.refundTrip({ tripId: orderId, reason: reason || 'Customer Order Cancellation', idempotencyKey: `VAAYU:${orderId}:REFUND` });
+            } catch (error) {
+              result.paymentRefund = { success: false, error: { code: 'REFUND_EXCEPTION', message: error.message || 'Refund could not be completed.' } };
+            }
           }
 
           const paidTransaction = db.getPaymentForBooking ? db.getPaymentForBooking(orderId) : null;
