@@ -1,11 +1,11 @@
-/// E4.5: VAAYU Operations & Live Fleet Monitoring Cockpit Screen.
-/// Provides an exception-first operational command center for live triage and control.
+/// VAAYU Operations & Live Fleet Monitoring Cockpit Screen.
 library operations_dashboard_screen;
 
 import 'package:flutter/material.dart';
 import '../../../core/theme/vaayu_colors.dart';
 import '../../../core/theme/vaayu_tokens.dart';
 import '../../state/operations_controller.dart';
+import '../driver/live_camera_share_screen.dart';
 import 'operations_incident_wall.dart';
 import 'operations_fleet_status_bar.dart';
 import 'operations_live_cards.dart';
@@ -14,249 +14,63 @@ import 'operations_intervention_dialog.dart';
 class OperationsDashboardScreen extends StatefulWidget {
   final OperationsController controller;
   final bool autoLoad;
-
-  const OperationsDashboardScreen({
-    super.key,
-    required this.controller,
-    this.autoLoad = true,
-  });
-
+  const OperationsDashboardScreen({super.key, required this.controller, this.autoLoad = true});
   @override
   State<OperationsDashboardScreen> createState() => _OperationsDashboardScreenState();
 }
 
 class _OperationsDashboardScreenState extends State<OperationsDashboardScreen> {
   @override
-  void initState() {
-    super.initState();
-    if (widget.autoLoad) {
-      widget.controller.loadDashboardData();
-    }
-  }
+  void initState() { super.initState(); if (widget.autoLoad) widget.controller.loadDashboardData(); }
 
   void _openInterventionDialog(String orderId, {OperatorActionType initialAction = OperatorActionType.redispatch}) {
-    OperationsInterventionDialog.show(
-      context,
-      orderId: orderId,
-      initialAction: initialAction,
-      onConfirm: ({required action, required orderId, driverId, reason}) async {
-        switch (action) {
-          case OperatorActionType.redispatch:
-            return widget.controller.reDispatchTrip(orderId, reason: reason);
-          case OperatorActionType.assignDriver:
-            if (driverId == null) return false;
-            return widget.controller.manualAssignDriver(orderId, driverId);
-          case OperatorActionType.cancelOverride:
-            return widget.controller.cancelTripOverride(orderId, reason: reason);
-        }
-      },
-    );
+    OperationsInterventionDialog.show(context, orderId: orderId, initialAction: initialAction, onConfirm: ({required action, required orderId, driverId, reason}) async {
+      switch (action) {
+        case OperatorActionType.redispatch: return widget.controller.reDispatchTrip(orderId, reason: reason);
+        case OperatorActionType.assignDriver: if (driverId == null) return false; return widget.controller.manualAssignDriver(orderId, driverId);
+        case OperatorActionType.cancelOverride: return widget.controller.cancelTripOverride(orderId, reason: reason);
+      }
+    });
   }
+
+  void _openCamera(String tripId) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => LiveCameraShareScreen(apiClient: widget.controller.apiClient, tripId: tripId, viewerOnly: true)));
+  }
+
+  Widget _tripCard(ActiveTripSummary trip) => Padding(padding: const EdgeInsets.only(bottom: VaayuSpacing.xs), child: OperationsTripCard(key: Key('trip_card_${trip.id}'), trip: trip, onIntervene: _openInterventionDialog, onLiveCamera: _openCamera));
+  Widget _sectionHeader(String title, VaayuColors colors) => Row(children: [Text(title, style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, letterSpacing: 0.8, fontSize: 11)), const SizedBox(width: 8), Expanded(child: Divider(color: colors.divider))]);
+  Widget _empty(String message, VaayuColors colors) => Padding(padding: const EdgeInsets.symmetric(vertical: VaayuSpacing.md), child: Center(child: Text(message, style: TextStyle(color: colors.textTertiary, fontSize: 12))));
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<VaayuColors>() ?? VaayuColors.dark;
-
-    return AnimatedBuilder(
-      animation: widget.controller,
-      builder: (context, _) {
-        final alerts = widget.controller.prioritizedAlerts;
-        final summary = widget.controller.fleetSummaryState.data;
-        final drivers = widget.controller.driversState.data ?? [];
-        final trips = widget.controller.activeTripsState.data ?? [];
-        final filter = widget.controller.activeFilter;
-        final isRefreshing = widget.controller.isRefreshing;
-
-        return Scaffold(
-          backgroundColor: colors.background,
-          appBar: AppBar(
-            backgroundColor: colors.surface,
-            elevation: 0,
-            title: Row(
-              children: [
-                Icon(Icons.radar_rounded, color: colors.secondary, size: 22),
-                const SizedBox(width: 8),
-                Text(
-                  'CONTROL TOWER',
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.0,
-                    fontSize: 15,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              // Ledger Parity Badge
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: colors.success.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(VaayuRadius.sm),
-                    border: Border.all(color: colors.success.withValues(alpha: 0.4)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.account_balance_wallet_outlined, color: colors.success, size: 12),
-                      const SizedBox(width: 4),
-                      Text(
-                        '₹0.00 PARITY',
-                        style: TextStyle(
-                          color: colors.success,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                key: const Key('btn_ops_refresh'),
-                icon: isRefreshing
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary),
-                      )
-                    : Icon(Icons.refresh, color: colors.textSecondary, size: 20),
-                onPressed: isRefreshing ? null : widget.controller.refresh,
-              ),
-              const SizedBox(width: 4),
-            ],
-          ),
-          body: RefreshIndicator(
-            color: colors.primary,
-            backgroundColor: colors.surfaceElevated,
-            onRefresh: widget.controller.refresh,
-            child: ListView(
-              padding: const EdgeInsets.all(VaayuSpacing.md),
-              children: [
-                // SECTION 1: EXCEPTION-FIRST INCIDENT WALL (TOP PRIORITY)
-                OperationsIncidentWall(
-                  alerts: alerts,
-                  onAssignDriver: (orderId) => _openInterventionDialog(orderId, initialAction: OperatorActionType.assignDriver),
-                  onRedispatch: (orderId) => _openInterventionDialog(orderId, initialAction: OperatorActionType.redispatch),
-                  onCancelOverride: (orderId) => _openInterventionDialog(orderId, initialAction: OperatorActionType.cancelOverride),
-                ),
-                const SizedBox(height: VaayuSpacing.md),
-
-                // SECTION 2: FLEET HEALTH & TELEMETRY STATUS BAR
-                OperationsFleetStatusBar(
-                  summary: summary,
-                  activeFilter: filter,
-                  onFilterChanged: widget.controller.setFilter,
-                ),
-                const SizedBox(height: VaayuSpacing.md),
-
-                // SECTION 3: FILTERED FLEET & TRIP GRID
-                if (filter == OperationsFilter.exceptionsOnly) ...[
-                  // Show active trips that are stalled or alerting
-                  _buildSectionHeader('STALLED / AT-RISK TRIPS (${trips.length})', colors),
-                  const SizedBox(height: VaayuSpacing.xs),
-                  if (trips.isEmpty)
-                    _buildEmptyPlaceholder('Zero stalled trips', colors)
-                  else
-                    ...trips.map((t) => Padding(
-                          padding: const EdgeInsets.only(bottom: VaayuSpacing.xs),
-                          child: OperationsTripCard(
-                            key: Key('trip_card_${t.id}'),
-                            trip: t,
-                            onIntervene: (id) => _openInterventionDialog(id),
-                          ),
-                        )),
-                ] else if (filter == OperationsFilter.activeTripsOnly) ...[
-                  _buildSectionHeader('ACTIVE IN-FLIGHT TRIPS (${trips.length})', colors),
-                  const SizedBox(height: VaayuSpacing.xs),
-                  if (trips.isEmpty)
-                    _buildEmptyPlaceholder('No active trips currently in transit', colors)
-                  else
-                    ...trips.map((t) => Padding(
-                          padding: const EdgeInsets.only(bottom: VaayuSpacing.xs),
-                          child: OperationsTripCard(
-                            key: Key('trip_card_${t.id}'),
-                            trip: t,
-                            onIntervene: (id) => _openInterventionDialog(id),
-                          ),
-                        )),
-                ] else if (filter == OperationsFilter.availableDriversOnly) ...[
-                  _buildSectionHeader('AVAILABLE DRIVERS (${drivers.where((d) => !d.isReserved && d.dutyStatus == 'ONLINE').length})', colors),
-                  const SizedBox(height: VaayuSpacing.xs),
-                  ...drivers
-                      .where((d) => !d.isReserved && d.dutyStatus == 'ONLINE')
-                      .map((d) => Padding(
-                            padding: const EdgeInsets.only(bottom: VaayuSpacing.xs),
-                            child: OperationsDriverCard(
-                              key: Key('driver_card_${d.driverId}'),
-                              driver: d,
-                            ),
-                          )),
-                ] else ...[
-                  // All Entities View
-                  _buildSectionHeader('ACTIVE TRIPS (${trips.length})', colors),
-                  const SizedBox(height: VaayuSpacing.xs),
-                  if (trips.isEmpty)
-                    _buildEmptyPlaceholder('No active trips currently in transit', colors)
-                  else
-                    ...trips.take(5).map((t) => Padding(
-                          padding: const EdgeInsets.only(bottom: VaayuSpacing.xs),
-                          child: OperationsTripCard(
-                            key: Key('trip_card_${t.id}'),
-                            trip: t,
-                            onIntervene: (id) => _openInterventionDialog(id),
-                          ),
-                        )),
-                  const SizedBox(height: VaayuSpacing.md),
-                  _buildSectionHeader('LIVE FLEET DRIVERS (${drivers.length})', colors),
-                  const SizedBox(height: VaayuSpacing.xs),
-                  ...drivers.map((d) => Padding(
-                        padding: const EdgeInsets.only(bottom: VaayuSpacing.xs),
-                        child: OperationsDriverCard(
-                          key: Key('driver_card_${d.driverId}'),
-                          driver: d,
-                        ),
-                      )),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildSectionHeader(String title, VaayuColors colors) {
-    return Row(
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            color: colors.textSecondary,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.8,
-            fontSize: 11,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(child: Divider(color: colors.divider)),
-      ],
-    );
-  }
-
-  Widget _buildEmptyPlaceholder(String message, VaayuColors colors) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: VaayuSpacing.md),
-      child: Center(
-        child: Text(
-          message,
-          style: TextStyle(color: colors.textTertiary, fontSize: 12),
-        ),
-      ),
-    );
+    return AnimatedBuilder(animation: widget.controller, builder: (context, _) {
+      final alerts = widget.controller.prioritizedAlerts;
+      final summary = widget.controller.fleetSummaryState.data;
+      final drivers = widget.controller.driversState.data ?? [];
+      final trips = widget.controller.activeTripsState.data ?? [];
+      final filter = widget.controller.activeFilter;
+      final isRefreshing = widget.controller.isRefreshing;
+      return Scaffold(
+        backgroundColor: colors.background,
+        appBar: AppBar(backgroundColor: colors.surface, elevation: 0, title: Row(children: [Icon(Icons.radar_rounded, color: colors.secondary, size: 22), const SizedBox(width: 8), Text('CONTROL TOWER', style: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.bold, letterSpacing: 1.0, fontSize: 15))]), actions: [Center(child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: colors.success.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(VaayuRadius.sm), border: Border.all(color: colors.success.withValues(alpha: 0.4))), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.account_balance_wallet_outlined, color: colors.success, size: 12), const SizedBox(width: 4), Text('₹0.00 PARITY', style: TextStyle(color: colors.success, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5))]))), const SizedBox(width: 8), IconButton(key: const Key('btn_ops_refresh'), icon: isRefreshing ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary)) : Icon(Icons.refresh, color: colors.textSecondary, size: 20), onPressed: isRefreshing ? null : widget.controller.refresh), const SizedBox(width: 4)]),
+        body: RefreshIndicator(color: colors.primary, backgroundColor: colors.surfaceElevated, onRefresh: widget.controller.refresh, child: ListView(padding: const EdgeInsets.all(VaayuSpacing.md), children: [
+          OperationsIncidentWall(alerts: alerts, onAssignDriver: (id) => _openInterventionDialog(id, initialAction: OperatorActionType.assignDriver), onRedispatch: (id) => _openInterventionDialog(id), onCancelOverride: (id) => _openInterventionDialog(id, initialAction: OperatorActionType.cancelOverride)),
+          const SizedBox(height: VaayuSpacing.md),
+          OperationsFleetStatusBar(summary: summary, activeFilter: filter, onFilterChanged: widget.controller.setFilter),
+          const SizedBox(height: VaayuSpacing.md),
+          if (filter == OperationsFilter.exceptionsOnly) ...[
+            _sectionHeader('STALLED / AT-RISK TRIPS (${trips.length})', colors), const SizedBox(height: VaayuSpacing.xs), if (trips.isEmpty) _empty('Zero stalled trips', colors) else ...trips.map(_tripCard),
+          ] else if (filter == OperationsFilter.activeTripsOnly) ...[
+            _sectionHeader('ACTIVE IN-FLIGHT TRIPS (${trips.length})', colors), const SizedBox(height: VaayuSpacing.xs), if (trips.isEmpty) _empty('No active trips currently in transit', colors) else ...trips.map(_tripCard),
+          ] else if (filter == OperationsFilter.availableDriversOnly) ...[
+            _sectionHeader('AVAILABLE DRIVERS (${drivers.where((d) => !d.isReserved && d.dutyStatus == 'ONLINE').length})', colors), const SizedBox(height: VaayuSpacing.xs), ...drivers.where((d) => !d.isReserved && d.dutyStatus == 'ONLINE').map((d) => Padding(padding: const EdgeInsets.only(bottom: VaayuSpacing.xs), child: OperationsDriverCard(key: Key('driver_card_${d.driverId}'), driver: d))),
+          ] else ...[
+            _sectionHeader('ACTIVE TRIPS (${trips.length})', colors), const SizedBox(height: VaayuSpacing.xs), if (trips.isEmpty) _empty('No active trips currently in transit', colors) else ...trips.take(5).map(_tripCard),
+            const SizedBox(height: VaayuSpacing.md), _sectionHeader('LIVE FLEET DRIVERS (${drivers.length})', colors), const SizedBox(height: VaayuSpacing.xs), ...drivers.map((d) => Padding(padding: const EdgeInsets.only(bottom: VaayuSpacing.xs), child: OperationsDriverCard(key: Key('driver_card_${d.driverId}'), driver: d))),
+          ],
+        ])),
+      );
+    });
   }
 }
