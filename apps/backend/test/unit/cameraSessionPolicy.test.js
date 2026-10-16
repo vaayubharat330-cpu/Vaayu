@@ -25,3 +25,15 @@ test('accepted camera frame metadata remains monotonic', () => {
   assert.equal(current.sequence, 5);
   assert.equal(current.lastCapturedAtMs, 5_000);
 });
+test('commit-time sequence check rejects a duplicate concurrent frame', () => {
+  const current = session({ sequence: 8, lastCapturedAtMs: 8_000 });
+  assert.equal(recordAcceptedFrame(current, { capturedAtMs: 9_000, sequence: 9 }), true);
+  assert.equal(recordAcceptedFrame(current, { capturedAtMs: 9_100, sequence: 9 }), false);
+  assert.equal(current.sequence, 9);
+});
+test('commit-time sequence check rejects a skipped frame', () => {
+  const current = session({ sequence: 8, lastCapturedAtMs: 8_000 });
+  assert.equal(recordAcceptedFrame(current, { capturedAtMs: 10_000, sequence: 10 }), false);
+  assert.equal(current.sequence, 8);
+  assert.equal(current.lastCapturedAtMs, 8_000);
+});
