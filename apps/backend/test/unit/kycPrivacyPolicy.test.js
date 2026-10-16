@@ -2,13 +2,14 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { sanitizeExtractedFields, isSha256 } = require('../../src/services/kycPrivacyPolicy');
+const { sanitizeExtractedFields, isSha256, isSensitiveField } = require('../../src/services/kycPrivacyPolicy');
 
 test('KYC privacy policy masks sensitive structured identity fields', () => {
   const safe = sanitizeExtractedFields({
     ownerName: 'TEST DRIVER',
     licenseNumber: 'DL-123456789',
     phone: '9876543210',
+    vehicleNumber: 'TS09AB1234',
     vehicleClass: 'LMV',
     nested: { panNumber: 'ABCDE1234F', color: 'WHITE' }
   });
@@ -16,9 +17,16 @@ test('KYC privacy policy masks sensitive structured identity fields', () => {
   assert.equal(safe.ownerName, '*******IVER');
   assert.equal(safe.licenseNumber, '********6789');
   assert.equal(safe.phone, '******3210');
+  assert.equal(safe.vehicleNumber, '******1234');
   assert.equal(safe.vehicleClass, 'LMV');
   assert.equal(safe.nested.panNumber, '******234F');
   assert.equal(safe.nested.color, 'WHITE');
+});
+
+test('KYC privacy policy treats vehicle registration variants as sensitive', () => {
+  assert.equal(isSensitiveField('vehicleNumber'), true);
+  assert.equal(isSensitiveField('vehicle_registration'), true);
+  assert.equal(isSensitiveField('vehicleClass'), false);
 });
 
 test('KYC privacy policy validates evidence hashes', () => {
