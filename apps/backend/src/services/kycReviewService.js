@@ -1,6 +1,17 @@
 'use strict';
 
 const crypto = require('crypto');
+const { isSha256 } = require('./kycPrivacyPolicy');
+
+function assertEvidenceHash(value) {
+  if (value == null || value === '') return null;
+  if (!isSha256(value)) {
+    const error = new Error('KYC evidenceHash must be a SHA-256 hex digest');
+    error.code = 'KYC_EVIDENCE_HASH_INVALID';
+    throw error;
+  }
+  return value.toLowerCase();
+}
 
 class KycReviewService {
   constructor({ db, now = () => new Date() } = {}) {
@@ -28,7 +39,7 @@ class KycReviewService {
       verificationId,
       sourceDecision: decision,
       reasons: [...new Set(reasons)].slice(0, 20),
-      evidenceHash: evidenceHash || null,
+      evidenceHash: assertEvidenceHash(evidenceHash),
       status: 'OPEN',
       createdAt: now,
       updatedAt: now,
@@ -61,12 +72,13 @@ class KycReviewService {
       error.code = 'KYC_REVIEW_ALREADY_RESOLVED';
       throw error;
     }
+    const normalizedEvidenceHash = assertEvidenceHash(evidenceHash);
     const timestamp = this.now().toISOString();
     item.status = 'RESOLVED';
     item.finalDecision = decision;
     item.resolvedBy = reviewerId;
     item.resolutionReason = String(reason || '').trim().slice(0, 1000);
-    item.resolutionEvidenceHash = evidenceHash || item.evidenceHash || null;
+    item.resolutionEvidenceHash = normalizedEvidenceHash || item.evidenceHash || null;
     item.resolvedAt = timestamp;
     item.updatedAt = timestamp;
     store.kyc_review_decisions.push({
@@ -85,4 +97,4 @@ class KycReviewService {
   }
 }
 
-module.exports = { KycReviewService };
+module.exports = { KycReviewService, assertEvidenceHash };
