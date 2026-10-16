@@ -79,6 +79,7 @@ jobs:
             timeout --signal=TERM 5m npm run "$1"
             echo "::endgroup::"
           }
+          run_test test:redis-rate-limit
           run_test test:dispatch
           run_test test:dispatch-recovery
           run_test test:realtime
