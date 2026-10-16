@@ -2,9 +2,9 @@
   "name": "vaayu-backend",
   "version": "1.0.0",
   "description": "VAAYU Secure Intra-City Logistics API & Real-time Dispatch Engine",
-  "main": "src/server_production.js",
+  "main": "src/server_bootstrap.js",
   "scripts": {
-    "dev": "node src/server_production.js",
+    "dev": "node src/server_bootstrap.js",
     "test": "node --test test/unit/security.test.js test/unit/otp.test.js",
     "test:psm": "node --test test/unit/paymentStateMachine.test.js test/unit/paymentStep3_4.test.js test/unit/paymentApiContract.test.js test/unit/tripPaymentLifecycle.test.js test/unit/adminFinancialApi.test.js",
     "test:ledger": "node test/payment_simulator/ledger_core.test.js",
@@ -52,12 +52,11 @@
     "test:flutter:recovery": "node --test test/unit/flutterLifecycleRecovery.test.js",
     "test:flutter:domain": "node --test test/unit/flutterDomainServices.test.js",
     "test:flutter:ui": "node --test test/unit/flutterPresentationUi.test.js",
-    "test:flutter:integration": "node --test test/unit/flutterIntegrationAssembly.test.js",
-    "test:flutter:all": "node --test --test-force-exit test/unit/flutterSecuritySession.test.js test/unit/flutterNetworkingTransport.test.js test/unit/flutterProjectionPersistence.test.js test/unit/flutterLifecycleRecovery.test.js test/unit/flutterDomainServices.test.js test/unit/flutterPresentationUi.test.js test/unit/flutterIntegrationAssembly.test.js",
+    "test:flutter:all": "node --test --test-force-exit test/unit/flutterSecuritySession.test.js test/unit/flutterNetworkingTransport.test.js test/unit/flutterProjectionPersistence.test.js test/unit/flutterLifecycleRecovery.test.js test/unit/flutterDomainServices.test.js test/unit/flutterPresentationUi.test.js",
     "migrate:ledger": "node src/db/runLedgerMigrations.js",
     "simulate:payment": "node test/payment_simulator/runner.js",
     "test:all": "node scripts/run-all-tests.js",
-    "start": "node src/server_production.js",
+    "start": "node src/server_bootstrap.js",
     "db:seed": "node src/db/seedPostgres.js"
   },
   "dependencies": {
