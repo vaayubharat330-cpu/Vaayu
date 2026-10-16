@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 
 import '../../../core/network/api_client.dart';
 import '../../../core/services/document_field_extractor.dart';
+import '../../../core/theme/vaayu_colors.dart';
 import '../../../core/theme/vaayu_theme.dart';
 import '../../../core/theme/vaayu_tokens.dart';
 
