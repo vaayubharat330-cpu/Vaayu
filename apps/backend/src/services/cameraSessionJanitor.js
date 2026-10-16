@@ -29,7 +29,9 @@ class CameraSessionJanitor {
       for (const session of sessions) {
         if (!session || session.status !== 'LIVE') continue;
         const expiresAt = Date.parse(session.expiresAt || '');
-        if (!Number.isFinite(expiresAt) || expiresAt > nowMs) continue;
+        // A malformed expiry must fail closed: an invalid session cannot remain
+        // LIVE indefinitely merely because the janitor cannot parse its clock.
+        if (Number.isFinite(expiresAt) && expiresAt > nowMs) continue;
 
         session.status = 'EXPIRED';
         session.updatedAt = new Date(nowMs).toISOString();
@@ -61,8 +63,6 @@ class CameraSessionJanitor {
 let started = false;
 function startCameraSessionJanitor({ intervalMs = 60_000 } = {}) {
   if (started || process.env.NODE_ENV === 'test') return null;
-  // Lazy imports keep unit tests side-effect free and avoid making camera
-  // policy modules responsible for application bootstrap dependencies.
   const db = require('../db/database');
   const { redisPubSub } = require('./redisPubSub');
   const janitor = new CameraSessionJanitor({ db, redisClient: redisPubSub.pubClient });
