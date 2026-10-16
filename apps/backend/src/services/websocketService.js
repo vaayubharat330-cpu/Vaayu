@@ -18,6 +18,7 @@ const db = require('../db/database');
  * 6. JWT Handshake Authentication & BOLA Authorization Enforcement
  * 7. Historical telemetry replay is persisted but never flooded into live-map streams.
  * 8. Stable event IDs across local + cross-node delivery, allowing clients to safely deduplicate.
+ * 9. Transactional-outbox callers may provide a stable eventId so retries remain deduplicable.
  */
 class WebSocketService {
   constructor(pubSubInstance = null, options = {}) {
@@ -47,9 +48,7 @@ class WebSocketService {
       this.clients.forEach((client, clientId) => {
         if (now - (client.lastPingMs || 0) > this.HEARTBEAT_TIMEOUT_MS) {
           logger.warn('websocket_ghost_connection_reaped', `Ghost connection ${clientId} exceeded heartbeat timeout`, { clientId, userId: client.userId });
-          try {
-            if (client.socket && typeof client.socket.close === 'function') client.socket.close(1001, 'Heartbeat timeout');
-          } catch (_) {}
+          try { if (client.socket && typeof client.socket.close === 'function') client.socket.close(1001, 'Heartbeat timeout'); } catch (_) {}
           this.unregisterClient(clientId);
         } else if (client.socket && typeof client.socket.ping === 'function') {
           try { client.socket.ping(); } catch (_) {}
@@ -98,9 +97,7 @@ class WebSocketService {
         const oldClient = this.clients.get(oldClientId);
         if (oldClient && oldClient.socket) {
           logger.info('websocket_duplicate_session_superseded', `Superseding existing session ${oldClientId} for user ${effectiveUserId}`, { oldClientId, userId: effectiveUserId });
-          try {
-            if (typeof oldClient.socket.close === 'function') oldClient.socket.close(1000, 'Superseded by new session');
-          } catch (_) {}
+          try { if (typeof oldClient.socket.close === 'function') oldClient.socket.close(1000, 'Superseded by new session'); } catch (_) {}
           this.unregisterClient(oldClientId);
         }
       }
@@ -138,48 +135,34 @@ class WebSocketService {
 
   authorizeRoomAccess(client, roomName) {
     if (!client) return { authorized: false, reason: 'Client not registered' };
-
     if (roomName.startsWith('fleet:') || roomName.startsWith('admin:')) {
       const isOperator = (client.role || '').includes('ADMIN') || (client.role || '').includes('DISPATCH') || (client.role || '').includes('SUPPORT') || client.role === 'FLEET_OWNER' || client.clientType === 'FLEET_ADMIN' || client.clientType === 'OPERATOR';
       return isOperator ? { authorized: true } : { authorized: false, reason: 'Forbidden: Admin access required for fleet stream' };
     }
-
     if (roomName.startsWith('driver:')) {
       const targetDriverId = roomName.replace('driver:', '');
       const driver = db.getDrivers ? db.getDrivers().find(d => d.id === targetDriverId || d.userId === targetDriverId) : null;
       const isOwner = client.userId === targetDriverId || (driver && (driver.userId === client.userId || driver.id === client.userId));
-      return (isOwner || client.role === 'ADMIN' || client.role === 'FLEET_OWNER')
-        ? { authorized: true }
-        : { authorized: false, reason: 'Forbidden: Unauthorized driver stream access' };
+      return (isOwner || client.role === 'ADMIN' || client.role === 'FLEET_OWNER') ? { authorized: true } : { authorized: false, reason: 'Forbidden: Unauthorized driver stream access' };
     }
-
     if (roomName.startsWith('customer:')) {
       const targetCustomerId = roomName.replace('customer:', '');
-      return (client.userId === targetCustomerId || client.role === 'ADMIN' || client.role === 'SUPER_ADMIN')
-        ? { authorized: true }
-        : { authorized: false, reason: 'Forbidden: Unauthorized customer stream access' };
+      return (client.userId === targetCustomerId || client.role === 'ADMIN' || client.role === 'SUPER_ADMIN') ? { authorized: true } : { authorized: false, reason: 'Forbidden: Unauthorized customer stream access' };
     }
-
     if (roomName.startsWith('tenant:')) {
       const parts = roomName.split(':');
       const targetTenantId = parts[1];
       const clientTenantId = client.tenantId || client.merchantId || (client.role === 'MERCHANT' ? client.userId : null);
       const isTenantAdmin = client.role === 'ADMIN' || client.role === 'SUPER_ADMIN';
-      return (isTenantAdmin || (clientTenantId && String(clientTenantId) === String(targetTenantId)))
-        ? { authorized: true }
-        : { authorized: false, reason: 'Forbidden: Tenant room access denied' };
+      return (isTenantAdmin || (clientTenantId && String(clientTenantId) === String(targetTenantId))) ? { authorized: true } : { authorized: false, reason: 'Forbidden: Tenant room access denied' };
     }
-
     if (roomName.startsWith('trip:')) {
       if (client.role === 'ADMIN' || client.role === 'SUPER_ADMIN' || client.role === 'FLEET_ADMIN') return { authorized: true };
       const tripId = roomName.replace('trip:', '');
       const trip = db.getTripById(tripId);
       const participantId = client.role === 'DRIVER' ? (trip?.driver?.id || trip?.driver?.userId) : trip?.customerId;
-      return (trip && participantId && String(client.userId) === String(participantId))
-        ? { authorized: true }
-        : { authorized: false, reason: 'Forbidden: Trip subscription authorization failed' };
+      return (trip && participantId && String(client.userId) === String(participantId)) ? { authorized: true } : { authorized: false, reason: 'Forbidden: Trip subscription authorization failed' };
     }
-
     return { authorized: false, reason: 'Forbidden: Unknown room' };
   }
 
@@ -234,27 +217,16 @@ class WebSocketService {
     if (!userId) return null;
     const store = db.getDb();
     const trips = store.trips || [];
-    if (role === 'DRIVER') {
-      return trips.find(t => (t.driver?.id === userId || t.driver?.userId === userId) && !['DELIVERED', 'CANCELLED', 'FAILED'].includes(t.status)) || null;
-    }
+    if (role === 'DRIVER') return trips.find(t => (t.driver?.id === userId || t.driver?.userId === userId) && !['DELIVERED', 'CANCELLED', 'FAILED'].includes(t.status)) || null;
     return trips.find(t => t.customerId === userId && !['DELIVERED', 'CANCELLED', 'FAILED'].includes(t.status)) || null;
   }
 
   broadcastToRoomLocal(roomName, eventName, payload, metadata = {}) {
     const subscriberIds = this.rooms.get(roomName);
     if (!subscriberIds || subscriberIds.size === 0) return 0;
-    const eventId = typeof metadata.eventId === 'string' && metadata.eventId.trim()
-      ? metadata.eventId.trim()
-      : `evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const eventId = typeof metadata.eventId === 'string' && metadata.eventId.trim() ? metadata.eventId.trim() : `evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const timestamp = Number.isFinite(Number(metadata.timestamp)) ? Number(metadata.timestamp) : Date.now();
-    const messageStr = JSON.stringify({
-      event: eventName,
-      eventId,
-      room: roomName,
-      timestamp: new Date(timestamp).toISOString(),
-      data: payload
-    });
-
+    const messageStr = JSON.stringify({ event: eventName, eventId, room: roomName, timestamp: new Date(timestamp).toISOString(), data: payload });
     let deliveredCount = 0;
     for (const clientId of subscriberIds) {
       const client = this.clients.get(clientId);
@@ -270,13 +242,10 @@ class WebSocketService {
         }
         logger.warn('websocket_slow_consumer_evicted', `Evicting severely lagged client ${clientId} (${bufferedBytes} bytes buffered)`, { clientId, userId: client.userId, bufferedBytes, eventName });
         metricsService.increment('websocket_slow_consumer_evictions_total');
-        try {
-          if (typeof client.socket.close === 'function') client.socket.close(1008, 'Slow consumer backpressure eviction');
-        } catch (_) {}
+        try { if (typeof client.socket.close === 'function') client.socket.close(1008, 'Slow consumer backpressure eviction'); } catch (_) {}
         this.unregisterClient(clientId);
         continue;
       }
-
       try {
         if (typeof client.socket.send === 'function') {
           client.socket.send(messageStr);
@@ -291,37 +260,39 @@ class WebSocketService {
     return deliveredCount;
   }
 
-  async broadcastToRoom(roomName, eventName, payload, isLocalOnly = false) {
-    const eventId = `evt_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
-    const timestamp = Date.now();
+  async broadcastToRoom(roomName, eventName, payload, options = {}) {
+    // Backwards compatibility: older internal callers passed a boolean isLocalOnly flag.
+    const isLocalOnly = typeof options === 'boolean' ? options : Boolean(options.isLocalOnly);
+    const requestedEventId = typeof options === 'object' && options !== null && typeof options.eventId === 'string' && options.eventId.trim()
+      ? options.eventId.trim()
+      : null;
+    const requestedTimestamp = typeof options === 'object' && options !== null && Number.isFinite(Number(options.timestamp))
+      ? Number(options.timestamp)
+      : Date.now();
+    const eventId = requestedEventId || `evt_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
     let publishResult = null;
 
     if (!isLocalOnly && this.pubSub) {
-      publishResult = await this.pubSub.publish(eventName, roomName, payload, { eventId, timestamp });
+      publishResult = await this.pubSub.publish(eventName, roomName, payload, { eventId, timestamp: requestedTimestamp });
     }
 
-    const localDelivered = this.broadcastToRoomLocal(roomName, eventName, payload, {
+    return this.broadcastToRoomLocal(roomName, eventName, payload, {
       eventId: publishResult?.eventId || eventId,
-      timestamp: publishResult?.envelope?.timestamp || timestamp,
+      timestamp: publishResult?.envelope?.timestamp || requestedTimestamp,
     });
-    return localDelivered;
   }
 
   async handleDriverLocationPing(driverId, telemetryData) {
     const result = await driverLocationService.updateDriverLocation(driverId, telemetryData);
     if (!result.success) return { success: false, reason: result.reason };
-
     const driverState = result.driver;
     const packetAgeMs = Number(driverState.packetAgeMs || 0);
     const isHistoricalReplay = packetAgeMs > this.TELEMETRY_LIVE_MAX_PACKET_AGE_MS;
-
     if (isHistoricalReplay) {
       metricsService.increment('websocket_historical_telemetry_suppressed_total');
       return { success: true, driverState, liveBroadcastSuppressed: true };
     }
-
     this.broadcastToRoom(`driver:${driverId}`, 'DRIVER_LOCATION_UPDATE', driverState);
-
     if (driverState.currentTripId) {
       this.broadcastToRoom(`trip:${driverState.currentTripId}`, 'LIVE_TRIP_LOCATION', {
         tripId: driverState.currentTripId,
@@ -336,18 +307,13 @@ class WebSocketService {
         updatedAt: driverState.updatedAt
       });
     }
-
     const city = (telemetryData.city || 'hyderabad').toLowerCase();
     this.broadcastToRoom(`fleet:${city}`, 'FLEET_DRIVER_PING', driverState);
     this.broadcastToRoom('fleet:all', 'FLEET_DRIVER_PING', driverState);
-
     return { success: true, driverState, liveBroadcastSuppressed: false };
   }
 }
 
 const websocketService = new WebSocketService();
 
-module.exports = {
-  WebSocketService,
-  websocketService
-};
+module.exports = { WebSocketService, websocketService };
