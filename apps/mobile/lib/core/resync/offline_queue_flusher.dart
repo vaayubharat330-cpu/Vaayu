@@ -103,7 +103,7 @@ class OfflineQueueFlusher {
       final now = _now().toUtc();
 
       for (final mutation in queue) {
-        if (!mutation.isReadyForReplay && mutation.nextAttemptAt != null && mutation.nextAttemptAt!.isAfter(now)) {
+        if (!mutation.isReadyForReplay(now: now)) {
           // FIFO: later mutations must not leapfrog an earlier retry window.
           break;
         }
@@ -148,24 +148,14 @@ class OfflineQueueFlusher {
           continue;
         }
 
-        // Preserve the same intent/idempotency key while replacing the queue
-        // record with a scheduled retry. The queue is deliberately halted.
         final nextRetryCount = mutation.retryCount + 1;
-        if (nextRetryCount >= maxRetryCount) {
-          final parked = mutation.copyWithRetry(
-            nextAttemptAt: now.add(maxRetryDelay),
-            lastErrorCode: result.errorCode ?? 'RETRY_EXHAUSTED',
-            lastFailureAt: now,
-          );
-          await _persistenceService.enqueueMutation(parked);
-        } else {
-          final scheduled = mutation.copyWithRetry(
-            nextAttemptAt: now.add(_retryDelay(nextRetryCount)),
-            lastErrorCode: result.errorCode ?? 'TRANSIENT_FAILURE',
-            lastFailureAt: now,
-          );
-          await _persistenceService.enqueueMutation(scheduled);
-        }
+        final retryAt = now.add(nextRetryCount >= maxRetryCount ? maxRetryDelay : _retryDelay(nextRetryCount));
+        final scheduled = mutation.copyWithRetry(
+          nextAttemptAt: retryAt,
+          lastErrorCode: result.errorCode ?? (nextRetryCount >= maxRetryCount ? 'RETRY_EXHAUSTED' : 'TRANSIENT_FAILURE'),
+          lastFailureAt: now,
+        );
+        await _persistenceService.enqueueMutation(scheduled);
         break;
       }
     } finally {
