@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createOrderRoutes } = require('../../src/http/orderRoutes');
-const { DELIVERY_STATES } = require('../../src/services/deliveryStateMachine');
+const { DELIVERY_STATES } = require('../../src/services/deliveryStates');
 const { parseJsonBody } = require('../../src/http/helpers');
 
 function makeRequest(payload) {
@@ -72,4 +72,3 @@ test('order lifecycle releases idempotency lease when an unexpected command erro
   assert.equal(response.success, false);
   assert.equal(response.error.code, 'INTERNAL_COMMAND_ERROR');
 });
-
