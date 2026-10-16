@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const jwt = require('jsonwebtoken');
-const { authorizeAdminRead, getRequiredAdminRoles } = require('../../src/http/adminReadGuard');
+const { authorizeAdminRead, getRequiredAdminRoles, normalizePathname } = require('../../src/http/adminReadGuard');
 
 const SECRET = 'vaayu-admin-read-test-secret-1234567890';
 const authService = {
@@ -22,6 +22,18 @@ test('admin read guard protects sensitive admin reads', () => {
   assert.equal(getRequiredAdminRoles('/api/admin/unknown'), null);
 });
 
+test('admin read guard normalizes trailing, duplicate, and encoded path separators', () => {
+  assert.equal(normalizePathname('/api/admin/settings/'), '/api/admin/settings');
+  assert.equal(normalizePathname('//api//admin//settings///'), '/api/admin/settings');
+  assert.equal(normalizePathname('/api/admin/%73ettings/'), '/api/admin/settings');
+  assert.equal(normalizePathname('/api/admin/%E0%A4%A'), null);
+
+  const adminToken = token({ id: 'admin-1', role: 'ADMIN' });
+  const decision = authorizeAdminRead({ pathname: '/api/admin/settings/', method: 'GET', token: adminToken, authService });
+  assert.equal(decision.required, true);
+  assert.equal(decision.allowed, true);
+});
+
 test('admin read guard rejects missing and invalid credentials', () => {
   assert.equal(authorizeAdminRead({ pathname: '/api/admin/settings', method: 'GET', token: '', authService }).allowed, false);
   assert.equal(authorizeAdminRead({ pathname: '/api/admin/settings', method: 'GET', token: 'not-a-token', authService }).allowed, false);
@@ -36,6 +48,14 @@ test('admin read guard enforces least-privilege roles', () => {
   assert.equal(authorizeAdminRead({ pathname: '/api/admin/settings', method: 'GET', token: supportToken, authService }).allowed, false);
   assert.equal(authorizeAdminRead({ pathname: '/api/admin/settings', method: 'GET', token: adminToken, authService }).allowed, true);
   assert.equal(authorizeAdminRead({ pathname: '/api/admin/support/tickets', method: 'GET', token: supportToken, authService }).allowed, true);
+});
+
+test('admin read guard fails closed when token verification throws', () => {
+  const throwingAuth = { verifyToken() { throw new Error('verification backend unavailable'); } };
+  const decision = authorizeAdminRead({ pathname: '/api/admin/settings', method: 'GET', token: 'opaque', authService: throwingAuth });
+  assert.equal(decision.required, true);
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.code, 'INVALID_TOKEN');
 });
 
 test('admin read guard does not alter unrelated routes or non-GET requests', () => {
