@@ -273,7 +273,19 @@ class WebSocketService {
     let publishResult = null;
 
     if (!isLocalOnly && this.pubSub) {
-      publishResult = await this.pubSub.publish(eventName, roomName, payload, { eventId, timestamp: requestedTimestamp });
+      try {
+        publishResult = await this.pubSub.publish(eventName, roomName, payload, { eventId, timestamp: requestedTimestamp });
+      } catch (err) {
+        // Pub/Sub is an acceleration path for cross-node fan-out, not the local
+        // delivery path. A transient broker outage must never prevent connected
+        // clients on this instance from receiving the event.
+        metricsService.increment('websocket_pubsub_publish_failures_total');
+        logger.warn('websocket_pubsub_publish_failed', `Redis Pub/Sub publish failed for ${eventName}; continuing with local delivery`, {
+          roomName,
+          eventName,
+          error: err?.message || String(err),
+        });
+      }
     }
 
     return this.broadcastToRoomLocal(roomName, eventName, payload, {
