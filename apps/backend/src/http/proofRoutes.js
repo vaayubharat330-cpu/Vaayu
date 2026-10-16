@@ -1,59 +1,164 @@
-// Proof-of-delivery photos. The assigned driver uploads a JPEG, PNG, or WebP as base64; the server stores it privately
-// and returns a reference. The reference is attached to the trip only when the delivery code passes (see
-// deliveryStateMachine), so an unverified hand-over never gets proof. Each matched route answers and returns true at
-// once, so the router stops here.
-
+// Proof-of-delivery photos and authenticated live camera snapshot sessions.
+// Images are stored privately; access is always bound to the trip and authenticated role.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..', '..');
 const PRIVATE_PROOF_PHOTOS = path.resolve(BACKEND_ROOT, 'private_uploads', 'proof_photos');
+const PRIVATE_CAMERA_STREAMS = path.resolve(BACKEND_ROOT, 'private_uploads', 'camera_streams');
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
-// Base64 adds about a third, so the request ceiling is above the 5 MB decoded limit.
 const MAX_REQUEST_BYTES = 7.5 * 1024 * 1024;
+const MAX_CAMERA_FRAME_BYTES = 900 * 1024;
+const CAMERA_SESSION_TTL_MS = 30 * 60 * 1000;
+
+function json(res, status, payload) {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  return res.end(JSON.stringify(payload));
+}
+
+function parseImage(data, maxBytes) {
+  if (typeof data !== 'string') return null;
+  const match = data.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) return null;
+  const bytes = Buffer.from(match[2], 'base64');
+  if (!bytes.length || bytes.length > maxBytes) return null;
+  return { format: match[1], bytes };
+}
+
+function readJsonBody(req, maxBytes = MAX_REQUEST_BYTES) {
+  return new Promise(resolve => {
+    let body = '';
+    let size = 0;
+    let tooLarge = false;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxBytes) { tooLarge = true; return; }
+      body += chunk;
+    });
+    req.on('end', () => {
+      if (tooLarge) return resolve({ error: 'PAYLOAD_TOO_LARGE' });
+      try { resolve({ data: JSON.parse(body) }); } catch (_) { resolve({ error: 'INVALID_JSON' }); }
+    });
+    req.on('error', () => resolve({ error: 'REQUEST_READ_FAILED' }));
+  });
+}
+
+function getCameraSessions(db) {
+  const store = db.getDb ? db.getDb() : {};
+  if (!Array.isArray(store.camera_stream_sessions)) store.camera_stream_sessions = [];
+  return store.camera_stream_sessions;
+}
+
+function getSession(db, sessionId) {
+  return getCameraSessions(db).find(s => s.id === sessionId) || null;
+}
 
 function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
   return async function handleProofRoute(req, res, { pathname, parsedUrl }) {
+    if (pathname === '/api/trip/camera/session/start' && req.method === 'POST') {
+      const parsed = await readJsonBody(req);
+      if (parsed.error) return json(res, parsed.error === 'PAYLOAD_TOO_LARGE' ? 413 : 400, { success: false, error: parsed.error });
+      const data = parsed.data || {};
+      const tripId = typeof data.trip_id === 'string' ? data.trip_id : '';
+      if (!tripId || !await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN'], targetOrderId: tripId })) return true;
+      const trip = (db.getTrips ? db.getTrips() : []).find(t => t.id === tripId);
+      if (!trip) return json(res, 404, { success: false, error: 'Trip not found.' });
+      const driver = (db.getDrivers ? db.getDrivers() : []).find(d => d.userId === req.user.id || d.id === req.user.id || d.id === trip.driver?.id || d.userId === trip.driver?.userId);
+      if (req.user.role === 'DRIVER' && (!driver || String(trip.driver?.id || trip.driver?.userId) !== String(driver.id || driver.userId))) return json(res, 403, { success: false, error: 'Camera session is not assigned to this driver.' });
+
+      const sessions = getCameraSessions(db);
+      const now = Date.now();
+      for (const session of sessions) {
+        if (session.tripId === tripId && session.status === 'LIVE' && now - Date.parse(session.updatedAt || session.createdAt) < CAMERA_SESSION_TTL_MS) {
+          return json(res, 200, { success: true, sessionId: session.id, reused: true, expiresAt: session.expiresAt });
+        }
+      }
+      const sessionId = `cam_${crypto.randomBytes(16).toString('hex')}`;
+      const session = { id: sessionId, tripId, driverId: driver?.id || req.user.id, status: 'LIVE', sequence: 0, latestFrameRef: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(now + CAMERA_SESSION_TTL_MS).toISOString() };
+      sessions.push(session);
+      if (typeof db.saveDb === 'function') db.saveDb();
+      return json(res, 201, { success: true, sessionId, expiresAt: session.expiresAt });
+    }
+
+    if (pathname === '/api/trip/camera/frame' && req.method === 'POST') {
+      const parsed = await readJsonBody(req, 1024 * 1024);
+      if (parsed.error) return json(res, parsed.error === 'PAYLOAD_TOO_LARGE' ? 413 : 400, { success: false, error: parsed.error });
+      const data = parsed.data || {};
+      const sessionId = typeof data.session_id === 'string' ? data.session_id : '';
+      const session = getSession(db, sessionId);
+      if (!session || session.status !== 'LIVE' || Date.now() > Date.parse(session.expiresAt)) return json(res, 410, { success: false, error: 'Camera session expired.' });
+      if (!await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN'], targetOrderId: session.tripId })) return true;
+      const image = parseImage(data.image_data, MAX_CAMERA_FRAME_BYTES);
+      if (!image) return json(res, 413, { success: false, error: 'Camera frame must be JPEG, PNG, or WebP and <= 900 KB.' });
+
+      fs.mkdirSync(PRIVATE_CAMERA_STREAMS, { recursive: true });
+      const nextSequence = Number(session.sequence || 0) + 1;
+      const id = `frame_${crypto.randomBytes(16).toString('hex')}`;
+      const extension = image.format === 'jpeg' ? 'jpg' : image.format;
+      const filename = `${id}.${extension}`;
+      fs.writeFileSync(path.join(PRIVATE_CAMERA_STREAMS, filename), image.bytes, { flag: 'wx', mode: 0o600 });
+      const previousRef = session.latestFrameRef;
+      session.sequence = nextSequence;
+      session.latestFrameRef = `/private-camera-streams/${filename}`;
+      session.updatedAt = new Date().toISOString();
+      if (typeof db.saveDb === 'function') db.saveDb();
+      if (previousRef) {
+        const previousFile = path.resolve(PRIVATE_CAMERA_STREAMS, path.basename(previousRef));
+        if (previousFile.startsWith(PRIVATE_CAMERA_STREAMS + path.sep)) { try { fs.unlinkSync(previousFile); } catch (_) {} }
+      }
+      return json(res, 200, { success: true, sequence: nextSequence, capturedAt: session.updatedAt, frameRef: session.latestFrameRef });
+    }
+
+    if (pathname === '/api/trip/camera/frame' && req.method === 'GET') {
+      const sessionId = String(parsedUrl.query.session_id || '');
+      const session = getSession(db, sessionId);
+      if (!session || session.status !== 'LIVE' || !session.latestFrameRef) return json(res, 404, { success: false, error: 'Live camera frame not available.' });
+      if (Date.now() > Date.parse(session.expiresAt)) return json(res, 410, { success: false, error: 'Camera session expired.' });
+      if (!await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'CUSTOMER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN', 'DISPATCH_OPERATOR', 'SUPPORT_AGENT'], targetOrderId: session.tripId })) return true;
+      const filename = path.basename(session.latestFrameRef);
+      const filePath = path.resolve(PRIVATE_CAMERA_STREAMS, filename);
+      if (!filePath.startsWith(PRIVATE_CAMERA_STREAMS + path.sep)) return json(res, 404, { success: false, error: 'Not found.' });
+      fs.readFile(filePath, (error, file) => {
+        if (error) return json(res, 404, { success: false, error: 'Frame unavailable.' });
+        const ext = path.extname(filePath).slice(1).toLowerCase();
+        const types = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+        res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'no-store, max-age=0', 'Pragma': 'no-cache', 'X-Frame-Sequence': String(session.sequence), 'X-Captured-At': session.updatedAt, 'X-Content-Type-Options': 'nosniff' });
+        res.end(file);
+      });
+      return true;
+    }
+
+    if (pathname === '/api/trip/camera/session/stop' && req.method === 'POST') {
+      const parsed = await readJsonBody(req);
+      if (parsed.error) return json(res, parsed.error === 'PAYLOAD_TOO_LARGE' ? 413 : 400, { success: false, error: parsed.error });
+      const sessionId = String(parsed.data?.session_id || '');
+      const session = getSession(db, sessionId);
+      if (!session) return json(res, 404, { success: false, error: 'Camera session not found.' });
+      if (!await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN'], targetOrderId: session.tripId })) return true;
+      session.status = 'STOPPED';
+      session.updatedAt = new Date().toISOString();
+      if (typeof db.saveDb === 'function') db.saveDb();
+      return json(res, 200, { success: true, sessionId, status: session.status });
+    }
+
     if (pathname === '/api/trip/proof-photo' && req.method === 'POST') {
       let body = '';
       let tooLarge = false;
-      req.on('data', chunk => {
-        if (body.length + chunk.length > MAX_REQUEST_BYTES) { tooLarge = true; return; }
-        body += chunk;
-      });
+      req.on('data', chunk => { if (body.length + chunk.length > MAX_REQUEST_BYTES) { tooLarge = true; return; } body += chunk; });
       req.on('end', async () => {
-        if (tooLarge) {
-          res.writeHead(413, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Proof photo exceeds the upload size.' }));
-        }
-        let data;
-        try { data = JSON.parse(body); } catch (_) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Invalid JSON payload.' }));
-        }
+        if (tooLarge) return json(res, 413, { success: false, error: 'Proof photo exceeds the upload size.' });
+        let data; try { data = JSON.parse(body); } catch (_) { return json(res, 400, { success: false, error: 'Invalid JSON payload.' }); }
         const tripId = typeof data.trip_id === 'string' ? data.trip_id : '';
         if (!await enforceSecurityChecks(req, res, { requiredRoles: ['DRIVER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN'], targetOrderId: tripId })) return;
-        const match = typeof data.image_data === 'string' && data.image_data.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
-        if (!match) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'A JPEG, PNG, or WebP proof photo is required.' }));
-        }
-        const bytes = Buffer.from(match[2], 'base64');
-        if (!bytes.length || bytes.length > MAX_PHOTO_BYTES) {
-          res.writeHead(413, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Proof photos must be 5 MB or smaller.' }));
-        }
-        if (!tripId || !(db.getTrips ? db.getTrips() : []).some(t => t.id === tripId)) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ success: false, error: 'Trip not found.' }));
-        }
+        const image = parseImage(data.image_data, MAX_PHOTO_BYTES);
+        if (!image) return json(res, 400, { success: false, error: 'A JPEG, PNG, or WebP proof photo is required.' });
+        if (!tripId || !(db.getTrips ? db.getTrips() : []).some(t => t.id === tripId)) return json(res, 404, { success: false, error: 'Trip not found.' });
         const id = `pod_${crypto.randomBytes(16).toString('hex')}`;
-        const extension = match[1] === 'jpeg' ? 'jpg' : match[1];
+        const extension = image.format === 'jpeg' ? 'jpg' : image.format;
         fs.mkdirSync(PRIVATE_PROOF_PHOTOS, { recursive: true });
-        fs.writeFileSync(path.join(PRIVATE_PROOF_PHOTOS, `${id}.${extension}`), bytes, { flag: 'wx', mode: 0o600 });
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ success: true, proofPhotoRef: `/private-proof-photos/${id}.${extension}` }));
+        fs.writeFileSync(path.join(PRIVATE_PROOF_PHOTOS, `${id}.${extension}`), image.bytes, { flag: 'wx', mode: 0o600 });
+        return json(res, 200, { success: true, proofPhotoRef: `/private-proof-photos/${id}.${extension}` });
       });
       return true;
     }
@@ -61,18 +166,12 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
     if (pathname === '/api/trip/proof-photo' && req.method === 'GET') {
       const ref = String(parsedUrl.query.ref || '');
       const match = ref.match(/^\/private-proof-photos\/(pod_[a-f0-9]{32}\.(jpg|png|webp))$/);
-      if (!match) {
-        res.writeHead(404); res.end('Not found'); return true;
-      }
+      if (!match) { res.writeHead(404); res.end('Not found'); return true; }
       const trip = (db.getTrips ? db.getTrips() : []).find(t => t.proofOfDelivery && t.proofOfDelivery.podPhotoUrl === ref);
-      if (!trip) {
-        res.writeHead(404); res.end('Not found'); return true;
-      }
+      if (!trip) { res.writeHead(404); res.end('Not found'); return true; }
       if (!await enforceSecurityChecks(req, res, { requiredRoles: ['CUSTOMER', 'DRIVER', 'ADMIN', 'SUPER_ADMIN', 'FLEET_ADMIN', 'DISPATCH_OPERATOR', 'SUPPORT_AGENT'], targetOrderId: trip.id })) return true;
       const filePath = path.resolve(PRIVATE_PROOF_PHOTOS, match[1]);
-      if (!filePath.startsWith(PRIVATE_PROOF_PHOTOS + path.sep)) {
-        res.writeHead(404); res.end('Not found'); return true;
-      }
+      if (!filePath.startsWith(PRIVATE_PROOF_PHOTOS + path.sep)) { res.writeHead(404); res.end('Not found'); return true; }
       fs.readFile(filePath, (error, file) => {
         if (error) { res.writeHead(404); res.end('Not found'); return; }
         const types = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
@@ -86,4 +185,4 @@ function createProofRoutes({ db, enforceDriverAccess, enforceSecurityChecks }) {
   };
 }
 
-module.exports = { createProofRoutes, PRIVATE_PROOF_PHOTOS };
+module.exports = { createProofRoutes, PRIVATE_PROOF_PHOTOS, PRIVATE_CAMERA_STREAMS };
