@@ -59,6 +59,7 @@
     "test:camera-policy": "node --test test/unit/cameraSessionPolicy.test.js",
     "test:camera-integrity": "node --test test/unit/cameraFrameIntegrity.test.js",
     "test:camera-gateway": "node --test test/unit/cameraFrameGateway.test.js",
+    "test:camera-route-security": "node --test test/unit/cameraRouteSecurityWiring.test.js",
     "test:document-extraction": "node --test test/unit/documentExtractionRoute.test.js",
     "test:document-verification": "node --test test/unit/documentVerificationService.test.js",
     "test:document-decision": "node --test test/unit/documentVerificationDecisionEngine.test.js",
