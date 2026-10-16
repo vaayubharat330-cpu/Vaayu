@@ -19,7 +19,8 @@ test('review cases are deduplicated while open', () => {
 test('review resolution requires reviewer identity and valid terminal decision', () => {
   const service = fixture();
   const item = service.createCase({ driverId: 'd1', documentId: 'doc1', verificationId: 'v1', decision: 'HUMAN_REVIEW' });
-  assert.throws(() => service.resolveCase({ caseId: item.id, reviewerId: 'ops-1', decision: 'VERIFIED', reason: 'approved' }), /KYC review case/);
+  assert.throws(() => service.resolveCase({ caseId: item.id, reviewerId: 'ops-1', decision: 'APPROVE', reason: 'approved' }), /Invalid KYC review decision/);
+  assert.throws(() => service.resolveCase({ caseId: item.id, decision: 'VERIFIED', reason: 'approved' }), /Reviewer identity is required/);
   const resolved = service.resolveCase({ caseId: item.id, reviewerId: 'ops-1', decision: 'REJECTED', reason: 'document is a self-created paper' });
   assert.equal(resolved.status, 'RESOLVED');
   assert.equal(resolved.finalDecision, 'REJECTED');
