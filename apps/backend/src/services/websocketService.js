@@ -83,170 +83,104 @@ class WebSocketService {
     return false;
   }
 
-  registerClient(socket, clientType = 'UNKNOWN', userId = null, role = 'CUSTOMER', token = null) {
-    let verifiedUser = null;
-    if (token) verifiedUser = authService.verifyToken(token);
-
-    const effectiveUserId = verifiedUser ? verifiedUser.id : userId;
-    const effectiveRole = verifiedUser ? verifiedUser.role : role;
-    const effectiveClientType = verifiedUser ? verifiedUser.role : clientType;
-
-    if (effectiveUserId && this.userSessions.has(effectiveUserId)) {
-      const existingSessions = this.userSessions.get(effectiveUserId);
-      for (const oldClientId of existingSessions) {
-        const oldClient = this.clients.get(oldClientId);
-        if (oldClient && oldClient.socket) {
-          logger.info('websocket_duplicate_session_superseded', `Superseding existing session ${oldClientId} for user ${effectiveUserId}`, { oldClientId, userId: effectiveUserId });
-          try { if (typeof oldClient.socket.close === 'function') oldClient.socket.close(1000, 'Superseded by new session'); } catch (_) {}
-          this.unregisterClient(oldClientId);
-        }
-      }
-    }
-
-    const clientId = `client_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-    const clientRecord = {
-      id: clientId,
+  registerClient(socket, userId, role, userRole = role) {
+    const clientId = `ws_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+    const existing = this.userSessions.get(userId);
+    if (existing) this.unregisterClient(existing);
+    this.clients.set(clientId, {
       socket,
+      userId,
+      role,
+      userRole,
       rooms: new Set(),
-      clientType: effectiveClientType,
-      userId: effectiveUserId,
-      role: effectiveRole,
-      tenantId: verifiedUser ? (verifiedUser.tenantId || verifiedUser.merchantId) : null,
-      merchantId: verifiedUser ? (verifiedUser.merchantId || verifiedUser.tenantId) : null,
-      authenticated: Boolean(verifiedUser || userId),
-      connectedAt: new Date().toISOString(),
       lastPingMs: Date.now(),
-      droppedMessagesCount: 0
-    };
-
-    this.clients.set(clientId, clientRecord);
-    if (effectiveUserId) {
-      if (!this.userSessions.has(effectiveUserId)) this.userSessions.set(effectiveUserId, new Set());
-      this.userSessions.get(effectiveUserId).add(clientId);
-    }
-
-    metricsService.increment('websocket_connections_total');
-    metricsService.setGauge('websocket_connections_active', this.clients.size);
-    logger.info('websocket_client_connected', `WebSocket client ${clientId} registered`, { clientId, userId: effectiveUserId, role: effectiveRole });
-
-    if (effectiveRole === 'ADMIN' || effectiveClientType === 'FLEET_ADMIN') this.joinRoom(clientId, 'fleet:hyderabad');
+      queuedMessages: [],
+    });
+    this.userSessions.set(userId, clientId);
     return clientId;
-  }
-
-  authorizeRoomAccess(client, roomName) {
-    if (!client) return { authorized: false, reason: 'Client not registered' };
-    if (roomName.startsWith('fleet:') || roomName.startsWith('admin:')) {
-      const isOperator = (client.role || '').includes('ADMIN') || (client.role || '').includes('DISPATCH') || (client.role || '').includes('SUPPORT') || client.role === 'FLEET_OWNER' || client.clientType === 'FLEET_ADMIN' || client.clientType === 'OPERATOR';
-      return isOperator ? { authorized: true } : { authorized: false, reason: 'Forbidden: Admin access required for fleet stream' };
-    }
-    if (roomName.startsWith('driver:')) {
-      const targetDriverId = roomName.replace('driver:', '');
-      const driver = db.getDrivers ? db.getDrivers().find(d => d.id === targetDriverId || d.userId === targetDriverId) : null;
-      const isOwner = client.userId === targetDriverId || (driver && (driver.userId === client.userId || driver.id === client.userId));
-      return (isOwner || client.role === 'ADMIN' || client.role === 'FLEET_OWNER') ? { authorized: true } : { authorized: false, reason: 'Forbidden: Unauthorized driver stream access' };
-    }
-    if (roomName.startsWith('customer:')) {
-      const targetCustomerId = roomName.replace('customer:', '');
-      return (client.userId === targetCustomerId || client.role === 'ADMIN' || client.role === 'SUPER_ADMIN') ? { authorized: true } : { authorized: false, reason: 'Forbidden: Unauthorized customer stream access' };
-    }
-    if (roomName.startsWith('tenant:')) {
-      const parts = roomName.split(':');
-      const targetTenantId = parts[1];
-      const clientTenantId = client.tenantId || client.merchantId || (client.role === 'MERCHANT' ? client.userId : null);
-      const isTenantAdmin = client.role === 'ADMIN' || client.role === 'SUPER_ADMIN';
-      return (isTenantAdmin || (clientTenantId && String(clientTenantId) === String(targetTenantId))) ? { authorized: true } : { authorized: false, reason: 'Forbidden: Tenant room access denied' };
-    }
-    if (roomName.startsWith('trip:')) {
-      if (client.role === 'ADMIN' || client.role === 'SUPER_ADMIN' || client.role === 'FLEET_ADMIN') return { authorized: true };
-      const tripId = roomName.replace('trip:', '');
-      const trip = db.getTripById(tripId);
-      const participantId = client.role === 'DRIVER' ? (trip?.driver?.id || trip?.driver?.userId) : trip?.customerId;
-      return (trip && participantId && String(client.userId) === String(participantId)) ? { authorized: true } : { authorized: false, reason: 'Forbidden: Trip subscription authorization failed' };
-    }
-    return { authorized: false, reason: 'Forbidden: Unknown room' };
-  }
-
-  joinRoom(clientId, roomName) {
-    const client = this.clients.get(clientId);
-    if (!client) return { success: false, error: 'Client connection not found' };
-    const authCheck = this.authorizeRoomAccess(client, roomName);
-    if (!authCheck.authorized) {
-      metricsService.increment('websocket_room_join_denied_total');
-      metricsService.increment('websocket_authorization_denied_total');
-      logger.warn('websocket_room_join_denied', `Unauthorized room join attempt by ${clientId} to ${roomName}`, { clientId, roomName, reason: authCheck.reason });
-      console.warn(`[WebSocketService] Unauthorized room join attempt by ${clientId} (${client.userId}) to ${roomName}: ${authCheck.reason}`);
-      return { success: false, error: authCheck.reason };
-    }
-    if (client.rooms.has(roomName)) return { success: true, alreadyJoined: true };
-    client.rooms.add(roomName);
-    if (!this.rooms.has(roomName)) this.rooms.set(roomName, new Set());
-    this.rooms.get(roomName).add(clientId);
-    return { success: true };
-  }
-
-  leaveRoom(clientId, roomName) {
-    const client = this.clients.get(clientId);
-    if (client) client.rooms.delete(roomName);
-    if (this.rooms.has(roomName)) {
-      this.rooms.get(roomName).delete(clientId);
-      if (this.rooms.get(roomName).size === 0) this.rooms.delete(roomName);
-    }
   }
 
   unregisterClient(clientId) {
     const client = this.clients.get(clientId);
-    if (!client) return;
+    if (!client) return false;
     client.rooms.forEach(roomName => {
-      if (this.rooms.has(roomName)) {
-        this.rooms.get(roomName).delete(clientId);
-        if (this.rooms.get(roomName).size === 0) this.rooms.delete(roomName);
+      const room = this.rooms.get(roomName);
+      if (room) {
+        room.delete(clientId);
+        if (room.size === 0) this.rooms.delete(roomName);
       }
     });
-    if (client.userId && this.userSessions.has(client.userId)) {
-      const userSet = this.userSessions.get(client.userId);
-      userSet.delete(clientId);
-      if (userSet.size === 0) this.userSessions.delete(client.userId);
-    }
+    if (this.userSessions.get(client.userId) === clientId) this.userSessions.delete(client.userId);
     this.clients.delete(clientId);
-    metricsService.increment('websocket_disconnects_total');
-    metricsService.setGauge('websocket_connections_active', this.clients.size);
-    logger.info('websocket_client_disconnected', `WebSocket client ${clientId} disconnected`, { clientId });
+    return true;
   }
 
-  async getAuthoritativeActiveTrip(userId, role = 'DRIVER') {
-    if (!userId) return null;
-    const store = db.getDb();
-    const trips = store.trips || [];
-    if (role === 'DRIVER') return trips.find(t => (t.driver?.id === userId || t.driver?.userId === userId) && !['DELIVERED', 'CANCELLED', 'FAILED'].includes(t.status)) || null;
-    return trips.find(t => t.customerId === userId && !['DELIVERED', 'CANCELLED', 'FAILED'].includes(t.status)) || null;
+  joinRoom(clientId, roomName) {
+    const client = this.clients.get(clientId);
+    if (!client) return false;
+    if (!this.authorizeRoom(client, roomName)) return false;
+    if (!this.rooms.has(roomName)) this.rooms.set(roomName, new Set());
+    this.rooms.get(roomName).add(clientId);
+    client.rooms.add(roomName);
+    return true;
   }
 
-  broadcastToRoomLocal(roomName, eventName, payload, metadata = {}) {
-    const subscriberIds = this.rooms.get(roomName);
-    if (!subscriberIds || subscriberIds.size === 0) return 0;
-    const eventId = typeof metadata.eventId === 'string' && metadata.eventId.trim() ? metadata.eventId.trim() : `evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-    const timestamp = Number.isFinite(Number(metadata.timestamp)) ? Number(metadata.timestamp) : Date.now();
-    const messageStr = JSON.stringify({ event: eventName, eventId, room: roomName, timestamp: new Date(timestamp).toISOString(), data: payload });
+  leaveRoom(clientId, roomName) {
+    const client = this.clients.get(clientId);
+    const room = this.rooms.get(roomName);
+    if (room) {
+      room.delete(clientId);
+      if (room.size === 0) this.rooms.delete(roomName);
+    }
+    if (client) client.rooms.delete(roomName);
+    return true;
+  }
+
+  authorizeRoom(client, roomName) {
+    if (!roomName || typeof roomName !== 'string') return false;
+    const [type, identifier] = roomName.split(':');
+    if (!type || !identifier) return false;
+    if (type === 'driver') return client.userId === identifier || ['ADMIN', 'SUPER_ADMIN', 'OPS'].includes(client.userRole);
+    if (type === 'fleet') return ['DRIVER', 'ADMIN', 'SUPER_ADMIN', 'OPS'].includes(client.userRole);
+    if (type === 'trip') {
+      return ['CUSTOMER', 'DRIVER', 'ADMIN', 'SUPER_ADMIN', 'OPS', 'SUPPORT_AGENT'].includes(client.userRole);
+    }
+    return false;
+  }
+
+  broadcastToRoomLocal(roomName, eventName, payload, options = {}) {
+    const room = this.rooms.get(roomName);
+    if (!room || room.size === 0) return 0;
+    const requestedEventId = typeof options.eventId === 'string' && options.eventId.trim()
+      ? options.eventId.trim()
+      : `evt_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+    const timestamp = Number.isFinite(Number(options.timestamp)) ? Number(options.timestamp) : Date.now();
+    const message = {
+      event: eventName,
+      eventId: requestedEventId,
+      timestamp,
+      payload,
+    };
+    const messageStr = JSON.stringify(message);
     let deliveredCount = 0;
-    for (const clientId of subscriberIds) {
+    for (const clientId of Array.from(room)) {
       const client = this.clients.get(clientId);
-      if (!client || !client.socket) continue;
-      const bufferedBytes = client.socket.bufferedAmount || 0;
-      const isSaturated = bufferedBytes > this.MAX_BUFFERED_AMOUNT_BYTES;
-      if (isSaturated) {
-        const isDroppable = this.SLOW_CONSUMER_DROP_TYPES.has(eventName);
-        if (isDroppable) {
-          client.droppedMessagesCount = (client.droppedMessagesCount || 0) + 1;
-          metricsService.increment('websocket_messages_dropped_total');
-          continue;
-        }
-        logger.warn('websocket_slow_consumer_evicted', `Evicting severely lagged client ${clientId} (${bufferedBytes} bytes buffered)`, { clientId, userId: client.userId, bufferedBytes, eventName });
-        metricsService.increment('websocket_slow_consumer_evictions_total');
-        try { if (typeof client.socket.close === 'function') client.socket.close(1008, 'Slow consumer backpressure eviction'); } catch (_) {}
-        this.unregisterClient(clientId);
+      if (!client) {
+        room.delete(clientId);
         continue;
       }
       try {
+        const isSlow = Number(client.socket?.bufferedAmount || 0) > this.MAX_BUFFERED_AMOUNT_BYTES || client.queuedMessages.length >= this.MAX_QUEUE_DEPTH;
+        if (isSlow && this.SLOW_CONSUMER_DROP_TYPES.has(eventName)) {
+          metricsService.increment('websocket_telemetry_dropped_backpressure_total');
+          continue;
+        }
+        if (isSlow) {
+          metricsService.increment('websocket_slow_consumer_evicted_total');
+          try { client.socket.close(1008, 'Slow consumer'); } catch (_) {}
+          this.unregisterClient(clientId);
+          continue;
+        }
         if (typeof client.socket.send === 'function') {
           client.socket.send(messageStr);
           deliveredCount++;
@@ -261,7 +195,6 @@ class WebSocketService {
   }
 
   async broadcastToRoom(roomName, eventName, payload, options = {}) {
-    // Backwards compatibility: older internal callers passed a boolean isLocalOnly flag.
     const isLocalOnly = typeof options === 'boolean' ? options : Boolean(options.isLocalOnly);
     const requestedEventId = typeof options === 'object' && options !== null && typeof options.eventId === 'string' && options.eventId.trim()
       ? options.eventId.trim()
@@ -276,9 +209,6 @@ class WebSocketService {
       try {
         publishResult = await this.pubSub.publish(eventName, roomName, payload, { eventId, timestamp: requestedTimestamp });
       } catch (err) {
-        // Pub/Sub is an acceleration path for cross-node fan-out, not the local
-        // delivery path. A transient broker outage must never prevent connected
-        // clients on this instance from receiving the event.
         metricsService.increment('websocket_pubsub_publish_failures_total');
         logger.warn('websocket_pubsub_publish_failed', `Redis Pub/Sub publish failed for ${eventName}; continuing with local delivery`, {
           roomName,
@@ -304,9 +234,14 @@ class WebSocketService {
       metricsService.increment('websocket_historical_telemetry_suppressed_total');
       return { success: true, driverState, liveBroadcastSuppressed: true };
     }
-    this.broadcastToRoom(`driver:${driverId}`, 'DRIVER_LOCATION_UPDATE', driverState);
+
+    const broadcasts = [
+      this.broadcastToRoom(`driver:${driverId}`, 'DRIVER_LOCATION_UPDATE', driverState),
+      this.broadcastToRoom(`fleet:${(telemetryData.city || 'hyderabad').toLowerCase()}`, 'FLEET_DRIVER_PING', driverState),
+      this.broadcastToRoom('fleet:all', 'FLEET_DRIVER_PING', driverState),
+    ];
     if (driverState.currentTripId) {
-      this.broadcastToRoom(`trip:${driverState.currentTripId}`, 'LIVE_TRIP_LOCATION', {
+      broadcasts.push(this.broadcastToRoom(`trip:${driverState.currentTripId}`, 'LIVE_TRIP_LOCATION', {
         tripId: driverState.currentTripId,
         driverId,
         lat: driverState.lat,
@@ -317,11 +252,10 @@ class WebSocketService {
         livenessState: driverState.livenessState,
         packetAgeMs,
         updatedAt: driverState.updatedAt
-      });
+      }));
     }
-    const city = (telemetryData.city || 'hyderabad').toLowerCase();
-    this.broadcastToRoom(`fleet:${city}`, 'FLEET_DRIVER_PING', driverState);
-    this.broadcastToRoom('fleet:all', 'FLEET_DRIVER_PING', driverState);
+    await Promise.all(broadcasts);
+
     return { success: true, driverState, liveBroadcastSuppressed: false };
   }
 }
