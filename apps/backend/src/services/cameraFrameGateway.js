@@ -6,6 +6,10 @@ const { parseDataImage, isSequenceForward } = require('./cameraFrameIntegrity');
 /**
  * Single frame acceptance boundary for REST today and WebRTC signalling/media
  * gateways later. Route handlers should not duplicate these checks.
+ *
+ * Important invariant: accept() validates and decodes only. The session cursor
+ * is committed after the caller durably stores the frame, so a Redis failure
+ * cannot advance the authoritative camera sequence without a frame.
  */
 class CameraFrameGateway {
   constructor({ now = () => Date.now(), acquireRateSlot = async () => true } = {}) {
@@ -30,16 +34,20 @@ class CameraFrameGateway {
     const parsed = parseDataImage(imageData);
     if (!parsed.ok) return { allowed: false, code: parsed.code, message: 'Camera frame binary content is invalid.' };
 
-    if (!recordAcceptedFrame(session, { capturedAtMs, sequence: nextSequence })) {
-      return { allowed: false, code: 'CAMERA_FRAME_STATE_CONFLICT', message: 'Camera frame state changed before acceptance.' };
-    }
-
     return {
       allowed: true,
       sequence: nextSequence,
       capturedAt: new Date(capturedAtMs).toISOString(),
+      capturedAtMs,
       ...parsed,
     };
+  }
+
+  commitAcceptedFrame(session, { sequence, capturedAtMs }) {
+    if (!recordAcceptedFrame(session, { capturedAtMs, sequence })) {
+      return { allowed: false, code: 'CAMERA_FRAME_STATE_CONFLICT', message: 'Camera frame state changed before acceptance.' };
+    }
+    return { allowed: true };
   }
 }
 
