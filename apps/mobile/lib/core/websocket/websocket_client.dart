@@ -43,7 +43,9 @@ class WebSocketChannelAdapter implements IWebSocketChannel {
 /// Server events carry a stable `eventId`. The bounded deduplication cache is
 /// deliberately transport-local: it protects the UI/state layer from duplicate
 /// delivery after reconnects or multi-node fan-out without pretending that the
-/// WebSocket is a durable event store.
+/// WebSocket is a durable event store. Dedupe is scoped to the room as well as
+/// the event ID because one logical outbox event may legitimately be delivered
+/// to several rooms subscribed by the same client.
 class WebSocketClient {
   final String serverUrl;
   final Future<String> Function() _tokenProvider;
@@ -222,21 +224,25 @@ class WebSocketClient {
 
     final eventId = decoded['eventId'];
     if (eventId is String && eventId.isNotEmpty && eventId != 'pong') {
-      if (_isDuplicateEvent(eventId)) return;
+      final room = decoded['room'];
+      final dedupeKey = room is String && room.isNotEmpty
+          ? '$room\u0000$eventId'
+          : eventId;
+      if (_isDuplicateEvent(dedupeKey)) return;
     }
 
     _messages.add(decoded);
   }
 
-  bool _isDuplicateEvent(String eventId) {
+  bool _isDuplicateEvent(String dedupeKey) {
     final now = DateTime.now().toUtc();
     _pruneSeenEvents(now);
-    final previous = _seenEventIds[eventId];
+    final previous = _seenEventIds[dedupeKey];
     if (previous != null && now.difference(previous) <= _seenEventTtl) {
       return true;
     }
 
-    _seenEventIds[eventId] = now;
+    _seenEventIds[dedupeKey] = now;
     while (_seenEventIds.length > _maxSeenEventIds) {
       _seenEventIds.remove(_seenEventIds.keys.first);
     }
