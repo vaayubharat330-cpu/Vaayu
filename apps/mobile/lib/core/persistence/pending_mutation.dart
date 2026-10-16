@@ -54,6 +54,26 @@ class PendingMutation {
     );
   }
 
+  /// Creates an explicit operator/user recovery attempt.
+  ///
+  /// The original idempotency key and intent identity are retained so a recovered
+  /// mutation cannot accidentally become a second business operation.
+  PendingMutation copyForManualRetry() {
+    return PendingMutation(
+      intentId: intentId,
+      idempotencyKey: idempotencyKey,
+      operation: operation,
+      tripId: tripId,
+      payload: payload,
+      createdAt: createdAt,
+      retryCount: 0,
+      nextAttemptAt: null,
+      lastErrorCode: null,
+      lastFailureAt: null,
+      retryExhausted: false,
+    );
+  }
+
   bool isReadyForReplay({DateTime? now}) {
     if (retryExhausted) return false;
     if (nextAttemptAt == null) return true;
