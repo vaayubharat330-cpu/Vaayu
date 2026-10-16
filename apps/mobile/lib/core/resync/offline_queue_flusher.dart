@@ -11,6 +11,7 @@ class MutationReplayResult {
   final String? errorMessage;
   final bool permanentRejection;
   final bool transientFailure;
+  final bool retryExhausted;
 
   const MutationReplayResult({
     required this.mutation,
@@ -20,6 +21,7 @@ class MutationReplayResult {
     this.errorMessage,
     this.permanentRejection = false,
     this.transientFailure = false,
+    this.retryExhausted = false,
   });
 
   factory MutationReplayResult.fromResponse({
@@ -62,6 +64,7 @@ class MutationReplayResult {
 /// 5. Terminal authoritative state blocks stale downstream actions.
 /// 6. Permanent validation/security failures are removed so they cannot poison
 ///    the queue forever.
+/// 7. Retry exhaustion is parked durably and never retried indefinitely.
 class OfflineQueueFlusher {
   static const int maxRetryCount = 12;
   static const Duration maxRetryDelay = Duration(minutes: 5);
@@ -103,6 +106,18 @@ class OfflineQueueFlusher {
       final now = _now().toUtc();
 
       for (final mutation in queue) {
+        if (mutation.retryExhausted) {
+          results.add(MutationReplayResult(
+            mutation: mutation,
+            success: false,
+            transientFailure: true,
+            retryExhausted: true,
+            errorCode: 'RETRY_EXHAUSTED',
+            errorMessage: 'Mutation is parked for explicit recovery after repeated transient failures.',
+          ));
+          break;
+        }
+
         if (!mutation.isReadyForReplay(now: now)) {
           // FIFO: later mutations must not leapfrog an earlier retry window.
           break;
@@ -149,11 +164,13 @@ class OfflineQueueFlusher {
         }
 
         final nextRetryCount = mutation.retryCount + 1;
-        final retryAt = now.add(nextRetryCount >= maxRetryCount ? maxRetryDelay : _retryDelay(nextRetryCount));
+        final exhausted = nextRetryCount >= maxRetryCount;
+        final retryAt = now.add(exhausted ? maxRetryDelay : _retryDelay(nextRetryCount));
         final scheduled = mutation.copyWithRetry(
           nextAttemptAt: retryAt,
-          lastErrorCode: result.errorCode ?? (nextRetryCount >= maxRetryCount ? 'RETRY_EXHAUSTED' : 'TRANSIENT_FAILURE'),
+          lastErrorCode: exhausted ? 'RETRY_EXHAUSTED' : (result.errorCode ?? 'TRANSIENT_FAILURE'),
           lastFailureAt: now,
+          retryExhausted: exhausted,
         );
         await _persistenceService.enqueueMutation(scheduled);
         break;
