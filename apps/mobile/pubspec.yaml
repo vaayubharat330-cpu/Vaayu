@@ -27,6 +27,10 @@ dependencies:
   camera: ^0.11.0+2
   image: ^4.2.0
 
+  # On-device OCR for document/vehicle field extraction. Version 0.15.x
+  # keeps compatibility with the project's existing Dart SDK constraint.
+  google_mlkit_text_recognition: ^0.15.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
