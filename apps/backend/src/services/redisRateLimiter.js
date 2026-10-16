@@ -10,22 +10,21 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/**
- * VAAYU Milestone 6 Phase 6.5: Distributed Shared Redis Rate Limiter
- * 
- * Features:
- * 1. Redis-backed shared sliding/fixed window rate limit counter.
- * 2. Multi-instance cluster synchronization (`rate:limiter:<route>:<identifier>`).
- * 3. Enforces Route-specific rate limits (auth endpoints, booking creation, state transitions).
- * 4. Injects X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset headers.
- * 5. Returns 429 Too Many Requests (code: RATE_LIMIT_EXCEEDED) when quota exceeded.
- */
+// Atomic fixed-window counter. Keeping INCR and the first EXPIRE in one Redis script
+// prevents a partial failure from leaving a counter without a TTL forever.
+const RATE_LIMIT_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+local ttl = redis.call('TTL', KEYS[1])
+return { count, ttl }
+`;
+
 class RedisRateLimiter {
   constructor(redisClient = null) {
     this.redis = redisClient || new RedisClient();
     this.KEY_PREFIX = 'rate:limiter:';
-    
-    // Route Rate Limit Profiles
     this.ROUTE_CONFIGS = {
       'auth:otp:send': { maxRequests: 5, windowSec: 60 },
       'auth:otp:verify': { maxRequests: 10, windowSec: 60 },
@@ -33,13 +32,10 @@ class RedisRateLimiter {
       'trips:create': { maxRequests: 10, windowSec: 60 },
       'orders:transition': { maxRequests: 20, windowSec: 60 },
       'geocoding:search': { maxRequests: 30, windowSec: 60 },
-      // Public map and fare endpoints. They call paid or best-effort map providers, so each client gets a bounded rate.
       'public:map': { maxRequests: 30, windowSec: 60 },
       'default': { maxRequests: 60, windowSec: 60 }
     };
-    // Isolated workflow suites may exercise many protected endpoints in one
-    // minute. Keep this override unavailable unless test endpoints are enabled
-    // in a non-production process; normal demo/production limits stay intact.
+
     if (process.env.VAAYU_OTP_CONSOLE === 'true' || (process.env.NODE_ENV !== 'production' && process.env.ENABLE_TEST_ENDPOINTS === 'true')) {
       const qaDefaultLimit = Number(process.env.VAAYU_QA_RATE_LIMIT_DEFAULT);
       if (Number.isInteger(qaDefaultLimit) && qaDefaultLimit >= 60 && qaDefaultLimit <= 1000) {
@@ -50,15 +46,8 @@ class RedisRateLimiter {
     }
   }
 
-  /**
-   * Extracts client identifier (IP address or authenticated User ID)
-   */
   getIdentifier(req) {
-    if (req.user && req.user.id) {
-      return `usr_${req.user.id}`;
-    }
-    // X-Forwarded-For is client-controlled. Honor it only behind a trusted proxy (TRUST_PROXY=true),
-    // otherwise a client could rotate the header to escape its rate limit.
+    if (req.user && req.user.id) return `usr_${req.user.id}`;
     const forwarded = req.headers ? (req.headers['x-forwarded-for'] || req.headers['X-Forwarded-For']) : null;
     if (forwarded && process.env.TRUST_PROXY === 'true') {
       return `ip_${String(forwarded).split(',')[0].trim()}`;
@@ -66,34 +55,41 @@ class RedisRateLimiter {
     return `ip_${req.socket ? req.socket.remoteAddress : '127.0.0.1'}`;
   }
 
-  /**
-   * Checks rate limit for given HTTP request and route
-   */
-  async checkRateLimit(req, res, routeName = 'default', customMax = null, customWindow = null) {
-    const config = this.ROUTE_CONFIGS[routeName] || this.ROUTE_CONFIGS['default'];
-    const maxRequests = customMax || config.maxRequests;
-    const windowSec = customWindow || config.windowSec;
+  async _incrementWindow(key, windowSec) {
+    try {
+      const result = await withTimeout(this.redis.eval(RATE_LIMIT_SCRIPT, 1, key, windowSec), 1500);
+      const count = Number(Array.isArray(result) ? result[0] : NaN);
+      const ttl = Number(Array.isArray(result) ? result[1] : NaN);
+      if (!Number.isSafeInteger(count) || count < 1 || !Number.isFinite(ttl) || ttl < 0) {
+        throw new Error('Redis returned an invalid rate-limit result.');
+      }
+      return { count, resetSec: ttl };
+    } catch (err) {
+      // The in-memory development engine intentionally does not implement EVAL.
+      if (err && err.message === 'EVAL_UNSUPPORTED_BY_MEMORY_ENGINE') {
+        const count = await withTimeout(this.redis.incr(key), 1500);
+        if (count === 1) await withTimeout(this.redis.expire(key, windowSec), 1500);
+        return { count, resetSec: windowSec };
+      }
+      throw err;
+    }
+  }
 
+  async checkRateLimit(req, res, routeName = 'default', customMax = null, customWindow = null) {
+    const config = this.ROUTE_CONFIGS[routeName] || this.ROUTE_CONFIGS.default;
+    const maxRequests = customMax ?? config.maxRequests;
+    const windowSec = customWindow ?? config.windowSec;
     const identifier = this.getIdentifier(req);
     const key = `${this.KEY_PREFIX}${routeName}:${identifier}`;
 
     try {
-      const currentCount = await withTimeout(this.redis.incr(key), 1500);
-
-      if (currentCount === 1) {
-        await withTimeout(this.redis.expire(key, windowSec), 1500);
-      }
-
+      const { count: currentCount, resetSec } = await this._incrementWindow(key, windowSec);
       const remaining = Math.max(0, maxRequests - currentCount);
-      const resetSec = windowSec;
-
-      // Inject X-RateLimit headers if response object is provided
       if (res && typeof res.setHeader === 'function') {
         res.setHeader('X-RateLimit-Limit', maxRequests);
         res.setHeader('X-RateLimit-Remaining', remaining);
         res.setHeader('X-RateLimit-Reset', resetSec);
       }
-
       if (currentCount > maxRequests) {
         metricsService.increment('rate_limit_rejected_total');
         logger.warn('rate_limit_exceeded', `Rate limit exceeded for route ${routeName}`, { routeName, identifier });
@@ -107,31 +103,18 @@ class RedisRateLimiter {
           resetSec
         };
       }
-
-      return {
-        allowed: true,
-        limit: maxRequests,
-        current: currentCount,
-        remaining,
-        resetSec
-      };
+      return { allowed: true, limit: maxRequests, current: currentCount, remaining, resetSec };
     } catch (err) {
-      console.warn(`[RedisRateLimiter] Error evaluating rate limit: ${err.message}`);
-      // Fail-open property: Allow request if rate limiter storage encounters error
+      logger.warn('rate_limit_unavailable', `Rate limiter unavailable: ${err.message}`, { routeName });
       return { allowed: true, error: err.message };
     }
   }
 
   async disconnect() {
-    if (this.redis && typeof this.redis.disconnect === 'function') {
-      await this.redis.disconnect();
-    }
+    if (this.redis && typeof this.redis.disconnect === 'function') await this.redis.disconnect();
   }
 }
 
 const redisRateLimiter = new RedisRateLimiter();
 
-module.exports = {
-  RedisRateLimiter,
-  redisRateLimiter
-};
+module.exports = { RedisRateLimiter, redisRateLimiter, RATE_LIMIT_SCRIPT };
