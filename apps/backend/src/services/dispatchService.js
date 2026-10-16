@@ -9,28 +9,18 @@ const { metricsService } = require('./metricsService');
 const { logger } = require('./logger');
 
 /**
- * VAAYU Milestone 4 & Milestone 6 Phase 6.3: Deterministic Dispatch Engine & Distributed Lock Manager
- * 
- * Objectives:
- * 1. Filter eligible drivers based on liveness (ONLINE/DEGRADED), availability (not busy on active trip), vehicle fit, and Redis driver locks.
- * 2. Evaluate candidates using a transparent, explainable deterministic scoring function (Distance + ETA + Capacity + Rating - Workload Penalty).
- * 3. Atomic 30-second driver offer reservation lock backed by Redis SET NX PX.
- * 4. Automatic fallback re-dispatch to next-best candidate on driver decline or offer timeout.
- * 5. Cluster-wide decline tracking via Redis Sets.
+ * VAAYU deterministic dispatch engine.
+ *
+ * Important concurrency invariant: an offer callback is valid only while the
+ * same driver + reservation still owns the persisted DRIVER_ASSIGNED trip.
+ * This prevents delayed accept/decline/timeout messages from an old offer from
+ * cancelling or replacing a newer offer after a rapid re-dispatch.
  */
-
 class DispatchService {
   constructor() {
-    // Offer Reservations: orderId -> { driverId, offerExpiresAt, timerId }
     this.activeOffers = new Map();
-
-    // Order Declined Driver Sets: orderId -> Set<driverId>
     this.declinedDrivers = new Map();
-
-    // Configurable Offer Duration (30 seconds)
     this.OFFER_TIMEOUT_MS = 30000;
-
-    // Dispatch Scoring Weights
     this.WEIGHTS = {
       DISTANCE: 1.5,
       ETA: 1.0,
@@ -63,26 +53,44 @@ class DispatchService {
         customerPhone: trip.customerPhone,
         isCod: Boolean(trip.isCod || trip.paymentInfo?.method === 'CASH_ON_DELIVERY'),
         codAmount: trip.isCod ? Number(trip.totalFare || 0) : 0,
-        offerExpiresAt: offer.offerExpiresAt
+        offerExpiresAt: offer.offerExpiresAt,
+        reservationId: offer.reservationId
       });
     }
     return offers;
   }
 
+  _offerStillOwned(orderId, driverId, offer) {
+    if (!offer || String(offer.driverId) !== String(driverId)) return false;
+    const trip = db.getTripById(orderId);
+    if (!trip || trip.status !== DELIVERY_STATES.DRIVER_ASSIGNED) return false;
+    const assignedDriverId = trip.driver?.id || trip.driver?.userId;
+    if (String(assignedDriverId) !== String(driverId)) return false;
+    if (offer.offerExpiresAt && Number(offer.offerExpiresAt) <= Date.now()) return false;
+    return true;
+  }
+
   async handleDriverAccept(orderId, driverId) {
     const trip = db.getTripById(orderId);
     const assignedDriverId = trip?.driver?.id || trip?.driver?.userId;
-    if (!trip || String(assignedDriverId) !== String(driverId)) {
-      return { success: false, error: 'This offer is not assigned to the driver.' };
-    }
     const offer = this.activeOffers.get(orderId);
-    if (offer && String(offer.driverId) !== String(driverId)) {
-      return { success: false, error: 'The active offer belongs to a different driver.' };
+    if (!trip || String(assignedDriverId) !== String(driverId)) {
+      return { success: false, error: 'This offer is not assigned to the driver.', code: 'DISPATCH_OFFER_STALE' };
     }
-    const reservationId = offer?.reservationId || orderId;
-    if (offer) await this.clearExistingOffer(orderId);
-    else await redisLockManager.releaseDriverLock(driverId, reservationId);
-    return { success: true };
+    if (!this._offerStillOwned(orderId, driverId, offer)) {
+      return { success: false, error: 'This dispatch offer is no longer active.', code: 'DISPATCH_OFFER_STALE' };
+    }
+
+    const reservationId = offer.reservationId || orderId;
+    const currentLock = await redisLockManager.getDriverLock(driverId);
+    if (!currentLock || currentLock.orderId !== orderId || (offer.reservationId && currentLock.reservationId !== offer.reservationId)) {
+      return { success: false, error: 'The dispatch reservation is no longer owned by this offer.', code: 'DISPATCH_RESERVATION_STALE' };
+    }
+
+    if (offer.timerId) clearTimeout(offer.timerId);
+    this.activeOffers.delete(orderId);
+    await redisLockManager.releaseDriverLock(driverId, reservationId);
+    return { success: true, orderId, driverId, reservationId };
   }
 
   scoreCandidate(driver, order, pickupLat, pickupLng) {
@@ -229,15 +237,11 @@ class DispatchService {
       return transitionResult;
     }
 
-    // The delivery state transition above persists the assigned-driver projection atomically
-    // with DRIVER_ASSIGNED. Do not mutate trip.driver again after the authoritative event.
     await this.clearExistingOffer(orderId);
 
     const timerId = setTimeout(async () => {
-      console.log(`[DispatchService] Offer timeout (30s) expired for order ${orderId}, driver ${topCandidate.driverId}`);
-      metricsService.increment('dispatch_offer_timeout_total');
-      await this.handleOfferTimeout(orderId, topCandidate.driverId);
-    }, this.OFFER_TIMEOUT_MS);
+      await this.handleOfferTimeout(orderId, topCandidate.driverId, lockInfo.reservationId);
+    }, Math.max(0, offerExpiresAt - Date.now()));
 
     this.activeOffers.set(orderId, {
       driverId: topCandidate.driverId,
@@ -267,13 +271,17 @@ class DispatchService {
   }
 
   async handleDriverDecline(orderId, driverId, reason = 'Driver declined offer') {
+    const offer = this.activeOffers.get(orderId);
+    if (!this._offerStillOwned(orderId, driverId, offer)) {
+      metricsService.increment('dispatch_stale_offer_action_total');
+      return { success: false, error: 'The dispatch offer is no longer active for this driver.', code: 'DISPATCH_OFFER_STALE' };
+    }
+
     metricsService.increment('dispatch_offer_declined_total');
     logger.info('dispatch_offer_declined', `Driver ${driverId} declined offer for order ${orderId}`, { orderId, driverId, service: 'dispatch' });
 
-    const offer = this.activeOffers.get(orderId);
-    const reservationId = offer ? offer.reservationId : null;
+    const reservationId = offer.reservationId;
     await this.clearExistingOffer(orderId);
-    await redisLockManager.releaseDriverLock(driverId, reservationId || orderId);
     await redisLockManager.addDeclinedDriver(orderId, driverId);
     if (!this.declinedDrivers.has(orderId)) this.declinedDrivers.set(orderId, new Set());
     this.declinedDrivers.get(orderId).add(driverId);
@@ -285,25 +293,33 @@ class DispatchService {
     return await this.findAndOfferDriver(orderId);
   }
 
-  async handleOfferTimeout(orderId, driverId) {
+  async handleOfferTimeout(orderId, driverId, expectedReservationId = null) {
     const offer = this.activeOffers.get(orderId);
-    const reservationId = offer ? offer.reservationId : null;
-    await this.clearExistingOffer(orderId);
-    await redisLockManager.releaseDriverLock(driverId, reservationId || orderId);
+    if (!offer || String(offer.driverId) !== String(driverId) || (expectedReservationId && offer.reservationId !== expectedReservationId)) {
+      metricsService.increment('dispatch_stale_offer_timeout_total');
+      return { success: false, code: 'DISPATCH_OFFER_STALE' };
+    }
+    if (!this._offerStillOwned(orderId, driverId, offer)) {
+      metricsService.increment('dispatch_stale_offer_timeout_total');
+      return { success: false, code: 'DISPATCH_OFFER_STALE' };
+    }
 
+    const reservationId = offer.reservationId;
+    await this.clearExistingOffer(orderId);
     await redisLockManager.addDeclinedDriver(orderId, driverId);
     if (!this.declinedDrivers.has(orderId)) this.declinedDrivers.set(orderId, new Set());
     this.declinedDrivers.get(orderId).add(driverId);
 
     const trip = db.getTripById(orderId);
-    if (!trip || trip.status !== DELIVERY_STATES.DRIVER_ASSIGNED) return;
+    if (!trip || trip.status !== DELIVERY_STATES.DRIVER_ASSIGNED) return { success: false, code: 'DISPATCH_TRIP_NOT_ASSIGNED' };
 
     const transitionRes = await deliveryStateMachine.transition(orderId, DELIVERY_STATES.SEARCHING_DRIVER, { type: 'SYSTEM', id: 'DISPATCH_TIMEOUT' }, {
-      reason: `Offer timed out after ${this.OFFER_TIMEOUT_MS/1000}s for driver ${driverId}`
+      reason: `Offer timed out after ${this.OFFER_TIMEOUT_MS/1000}s for driver ${driverId}`,
+      metadata: { reservationId }
     });
     if (!transitionRes.success) return transitionRes;
 
-    await this.findAndOfferDriver(orderId);
+    return await this.findAndOfferDriver(orderId);
   }
 
   async clearExistingOffer(orderId) {
@@ -328,7 +344,7 @@ class DispatchService {
     const offer = this.activeOffers.get(orderId);
     if (!offer) return { active: false };
     const remainingMs = Math.max(0, offer.offerExpiresAt - Date.now());
-    return { active: true, driverId: offer.driverId, remainingMs, remainingSec: Math.ceil(remainingMs / 1000) };
+    return { active: true, driverId: offer.driverId, remainingMs, remainingSec: Math.ceil(remainingMs / 1000), reservationId: offer.reservationId };
   }
 }
 
