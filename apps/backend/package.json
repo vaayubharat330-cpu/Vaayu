@@ -59,6 +59,7 @@
     "test:document-extraction": "node --test test/unit/documentExtractionRoute.test.js",
     "test:document-verification": "node --test test/unit/documentVerificationService.test.js",
     "test:document-decision": "node --test test/unit/documentVerificationDecisionEngine.test.js",
+    "test:document-capture": "node --test test/unit/documentCapturePolicy.test.js",
     "test:kyc-orchestration": "node --test test/unit/kycVerificationOrchestrator.test.js",
     "test:kyc-expiry": "node --test test/unit/kycExpiryService.test.js",
     "test:kyc-review": "node --test test/unit/kycReviewService.test.js",
