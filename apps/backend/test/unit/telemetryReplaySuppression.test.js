@@ -16,8 +16,16 @@ function createMockSocket() {
   };
 }
 
+// This suite validates WebSocket telemetry policy only. Use an inert Pub/Sub
+// adapter so importing/constructing the service cannot open a real Redis
+// subscriber and keep the standalone unit-test process alive.
+const testPubSub = {
+  PRIMARY_CHANNEL: 'vaayu:test:ws:events',
+  async subscribe() { return true; }
+};
+
 test('historical telemetry replay is persisted but not broadcast as live location', async () => {
-  const ws = new WebSocketService(null, { telemetryLiveMaxPacketAgeMs: 15000 });
+  const ws = new WebSocketService(testPubSub, { telemetryLiveMaxPacketAgeMs: 15000 });
   const socket = createMockSocket();
   const clientId = ws.registerClient(socket, 'DRIVER', 'drv_replay_01', 'DRIVER');
   ws.joinRoom(clientId, 'driver:drv_replay_01');
@@ -48,7 +56,7 @@ test('historical telemetry replay is persisted but not broadcast as live locatio
 });
 
 test('fresh telemetry remains eligible for live broadcast', async () => {
-  const ws = new WebSocketService(null, { telemetryLiveMaxPacketAgeMs: 15000 });
+  const ws = new WebSocketService(testPubSub, { telemetryLiveMaxPacketAgeMs: 15000 });
   const socket = createMockSocket();
   const clientId = ws.registerClient(socket, 'DRIVER', 'drv_live_01', 'DRIVER');
   ws.joinRoom(clientId, 'driver:drv_live_01');
