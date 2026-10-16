@@ -3,10 +3,9 @@
 /**
  * Reaps expired live-camera sessions and their ephemeral Redis frames.
  *
- * Camera frames are deliberately short-lived. Relying only on request-time
- * expiry checks leaves stale session records and Redis blobs behind when a
- * driver simply closes the app, so production needs a bounded background
- * cleanup path as well.
+ * Camera frames are deliberately short-lived. Request-time expiry checks are
+ * still authoritative, but a background reaper prevents abandoned sessions
+ * and Redis blobs from accumulating when a client disappears silently.
  */
 class CameraSessionJanitor {
   constructor({ db, redisClient, now = () => Date.now(), keyPrefix = 'vaayu:camera:frame:' } = {}) {
@@ -43,7 +42,7 @@ class CameraSessionJanitor {
           try {
             await this.redisClient.del(`${this.keyPrefix}${session.id}`);
           } catch (_) {
-            // Redis cleanup is best-effort; expiry remains authoritative in DB.
+            // Redis cleanup is best-effort; DB expiry remains authoritative.
           }
         }
       }
