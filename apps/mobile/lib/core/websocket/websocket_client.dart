@@ -4,7 +4,6 @@ import 'dart:math';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-/// WebSocket connection lifecycle exposed to the application.
 enum WebSocketStatus {
   disconnected,
   connecting,
@@ -12,8 +11,6 @@ enum WebSocketStatus {
   reconnecting,
 }
 
-/// Small injectable transport boundary used by unit tests and the production
-/// WebSocketChannel adapter. Domain code never depends on a concrete socket.
 abstract class IWebSocketChannel {
   void send(String message);
   Stream<dynamic> get stream;
@@ -39,15 +36,9 @@ class WebSocketChannelAdapter implements IWebSocketChannel {
 
 /// Single authoritative mobile WebSocket transport.
 ///
-/// Responsibilities deliberately stop at transport concerns:
-/// - authenticated connection
-/// - JSON serialization/deserialization
-/// - bounded exponential reconnect with jitter
-/// - durable room intent + automatic re-subscription
-/// - application heartbeat frames
-/// - connection lifecycle events
-///
-/// Server-authoritative trip/business logic remains outside this class.
+/// Provides authenticated connection lifecycle, bounded exponential reconnect
+/// with jitter, durable room intent, application heartbeat and heartbeat
+/// watchdog, while leaving all business state authoritative on the server.
 class WebSocketClient {
   final String serverUrl;
   final Future<String> Function() _tokenProvider;
@@ -69,10 +60,13 @@ class WebSocketClient {
   int _reconnectAttempts = 0;
   int _connectionGeneration = 0;
   bool _manualDisconnect = false;
+  DateTime? _lastPongAt;
+  bool _heartbeatOutstanding = false;
 
   static const int _baseReconnectDelayMs = 1000;
   static const int _maxReconnectDelayMs = 30000;
   static const Duration _heartbeatInterval = Duration(seconds: 25);
+  static const Duration _heartbeatTimeout = Duration(seconds: 15);
 
   WebSocketClient({
     required this.serverUrl,
@@ -85,9 +79,7 @@ class WebSocketClient {
 
   static Future<String> Function() _normalizeTokenProvider(dynamic provider) {
     if (provider is Future<String> Function()) return provider;
-    if (provider != null) {
-      return () async => await provider.getValidToken();
-    }
+    if (provider != null) return () async => await provider.getValidToken();
     return () async => '';
   }
 
@@ -98,7 +90,6 @@ class WebSocketClient {
   WebSocketStatus get status => _status;
   bool get isConnected => _status == WebSocketStatus.connected;
   Set<String> get subscribedRooms => Set.unmodifiable(_rooms);
-
   Stream<Map<String, dynamic>> get messageStream => _messages.stream;
   Stream<WebSocketStatus> get statusStream => _statusController.stream;
 
@@ -110,20 +101,16 @@ class WebSocketClient {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _updateStatus(
-      _reconnectAttempts == 0
-          ? WebSocketStatus.connecting
-          : WebSocketStatus.reconnecting,
+      _reconnectAttempts == 0 ? WebSocketStatus.connecting : WebSocketStatus.reconnecting,
     );
 
     final generation = ++_connectionGeneration;
-
     try {
       final token = await _tokenProvider();
       final uri = Uri.parse(serverUrl);
       final query = Map<String, String>.from(uri.queryParameters);
       if (token.isNotEmpty) query['token'] = token;
       final authenticatedUri = uri.replace(queryParameters: query);
-
       final channel = _channelFactory(authenticatedUri.toString());
       _socket = channel;
 
@@ -142,6 +129,8 @@ class WebSocketClient {
       );
 
       _reconnectAttempts = 0;
+      _lastPongAt = DateTime.now().toUtc();
+      _heartbeatOutstanding = false;
       _updateStatus(WebSocketStatus.connected);
       _startHeartbeat();
       _resubscribeRooms();
@@ -152,9 +141,6 @@ class WebSocketClient {
     }
   }
 
-  /// Sends a JSON object only while the active connection is established.
-  /// Returns false when there is no live socket; callers must decide whether
-  /// the operation is retryable or should be persisted by their own layer.
   bool send(Map<String, dynamic> message) {
     if (!isConnected || _socket == null) return false;
     try {
@@ -170,16 +156,12 @@ class WebSocketClient {
     final room = roomName.trim();
     if (room.isEmpty) return;
     final added = _rooms.add(room);
-    if (added && isConnected) {
-      send({'action': 'join', 'room': room});
-    }
+    if (added && isConnected) send({'action': 'join', 'room': room});
   }
 
   void leaveRoom(String roomName) {
     final removed = _rooms.remove(roomName);
-    if (removed && isConnected) {
-      send({'action': 'leave', 'room': roomName});
-    }
+    if (removed && isConnected) send({'action': 'leave', 'room': roomName});
   }
 
   Future<void> disconnect({bool clearSubscriptions = true}) async {
@@ -189,18 +171,17 @@ class WebSocketClient {
     _reconnectTimer = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _heartbeatOutstanding = false;
+    _lastPongAt = null;
 
     await _socketSubscription?.cancel();
     _socketSubscription = null;
-
     final socket = _socket;
     _socket = null;
     if (socket != null) {
       try {
         await socket.close(1000, 'Normal Client Closure');
-      } catch (_) {
-        // Closing an already-dead socket is intentionally idempotent.
-      }
+      } catch (_) {}
     }
 
     if (clearSubscriptions) _rooms.clear();
@@ -224,7 +205,12 @@ class WebSocketClient {
       return;
     }
 
-    if (decoded != null) _messages.add(decoded);
+    if (decoded == null) return;
+    if (decoded['event'] == 'pong') {
+      _lastPongAt = DateTime.now().toUtc();
+      _heartbeatOutstanding = false;
+    }
+    _messages.add(decoded);
   }
 
   void _resubscribeRooms() {
@@ -237,11 +223,10 @@ class WebSocketClient {
     if (_manualDisconnect) return;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
-
+    _heartbeatOutstanding = false;
     _socketSubscription?.cancel();
     _socketSubscription = null;
     _socket = null;
-
     if (_status != WebSocketStatus.disconnected) {
       _updateStatus(WebSocketStatus.reconnecting);
       _scheduleReconnect();
@@ -250,18 +235,15 @@ class WebSocketClient {
 
   void _scheduleReconnect() {
     if (_manualDisconnect || _reconnectTimer != null) return;
-
     final exponential = min(
       _maxReconnectDelayMs,
       _baseReconnectDelayMs * pow(2, _reconnectAttempts).toInt(),
     );
-    // Full jitter keeps a fleet of clients from reconnecting simultaneously.
     final jitter = max(0, (exponential * 0.25).round());
     final minDelay = max(0, exponential - jitter);
     final maxDelay = exponential + jitter;
     final delayMs = minDelay + _random.nextInt(max(1, maxDelay - minDelay + 1));
     _reconnectAttempts++;
-
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
       _reconnectTimer = null;
       connect();
@@ -271,12 +253,27 @@ class WebSocketClient {
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
-      if (isConnected) {
-        // Application-level heartbeat. The server may acknowledge this as
-        // `pong`; inbound frames are surfaced to the event router unchanged.
-        send({'action': 'ping'});
+      if (!isConnected) return;
+      final now = DateTime.now().toUtc();
+      if (_heartbeatOutstanding &&
+          _lastPongAt != null &&
+          now.difference(_lastPongAt!) > _heartbeatTimeout) {
+        // The TCP/WebSocket object can remain open while the path is dead.
+        // Force the normal reconnect path instead of waiting for TCP timeout.
+        _forceTransportFailure();
+        return;
       }
+      if (send({'action': 'ping'})) _heartbeatOutstanding = true;
     });
+  }
+
+  void _forceTransportFailure() {
+    final socket = _socket;
+    _socket = null;
+    try {
+      socket?.close(1001, 'Heartbeat timeout');
+    } catch (_) {}
+    _handleDisconnect();
   }
 
   void _updateStatus(WebSocketStatus next) {
@@ -292,6 +289,4 @@ class WebSocketClient {
   }
 }
 
-/// Backward-compatible name for code that referred to the previous
-/// experimental implementation. There is now only one transport.
 typedef ResilientWebSocketClient = WebSocketClient;
