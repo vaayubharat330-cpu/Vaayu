@@ -52,6 +52,12 @@ jobs:
           node --check src/server_production.js
           node --check src/server_bootstrap.js
           for f in src/services/*.js src/db/*.js src/map-engine/*.js; do node --check "$f"; done
+      - name: Apply PostgreSQL schema migrations
+        env:
+          NODE_ENV: test
+          PERSISTENCE_PROVIDER: postgres
+          DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
+        run: npm run migrate:ledger
       - name: Unit tests (auth and OTP security)
         run: npm test
       - name: Concurrency, realtime, payment, media and KYC regression suites
@@ -75,6 +81,8 @@ jobs:
           npm run test:order-exception-recovery
           npm run test:cluster
           npm run test:ledger-pg
+          npm run test:outbox
+          npm run test:recon
           npm run test:camera
           npm run test:camera-policy
           npm run test:camera-integrity
