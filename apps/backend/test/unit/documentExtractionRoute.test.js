@@ -6,6 +6,7 @@ const { createProofRoutes } = require('../../src/http/proofRoutes');
 function makeReq(body) {
   const req = new EventEmitter();
   req.user = { id: 'user_driver_1', role: 'DRIVER' };
+  req.method = 'POST';
   req.headers = {};
   req.emitBody = () => { req.emit('data', Buffer.from(JSON.stringify(body))); req.emit('end'); };
   return req;
