@@ -190,26 +190,53 @@ class PaymentIngestionService {
 
       // Check if event already exists
       const existingRes = await client.query(`
-        SELECT event_pk, status, matched_payment_id, matched_trip_id, amount_paise
+        SELECT event_pk, status, matched_payment_id, matched_trip_id, amount_paise, payload_hash
         FROM payment_provider_events
         WHERE provider = $1 AND provider_event_id = $2
         FOR UPDATE;
       `, [provider.name, normalized.providerEventId]);
 
       if (existingRes.rows.length > 0) {
-        // Idempotent Replay!
+        const existing = existingRes.rows[0];
+        const terminal = ['PROCESSED', 'IGNORED'].includes(existing.status);
+        const samePayload = existing.payload_hash === payloadHash;
+        if (terminal || !samePayload) {
+          await client.query(`
+            UPDATE payment_provider_events
+            SET idempotent_replay = TRUE
+            WHERE event_pk = $1;
+          `, [existing.event_pk]);
+          await client.query('COMMIT');
+          metricsService.increment('provider_webhook_duplicate_replays_total');
+          return {
+            success: terminal,
+            idempotentReplay: true,
+            code: terminal
+              ? INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY
+              : INGESTION_ERROR_CODES.STATE_TRANSITION_REJECTED,
+            eventId: normalized.providerEventId,
+            status: existing.status,
+            paymentId: existing.matched_payment_id,
+            message: terminal
+              ? 'Webhook event already reached a terminal status. Replay acknowledged.'
+              : 'Provider event ID was reused with a different payload or is currently being processed; no duplicate financial action was started.'
+          };
+        }
+
+        // A byte-identical retry can recover a crash-stranded RECEIVED or FAILED event.
+        // Serialize on the provider/event advisory lock above and reuse the original audit row.
+        eventPk = existing.event_pk;
+        await client.query(`
+          UPDATE payment_provider_events
+          SET status = 'RECEIVED',
+              processing_error = NULL,
+              processed_at = NULL,
+              idempotent_replay = TRUE
+          WHERE event_pk = $1;
+        `, [eventPk]);
         await client.query('COMMIT');
-        metricsService.increment('provider_webhook_duplicate_replays_total');
-        return {
-          success: true,
-          idempotentReplay: true,
-          code: INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY,
-          eventId: normalized.providerEventId,
-          status: existingRes.rows[0].status,
-          paymentId: existingRes.rows[0].matched_payment_id,
-          message: 'Webhook event already processed. Idempotent replay acknowledged.'
-        };
-      }
+        metricsService.increment('provider_webhook_recovery_retries_total');
+      } else {
 
       // Record new event in RECEIVED status
       const insertEventSql = `
@@ -241,17 +268,18 @@ class PaymentIngestionService {
         await client.query('COMMIT');
         metricsService.increment('provider_webhook_duplicate_replays_total');
         return {
-          success: true,
+          success: false,
           idempotentReplay: true,
-          code: INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY,
+          code: INGESTION_ERROR_CODES.STATE_TRANSITION_REJECTED,
           eventId: normalized.providerEventId,
-          status: recheckRes.rows[0]?.status || 'PROCESSED',
+          status: recheckRes.rows[0]?.status || 'UNKNOWN',
           paymentId: recheckRes.rows[0]?.matched_payment_id,
-          message: 'Webhook event already processed. Idempotent replay acknowledged.'
+          message: 'A concurrent provider-event insert won the uniqueness race; retry after the event state has been inspected.'
         };
       }
 
       eventPk = eventInsertRes.rows[0].event_pk;
+      }
 
       // 4. Handle Unhandled / Informational Event Types
       const supportedEvents = ['payment.captured', 'payment.authorized', 'payment.failed', 'refund.processed'];
@@ -355,11 +383,32 @@ class PaymentIngestionService {
         };
       }
 
-      // 8. Update mapping with provider payment ID
+      // 8. Provider identity is immutable once bound. A different payment ID must never
+      // overwrite the mapping: that could correlate a second provider payment to the same trip.
+      if (normalized.providerPaymentId && mapping.provider_payment_id &&
+          normalized.providerPaymentId !== mapping.provider_payment_id) {
+        await client.query(`
+          UPDATE payment_provider_events
+          SET status = 'FAILED',
+              matched_payment_id = $1,
+              matched_trip_id = $2,
+              processing_error = 'Provider payment ID does not match the payment already bound to this order',
+              processed_at = NOW()
+          WHERE event_pk = $3;
+        `, [mapping.payment_id, mapping.trip_id, eventPk]);
+        await client.query('COMMIT');
+        return {
+          success: false,
+          code: INGESTION_ERROR_CODES.STATE_TRANSITION_REJECTED,
+          message: 'Provider payment ID conflicts with the payment identity already bound to this order.'
+        };
+      }
+
+      // 8. Update mapping with provider payment ID only when absent or identical.
       await client.query(`
         UPDATE payment_provider_mappings
-        SET provider_payment_id = $1,
-            status = $2,
+        SET provider_payment_id = COALESCE(provider_payment_id, $1),
+            status = CASE WHEN $2 = 'CAPTURED' THEN 'CAPTURED' ELSE status END,
             updated_at = NOW()
         WHERE mapping_id = $3;
       `, [normalized.providerPaymentId, normalized.isCaptured ? 'CAPTURED' : mapping.status, mapping.mapping_id]);
