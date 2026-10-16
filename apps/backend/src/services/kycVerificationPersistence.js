@@ -77,18 +77,18 @@ class KycVerificationPersistence {
           `UPDATE driver_kyc_documents
              SET driver_id = $1, document_id = $2, document_type = $3,
                  decision = $4, issuer_state = $5, provider = $6,
-                 provider_verification_id = $7, vehicle_number_normalized = $8,
-                 chassis_hash = $9, engine_hash = $10, license_number_hash = $11,
-                 policy_number_hash = $12, pan_hash = $13, aadhaar_reference_hash = $14,
-                 evidence_hash = $15, reasons = $16::jsonb, warnings = $17::jsonb,
-                 extracted_fields = $18::jsonb, expires_at = $19, updated_at = NOW()
-           WHERE kyc_document_id = $20
+                 provider_verification_id = $7, vehicle_number_normalized = NULL,
+                 chassis_hash = $8, engine_hash = $9, license_number_hash = $10,
+                 policy_number_hash = $11, pan_hash = $12, aadhaar_reference_hash = $13,
+                 evidence_hash = $14, reasons = $15::jsonb, warnings = $16::jsonb,
+                 extracted_fields = $17::jsonb, expires_at = $18, updated_at = NOW()
+           WHERE kyc_document_id = $19
            RETURNING *`,
           [
             evaluation.driverId, evaluation.documentId, evaluation.documentType,
             evaluation.decision, issuerState, provider, providerVerificationId,
-            vehicleHash ? normalized.vehicleNumber : null, chassisHash, engineHash,
-            licenseHash, policyHash, panHash, aadhaarReferenceHash, evidenceHash,
+            chassisHash, engineHash, licenseHash, policyHash, panHash,
+            aadhaarReferenceHash, evidenceHash,
             JSON.stringify(evaluation.reasons || []), JSON.stringify(evaluation.warnings || []),
             JSON.stringify(safeExtractedFields), expiresAt, kycDocumentId
           ]
@@ -102,14 +102,13 @@ class KycVerificationPersistence {
               vehicle_number_normalized, chassis_hash, engine_hash, license_number_hash,
               policy_number_hash, pan_hash, aadhaar_reference_hash, evidence_hash,
               reasons, warnings, extracted_fields, expires_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18::jsonb,$19::jsonb,$20)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17::jsonb,$18::jsonb,$19)
            RETURNING *`,
           [
             kycDocumentId, evaluation.driverId, evaluation.documentId, evaluation.documentType,
             evaluation.decision, issuerState, provider, providerVerificationId,
-            vehicleHash ? normalized.vehicleNumber : null, chassisHash, engineHash,
-            licenseHash, policyHash, panHash, aadhaarReferenceHash, evidenceHash,
-            JSON.stringify(evaluation.reasons || []), JSON.stringify(evaluation.warnings || []),
+            chassisHash, engineHash, licenseHash, policyHash, panHash, aadhaarReferenceHash,
+            evidenceHash, JSON.stringify(evaluation.reasons || []), JSON.stringify(evaluation.warnings || []),
             JSON.stringify(safeExtractedFields), expiresAt
           ]
         );
@@ -121,13 +120,9 @@ class KycVerificationPersistence {
            (kyc_document_id, from_decision, to_decision, actor_id, actor_role, reason, evidence_hash, metadata)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
         [
-          row.kyc_document_id,
-          fromDecision,
-          evaluation.decision,
-          evaluation.actorId || 'SYSTEM',
-          evaluation.actorRole || 'KYC_ENGINE',
-          (evaluation.reasons || []).join(', ').slice(0, 1000),
-          evidenceHash,
+          row.kyc_document_id, fromDecision, evaluation.decision,
+          evaluation.actorId || 'SYSTEM', evaluation.actorRole || 'KYC_ENGINE',
+          (evaluation.reasons || []).join(', ').slice(0, 1000), evidenceHash,
           JSON.stringify({ verificationId: runId, issuerState, provider })
         ]
       );
@@ -143,17 +138,14 @@ class KycVerificationPersistence {
           evaluation.documentType, evaluation.decision, issuerState, provider,
           providerVerificationId, evidenceHash, JSON.stringify(evaluation.reasons || []),
           JSON.stringify(evaluation.warnings || []), JSON.stringify(safeExtractedFields),
-          JSON.stringify(json(evaluation.captureGate, {})),
-          JSON.stringify(json(evaluation.consistency, {})), JSON.stringify(issuer),
-          evaluation.evaluatedAt || new Date().toISOString()
+          JSON.stringify(json(evaluation.captureGate, {})), JSON.stringify(json(evaluation.consistency, {})),
+          JSON.stringify(issuer), evaluation.evaluatedAt || new Date().toISOString()
         ]
       );
 
       return { success: true, kycDocument: row, verificationId: runId };
     }).catch((error) => {
-      if (error && error.code === '23505') {
-        error.code = 'KYC_IDENTITY_CONFLICT';
-      }
+      if (error && error.code === '23505') error.code = 'KYC_IDENTITY_CONFLICT';
       throw error;
     });
   }
