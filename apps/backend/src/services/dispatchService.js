@@ -153,13 +153,18 @@ class DispatchService {
       const existingLock = await redisLockManager.getDriverLock(driverId);
       if (existingLock && existingLock.orderId !== order.id) continue;
 
+      // Dispatch must use fresh server-observed telemetry. A profile's last-known
+      // coordinates are identity metadata, not proof that an ONLINE driver is
+      // currently reachable. Falling back to them can select stale/offline drivers.
       const telemetry = await driverLocationService.getDriverState(driverId);
-      const lat = (telemetry && telemetry.lat) ? telemetry.lat : dProf.currentLat;
-      const lng = (telemetry && telemetry.lng) ? telemetry.lng : dProf.currentLng;
-      const liveness = (telemetry && telemetry.livenessState) ? telemetry.livenessState : 'ONLINE';
-      const status = (telemetry && telemetry.status) ? telemetry.status : dProf.status;
+      if (!telemetry) continue;
+      const lat = telemetry.lat;
+      const lng = telemetry.lng;
+      const liveness = telemetry.livenessState;
+      const status = telemetry.status;
       if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) continue;
-      if (liveness === 'STALE' || liveness === 'OFFLINE' || status === 'OFFLINE') continue;
+      if (liveness !== 'HEALTHY' && liveness !== 'DEGRADED') continue;
+      if (status === 'OFFLINE' || telemetry.currentTripId) continue;
       if (requiredVehicleId && dProf.vehicleId !== requiredVehicleId) continue;
 
       const fullDriverObj = {
