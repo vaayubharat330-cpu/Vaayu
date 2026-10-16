@@ -10,22 +10,20 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/vaayu_theme.dart';
 import '../../../core/theme/vaayu_tokens.dart';
 
-/// Authenticated live visual telemetry.
-///
-/// The driver publishes compressed camera frames at a controlled cadence. The backend
-/// keeps only the latest frame and authorizes every read against the trip. This avoids
-/// unbounded video storage while still giving operations/authorized participants a
-/// near-real-time visual feed.
+/// Authenticated live visual telemetry. Driver mode publishes compressed frames at a
+/// controlled cadence; viewer mode polls only the latest authorized frame.
 class LiveCameraShareScreen extends StatefulWidget {
   final ApiClient apiClient;
   final String tripId;
   final bool viewerOnly;
+  final String? sessionId;
 
   const LiveCameraShareScreen({
     super.key,
     required this.apiClient,
     required this.tripId,
     this.viewerOnly = false,
+    this.sessionId,
   });
 
   @override
@@ -49,7 +47,8 @@ class _LiveCameraShareScreenState extends State<LiveCameraShareScreen> {
   void initState() {
     super.initState();
     if (widget.viewerOnly) {
-      _loadViewerSession();
+      _sessionId = widget.sessionId;
+      _startViewer();
     } else {
       _startSharing();
     }
@@ -60,7 +59,7 @@ class _LiveCameraShareScreenState extends State<LiveCameraShareScreen> {
     _captureTimer?.cancel();
     _viewerTimer?.cancel();
     _camera?.dispose();
-    _stopSession();
+    if (!widget.viewerOnly) _stopSession();
     super.dispose();
   }
 
@@ -68,16 +67,11 @@ class _LiveCameraShareScreenState extends State<LiveCameraShareScreen> {
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) throw StateError('No camera available.');
-      final selected = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
+      final selected = cameras.firstWhere((camera) => camera.lensDirection == CameraLensDirection.back, orElse: () => cameras.first);
       final controller = CameraController(selected, ResolutionPreset.medium, enableAudio: false, imageFormatGroup: ImageFormatGroup.jpeg);
       await controller.initialize();
       final response = await widget.apiClient.post('/api/trip/camera/session/start', body: {'trip_id': widget.tripId});
-      if (!response.isSuccess || response.data is! Map || response.data['sessionId'] == null) {
-        throw StateError(_errorFrom(response.data));
-      }
+      if (!response.isSuccess || response.data is! Map || response.data['sessionId'] == null) throw StateError(_errorFrom(response.data));
       if (!mounted) return;
       _camera = controller;
       _sessionId = response.data['sessionId'].toString();
@@ -90,10 +84,31 @@ class _LiveCameraShareScreenState extends State<LiveCameraShareScreen> {
     }
   }
 
-  Future<void> _loadViewerSession() async {
-    // Viewer mode receives a session id through the route/query in the parent product flow.
-    // Polling is intentionally bounded and cache-free; no frames are persisted client-side.
-    setState(() { _starting = false; _error = 'Viewer mode requires an active camera session id from the operations projection.'; });
+  Future<void> _startViewer() async {
+    if ((_sessionId ?? '').isEmpty) {
+      if (mounted) setState(() { _starting = false; _error = 'No active camera session is available for this trip.'; });
+      return;
+    }
+    if (mounted) setState(() => _starting = false);
+    await _loadViewerFrame();
+    _viewerTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) => _loadViewerFrame());
+  }
+
+  Future<void> _loadViewerFrame() async {
+    final session = _sessionId;
+    if (session == null || _busy) return;
+    _busy = true;
+    try {
+      final response = await widget.apiClient.getBytes('/api/trip/camera/frame', queryParameters: {'session_id': session});
+      if (response.isSuccess && response.data.isNotEmpty && mounted) {
+        final sequence = int.tryParse(response.headers['x-frame-sequence']?.toString() ?? '') ?? _sequence;
+        setState(() { _latestFrame = Uint8List.fromList(response.data); _sequence = sequence; _lastFrameAt = DateTime.now(); _error = null; });
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Camera feed temporarily unavailable: $error');
+    } finally {
+      _busy = false;
+    }
   }
 
   Future<void> _publishFrame() async {
@@ -103,13 +118,10 @@ class _LiveCameraShareScreenState extends State<LiveCameraShareScreen> {
       final photo = await _camera!.takePicture();
       final bytes = await File(photo.path).readAsBytes();
       if (bytes.length > 900 * 1024) return;
-      final response = await widget.apiClient.post('/api/trip/camera/frame', body: {
-        'session_id': _sessionId,
-        'image_data': 'data:image/jpeg;base64,${base64Encode(bytes)}',
-      });
-      if (response.isSuccess && response.data is Map) {
+      final response = await widget.apiClient.post('/api/trip/camera/frame', body: {'session_id': _sessionId, 'image_data': 'data:image/jpeg;base64,${base64Encode(bytes)}'});
+      if (response.isSuccess && response.data is Map && mounted) {
         final data = Map<String, dynamic>.from(response.data as Map);
-        if (mounted) setState(() { _sequence = int.tryParse('${data['sequence']}') ?? _sequence + 1; _lastFrameAt = DateTime.now(); });
+        setState(() { _sequence = int.tryParse('${data['sequence']}') ?? _sequence + 1; _lastFrameAt = DateTime.now(); _error = null; });
       }
     } catch (error) {
       if (mounted) setState(() => _error = 'Camera uplink interrupted: $error');
@@ -138,10 +150,10 @@ class _LiveCameraShareScreenState extends State<LiveCameraShareScreen> {
   Widget build(BuildContext context) {
     final colors = VaayuTheme.colorsOf(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Live Camera')),
+      appBar: AppBar(title: Text(widget.viewerOnly ? 'Live Camera Feed' : 'Live Camera')),
       body: _starting
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
+          : _error != null && _latestFrame == null && _camera == null
               ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)))
               : Padding(
                   padding: const EdgeInsets.all(VaayuSpacing.md),
@@ -153,9 +165,7 @@ class _LiveCameraShareScreenState extends State<LiveCameraShareScreen> {
                           borderRadius: BorderRadius.circular(18),
                           child: _camera != null
                               ? CameraPreview(_camera!)
-                              : (_latestFrame == null
-                                  ? Container(color: colors.surface, alignment: Alignment.center, child: const Text('Waiting for the next live frame…'))
-                                  : Image.memory(_latestFrame!, fit: BoxFit.cover)),
+                              : (_latestFrame == null ? Container(color: colors.surface, alignment: Alignment.center, child: const Text('Waiting for the next live frame…')) : Image.memory(_latestFrame!, fit: BoxFit.cover)),
                         ),
                       ),
                       const SizedBox(height: VaayuSpacing.md),
@@ -165,16 +175,16 @@ class _LiveCameraShareScreenState extends State<LiveCameraShareScreen> {
                           padding: const EdgeInsets.all(VaayuSpacing.md),
                           child: Row(
                             children: [
-                              Icon(_sharing ? Icons.videocam : Icons.videocam_off, color: _sharing ? colors.primary : colors.textTertiary),
+                              Icon(_sharing || _latestFrame != null ? Icons.videocam : Icons.videocam_off, color: _sharing || _latestFrame != null ? colors.primary : colors.textTertiary),
                               const SizedBox(width: VaayuSpacing.sm),
-                              Expanded(child: Text(_sharing ? 'LIVE • frame $_sequence' : 'Camera offline', style: TextStyle(fontWeight: FontWeight.w800, color: colors.textPrimary))),
+                              Expanded(child: Text(_sharing ? 'LIVE • publishing frame $_sequence' : 'LIVE • latest frame $_sequence', style: TextStyle(fontWeight: FontWeight.w800, color: colors.textPrimary))),
                               if (_lastFrameAt != null) Text('${DateTime.now().difference(_lastFrameAt!).inSeconds}s ago', style: TextStyle(fontSize: 11, color: colors.textSecondary)),
                             ],
                           ),
                         ),
                       ),
                       const SizedBox(height: VaayuSpacing.sm),
-                      const Text('Camera sharing is authorized per trip and stores only the latest encrypted-at-rest server frame. Stop sharing when the operational need ends.', style: TextStyle(fontSize: 11)),
+                      Text('Trip-scoped camera access. Only the latest frame is retained; every read is re-authorized against the trip.', style: TextStyle(fontSize: 11, color: colors.textSecondary)),
                     ],
                   ),
                 ),
