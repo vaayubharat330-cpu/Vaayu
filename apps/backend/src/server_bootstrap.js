@@ -29,11 +29,9 @@ http.createServer = function createServerWithAdminReadBoundary(requestListener, 
     const decision = authorizeAdminRead({ pathname, method: req.method, token, authService });
     if (decision.required && !decision.allowed) {
       const status = decision.code === 'FORBIDDEN_ROLE' ? 403 : 401;
-      res.writeHead(status, {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store',
-        'WWW-Authenticate': status === 401 ? 'Bearer' : undefined
-      });
+      const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+      if (status === 401) headers['WWW-Authenticate'] = 'Bearer';
+      res.writeHead(status, headers);
       return res.end(JSON.stringify({ success: false, error: { code: decision.code, message: status === 403 ? 'Insufficient privileges.' : 'Authentication required.' } }));
     }
     return requestListener(req, res);
