@@ -11,8 +11,11 @@ const migration = fs.readFileSync(
 );
 
 test('KYC database policy allows the same driver to reuse a driving licence', () => {
-  assert.match(migration, /ON driver_kyc_documents\(license_number_hash, driver_id\)/);
-  assert.doesNotMatch(migration, /ON driver_kyc_documents\(license_number_hash\)\s*\n\s*WHERE/);
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS uq_kyc_license_owner[\s\S]*?ON driver_kyc_documents\(license_number_hash, driver_id\)/);
+  assert.doesNotMatch(
+    migration,
+    /CREATE UNIQUE INDEX IF NOT EXISTS uq_kyc_license_owner[\s\S]*?ON driver_kyc_documents\(license_number_hash\)/
+  );
 });
 
 test('KYC database policy retains global lookup for licence ownership conflicts', () => {
