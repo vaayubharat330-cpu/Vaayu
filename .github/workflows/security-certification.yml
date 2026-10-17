@@ -18,6 +18,8 @@ env:
   DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
   REDIS_URL: redis://localhost:6379
   ENABLE_DEV_REDIS: 'true'
+  # Ephemeral CI-only signing key. Production secrets are never committed or used here.
+  JWT_SECRET: vaayu-ci-security-certification-secret-2026-32chars
 
 jobs:
   security:
