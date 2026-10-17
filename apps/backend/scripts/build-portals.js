@@ -10,7 +10,7 @@ const publicDir = path.join(__dirname, '..', 'public');
 const outDir = path.join(publicDir, 'built');
 const portalSrcDir = path.join(__dirname, '..', 'portal-src');
 const pages = fs.existsSync(portalSrcDir)
-  ? fs.readdirSync(portalSrcDir).filter((name) => name.endsWith('.html')).sort()
+  ? fs.readdirSync(portalSrcDir).filter(name => name.endsWith('.html')).sort()
   : [];
 const babelBlock = /<script\b[^>]*type=["']text\/babel["'][^>]*>([\s\S]*?)<\/script>/i;
 const styleBlock = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
@@ -45,14 +45,12 @@ function normalizePortalAssets(html) {
     );
   }
 
-  // portal.css is already an explicitly allowlisted static asset in the HTTP
-  // server. Keep all shared/page CSS on that one asset so generated portals do
-  // not create unserved per-page stylesheet files.
   normalized = normalized.replace(styleBlock, (_, css) => {
     const trimmed = css.trim();
     if (trimmed) generatedPortalCss += `\n${trimmed}\n`;
     return '';
   });
+
   if (!hasLocalStylesheet(normalized, '/built/portal.css')) {
     normalized = injectBeforeHeadClose(
       normalized,
@@ -75,29 +73,18 @@ function assertGeneratedPortalHtml(html, page, name) {
   ];
 
   for (const [ok, message] of checks) {
-    if (!ok) {
-      throw new Error(`${page}: generated portal contract failed: ${message}`);
-    }
+    if (!ok) throw new Error(`${page}: generated portal contract failed: ${message}`);
   }
 }
 
 async function buildPage(page) {
   const portalSrcPath = path.join(portalSrcDir, page);
   const publicHtmlPath = path.join(publicDir, page);
-
-  let sourceHtml;
-  if (fs.existsSync(portalSrcPath)) {
-    sourceHtml = fs.readFileSync(portalSrcPath, 'utf8');
-  } else if (fs.existsSync(publicHtmlPath)) {
-    sourceHtml = fs.readFileSync(publicHtmlPath, 'utf8');
-  } else {
-    throw new Error(`${page}: portal source file was not found`);
-  }
-
+  const sourceHtml = fs.readFileSync(portalSrcPath, 'utf8');
   const name = page.replace(/\.html$/, '');
-  sourceHtml = normalizePortalAssets(sourceHtml);
+  const normalizedHtml = normalizePortalAssets(sourceHtml);
+  const match = normalizedHtml.match(babelBlock);
 
-  const match = sourceHtml.match(babelBlock);
   if (!match) {
     throw new Error(`${page}: expected a text/babel application block, but none was found`);
   }
@@ -112,7 +99,7 @@ async function buildPage(page) {
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, `${name}.js`), result.code, 'utf8');
 
-  const replaced = sourceHtml.replace(
+  const replaced = normalizedHtml.replace(
     babelBlock,
     `<script src="/built/${name}.js" defer></script>`
   );
@@ -162,12 +149,10 @@ function writePortalCss() {
 
 (async () => {
   fs.mkdirSync(outDir, { recursive: true });
-  for (const page of pages) {
-    await buildPage(page);
-  }
+  for (const page of pages) await buildPage(page);
   buildStyles();
   writePortalCss();
-})().catch((error) => {
+})().catch(error => {
   console.error('BUILD ERROR', error.stack || error.message);
   process.exit(1);
 });
