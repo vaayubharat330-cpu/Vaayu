@@ -1,0 +1,21 @@
+/* Shared static portal shell styles.
+ * Kept outside HTML <style> blocks so VAAYU can retain a strict CSP without unsafe-inline.
+ */
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+
+#map { height: 100%; width: 100%; min-height: 480px; border-radius: 1.25rem; z-index: 1; }
+#admin-map { height: 100%; width: 100%; min-height: 440px; border-radius: 1.25rem; z-index: 1; }
+
+.leaflet-pane { z-index: 10 !important; }
+.leaflet-top, .leaflet-bottom { z-index: 20 !important; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.clean-leaflet-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
+
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+
+.leaflet-container { background: #090d16 !important; font-family: inherit; }
