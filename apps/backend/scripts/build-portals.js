@@ -10,13 +10,13 @@ const publicDir = path.join(__dirname, '..', 'public');
 const outDir = path.join(publicDir, 'built');
 const pages = ['index.html', 'merchant.html', 'fleet.html', 'admin.html', 'public-track.html'];
 
-const babelBlock = /<script type="text\\/babel"([^>]*)>([\\s\\S]*?)<\\/script>/;
-const styleBlock = /<style\\b[^>]*>([\\s\\S]*?)<\\/style>/gi;
+const babelBlock = /<script type="text\/babel"([^>]*)>([\s\S]*?)<\/script>/;
+const styleBlock = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
 
 const portalSrcDir = path.join(__dirname, '..', 'portal-src');
 
 function hasLocalStylesheet(html, name) {
-  return new RegExp(`<link[^>]+href=["']${name.replace('.', '\\.')}(?:["']|\\?)`, 'i').test(html);
+  return html.includes(`href="${name}"`) || html.includes(`href='${name}'`);
 }
 
 function normalizePortalAssets(html, name) {
@@ -25,30 +25,30 @@ function normalizePortalAssets(html, name) {
   // The source pages historically referenced the Tailwind CDN. Generated
   // production-facing portals must be deterministic and CSP-compatible, so
   // always use the repository's compiled stylesheet instead.
-  normalized = normalized.replace(/\\s*<!--\\s*Tailwind CSS CDN\\s*-->\\s*/gi, '\\n');
-  normalized = normalized.replace(/<script[^>]+src=["']https:\\/\\/cdn\\.tailwindcss\\.com["'][^>]*><\\/script>/gi, '');
+  normalized = normalized.replace(/\s*<!--\s*Tailwind CSS CDN\s*-->\s*/gi, '\n');
+  normalized = normalized.replace(/<script[^>]+src=["']https:\/\/cdn\.tailwindcss\.com["'][^>]*><\/script>/gi, '');
   if (!hasLocalStylesheet(normalized, '/built/tailwind.css')) {
-    normalized = normalized.replace('</head>', '  <link rel="stylesheet" href="/built/tailwind.css">\\n</head>');
+    normalized = normalized.replace('</head>', '  <link rel="stylesheet" href="/built/tailwind.css">\n</head>');
   }
 
   // Shared non-Tailwind layout rules are also local so portal rendering does
   // not depend on inline stylesheet blocks or a remote runtime stylesheet.
   if (!hasLocalStylesheet(normalized, '/portal-shell.css')) {
-    normalized = normalized.replace('</head>', '  <link rel="stylesheet" href="/portal-shell.css">\\n</head>');
+    normalized = normalized.replace('</head>', '  <link rel="stylesheet" href="/portal-shell.css">\n</head>');
   }
 
   // Extract page-specific <style> blocks into static CSS files. This keeps
   // style-src strict while preserving the existing visual design.
   let inlineCss = '';
   normalized = normalized.replace(styleBlock, (_, css) => {
-    inlineCss += `\\n${css.trim()}\\n`;
+    inlineCss += `\n${css.trim()}\n`;
     return '';
   });
   if (inlineCss.trim()) {
     const cssPath = path.join(outDir, `${name}.inline.css`);
     fs.mkdirSync(outDir, { recursive: true });
-    fs.writeFileSync(cssPath, `${inlineCss.trim()}\\n`, 'utf8');
-    normalized = normalized.replace('</head>', `  <link rel="stylesheet" href="/built/${name}.inline.css">\\n</head>`);
+    fs.writeFileSync(cssPath, `${inlineCss.trim()}\n`, 'utf8');
+    normalized = normalized.replace('</head>', `  <link rel="stylesheet" href="/built/${name}.inline.css">\n</head>`);
   }
 
   return normalized;
@@ -57,7 +57,7 @@ function normalizePortalAssets(html, name) {
 async function buildPage(page) {
   const portalSrcPath = path.join(portalSrcDir, page);
   const publicHtmlPath = path.join(publicDir, page);
-  
+
   let sourceHtml;
   if (fs.existsSync(portalSrcPath)) {
     sourceHtml = fs.readFileSync(portalSrcPath, 'utf8');
@@ -68,7 +68,7 @@ async function buildPage(page) {
     return;
   }
 
-  const name = page.replace(/\\.html$/, '');
+  const name = page.replace(/\.html$/, '');
   sourceHtml = normalizePortalAssets(sourceHtml, name);
 
   const match = sourceHtml.match(babelBlock);
