@@ -5,6 +5,8 @@ const { PostgresPool } = require('../../db/postgresClient');
 const { metricsService } = require('../metricsService');
 const { logger } = require('../logger');
 
+const PROVIDER_EVENT_PROCESSING_LEASE_MS = 2 * 60 * 1000;
+
 /**
  * Standard Ingestion Error Codes
  */
@@ -231,7 +233,7 @@ class PaymentIngestionService {
 
       // Check if event already exists
       const existingRes = await client.query(`
-        SELECT event_pk, status, matched_payment_id, matched_trip_id, amount_paise, payload_hash
+        SELECT event_pk, status, matched_payment_id, matched_trip_id, amount_paise, payload_hash, processing_started_at
         FROM payment_provider_events
         WHERE provider = $1 AND provider_event_id = $2
         FOR UPDATE;
@@ -242,19 +244,13 @@ class PaymentIngestionService {
         const terminal = ['PROCESSED', 'IGNORED'].includes(existing.status);
         const samePayload = existing.payload_hash === payloadHash;
         if (terminal || !samePayload) {
-          await client.query(`
-            UPDATE payment_provider_events
-            SET idempotent_replay = TRUE
-            WHERE event_pk = $1;
-          `, [existing.event_pk]);
+          await client.query(`UPDATE payment_provider_events SET idempotent_replay = TRUE WHERE event_pk = $1;`, [existing.event_pk]);
           await client.query('COMMIT');
           metricsService.increment('provider_webhook_duplicate_replays_total');
           return {
-            success: terminal,
+            success: terminal || existing.status === 'PROCESSING',
             idempotentReplay: true,
-            code: terminal
-              ? INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY
-              : INGESTION_ERROR_CODES.STATE_TRANSITION_REJECTED,
+            code: terminal ? INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY : INGESTION_ERROR_CODES.STATE_TRANSITION_REJECTED,
             eventId: normalized.providerEventId,
             status: existing.status,
             paymentId: existing.matched_payment_id,
@@ -264,15 +260,28 @@ class PaymentIngestionService {
           };
         }
 
-        // A byte-identical retry can recover a crash-stranded RECEIVED or FAILED event.
-        // Serialize on the provider/event advisory lock above and reuse the original audit row.
+        const processingAgeMs = existing.processing_started_at
+          ? Date.now() - new Date(existing.processing_started_at).getTime()
+          : Number.POSITIVE_INFINITY;
+        if (existing.status === 'PROCESSING' && processingAgeMs < PROVIDER_EVENT_PROCESSING_LEASE_MS) {
+          await client.query(`UPDATE payment_provider_events SET idempotent_replay = TRUE WHERE event_pk = $1;`, [existing.event_pk]);
+          await client.query('COMMIT');
+          metricsService.increment('provider_webhook_duplicate_replays_total');
+          return {
+            success: true,
+            idempotentReplay: true,
+            code: INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY,
+            eventId: normalized.providerEventId,
+            status: existing.status,
+            paymentId: existing.matched_payment_id,
+            message: 'Webhook event is currently being processed by another worker; replay acknowledged without financial mutation.'
+          };
+        }
+
         eventPk = existing.event_pk;
         await client.query(`
           UPDATE payment_provider_events
-          SET status = 'RECEIVED',
-              processing_error = NULL,
-              processed_at = NULL,
-              idempotent_replay = TRUE
+          SET status = 'PROCESSING', processing_started_at = NOW(), processing_error = NULL, processed_at = NULL, idempotent_replay = TRUE
           WHERE event_pk = $1;
         `, [eventPk]);
         await client.query('COMMIT');
@@ -284,7 +293,7 @@ class PaymentIngestionService {
         INSERT INTO payment_provider_events (
           provider, provider_event_id, event_type, payload_hash, raw_payload,
           signature, status, amount_paise, currency, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, 'RECEIVED', $7, $8, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'PROCESSING', $7, $8, NOW())
         ON CONFLICT (provider, provider_event_id) DO NOTHING
         RETURNING event_pk;
       `;
@@ -328,6 +337,7 @@ class PaymentIngestionService {
         await client.query(`
           UPDATE payment_provider_events
           SET status = 'IGNORED',
+              processing_started_at = NULL,
               processing_error = $1,
               processed_at = NOW()
           WHERE event_pk = $2;
@@ -366,6 +376,7 @@ class PaymentIngestionService {
         await client.query(`
           UPDATE payment_provider_events
           SET status = 'FAILED',
+              processing_started_at = NULL,
               processing_error = 'No internal payment mapping found for provider order',
               processed_at = NOW()
           WHERE event_pk = $1;
@@ -386,6 +397,7 @@ class PaymentIngestionService {
           SET status = 'FAILED',
               matched_payment_id = $1,
               matched_trip_id = $2,
+              processing_started_at = NULL,
               processing_error = $3,
               processed_at = NOW()
           WHERE event_pk = $4;
@@ -518,6 +530,7 @@ class PaymentIngestionService {
       SET status = 'PROCESSED',
           matched_payment_id = $1,
           matched_trip_id = $2,
+          processing_started_at = NULL,
           processed_at = NOW()
       WHERE event_pk = $3;
     `, [mapping.payment_id, mapping.trip_id, eventPk]);

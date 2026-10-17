@@ -332,6 +332,7 @@ test('VAAYU Phase F.7: Chaos, Fault Injection & Disaster Recovery Test Suite', a
     const duplicates = stormResults.filter(r => r.idempotentReplay);
 
     assert.strictEqual(initialCaptures.length, 1, 'Exactly one webhook must execute the initial ledger mutation');
+    assert.ok(stormResults.every(r => r.success === true), 'All duplicate webhook deliveries must converge successfully');
     assert.strictEqual(duplicates.length, 29, 'All 29 concurrent duplicates must be recognized without double debiting');
 
     // Exactly one journal entry for this escrow

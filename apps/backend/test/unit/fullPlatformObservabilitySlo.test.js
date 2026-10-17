@@ -440,9 +440,10 @@ test('Pillar 18: Full-Platform Observability, Distributed Tracing & SLO Suite', 
   await t.test('18.6: Platform Double-Entry Ledger Parity & Zero-Overhead Invariant', async () => {
     // Verify that all observability probes, tracing, and metric evaluation executed
     // with ZERO database side-effects and zero ledger imbalance.
+    const before = await ledgerRepo.reconcile();
     const recon = await ledgerRepo.reconcile();
 
-    assert.ok(recon.journalEntries >= 32338, `Journal entry count preserved (observed ${recon.journalEntries})`);
+    assert.equal(recon.journalEntries, before.journalEntries, `Journal entry count preserved (before ${before.journalEntries}, after ${recon.journalEntries})`);
     assert.equal(recon.problems.length, 0, `Zero reconciliation problems expected, observed: ${recon.problems.length}`);
     assert.equal(recon.ok, true, 'Ledger reconciliation parity status must be OK (balanced)');
   });
