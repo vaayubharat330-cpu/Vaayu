@@ -1,0 +1,75 @@
+name: VAAYU Security Certification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  NODE_ENV: test
+  PERSISTENCE_PROVIDER: postgres
+  DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
+  REDIS_URL: redis://localhost:6379
+  ENABLE_DEV_REDIS: 'true'
+
+jobs:
+  security:
+    name: Commercial Security Certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/backend
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: vaayu_test
+          POSTGRES_PASSWORD: vaayu_test_password
+          POSTGRES_DB: vaayu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U vaayu_test -d vaayu"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci
+      - name: Apply PostgreSQL schema migrations
+        run: npm run migrate:ledger
+      - name: Security certification suite
+        run: |
+          set -euo pipefail
+          run_test() {
+            echo "::group::Running $1"
+            timeout --signal=TERM 7m npm run "$1"
+            echo "::endgroup::"
+          }
+          run_test test:security:p6a
+          run_test test:security:p6b
+          run_test test:security:p6c
+          run_test test:security:p6d
