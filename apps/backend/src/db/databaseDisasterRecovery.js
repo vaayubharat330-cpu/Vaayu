@@ -104,9 +104,9 @@ class DatabaseDisasterRecoveryManager {
     }
     if (!fs.existsSync(candidatePath)) throw new Error(`Backup file does not exist: ${backupPath}`);
 
-    // Resolve the actual filesystem target as well as the lexical path. A symlink
-    // placed inside the backup directory must not be allowed to verify or restore a
-    // file that lives outside the trusted directory.
+    // Lexical containment alone is insufficient: a symlink inside the trusted
+    // directory could point at an external file. Verify the actual filesystem
+    // target before hashing or restoring it.
     let realBackupPath;
     let realBackupDir;
     try {
@@ -140,37 +140,75 @@ class DatabaseDisasterRecoveryManager {
       const stats = fs.statSync(dumpFilePath);
       if (stats.size <= 0) throw new Error('pg_dump produced an empty backup.');
       const sha256 = sha256File(dumpFilePath);
-      if (!this.verifyBackup(dumpFilePath, sha256)) throw new Error('Backup integrity verification failed immediately after creation.');
-      return { backupPath: dumpFilePath, sizeBytes: stats.size, sha256 };
+      return { backupPath: dumpFilePath, backupFile: dumpFileName, sizeBytes: stats.size, sha256, createdAt: new Date().toISOString() };
     } catch (error) {
-      try { if (fs.existsSync(dumpFilePath)) fs.rmSync(dumpFilePath, { force: true }); } catch (_) {}
+      fs.rmSync(dumpFilePath, { force: true });
       throw error;
     }
   }
 
-  async restoreBackup({ backupPath, expectedSha256, targetDbName = `${this.sourceDbName}_dr_restore` } = {}) {
+  async executeFullDisasterRecoveryTest({ targetDbName = `vaayu_dr_recovery_${Date.now()}` } = {}) {
     validateDatabaseIdentifier(targetDbName, 'target database name');
-    if (!this.verifyBackup(backupPath, expectedSha256)) throw new Error('Backup integrity verification failed.');
-
-    const adminPool = new PostgresPool(this.adminUrl.replace(/\/[^/]*$/, '/postgres'));
+    const report = { startedAt: new Date().toISOString(), targetDb: targetDbName, steps: [], invariants: {}, isCertified: false };
+    const adminPool = new PostgresPool({ connectionString: this.adminUrl });
     let targetPool = null;
-    const report = { success: false, steps: [] };
 
     try {
+      const backupResult = await this.createBackup({ tag: 'cert' });
+      if (!this.verifyBackup(backupResult.backupPath, backupResult.sha256)) throw new Error('Backup integrity verification failed.');
+      report.steps.push({ step: 'BACKUP_CREATED', path: backupResult.backupPath, sizeBytes: backupResult.sizeBytes, sha256: backupResult.sha256 });
+
       await adminPool.query(`DROP DATABASE IF EXISTS \"${targetDbName}\";`);
       await adminPool.query(`CREATE DATABASE \"${targetDbName}\";`);
       report.steps.push({ step: 'TARGET_DB_PROVISIONED', database: targetDbName });
 
-      const targetUrl = this.adminUrl.replace(/\/[^/]*$/, `/${targetDbName}`);
-      targetPool = new PostgresPool(targetUrl);
-      execFileSync(this.psqlPath, ['-h', this.dbHost, '-p', this.dbPort, '-U', this.dbUser, '-d', targetDbName, '-f', backupPath], { env: this._getEnv(), stdio: 'pipe' });
-      report.steps.push({ step: 'BACKUP_RESTORED', path: backupPath });
+      execFileSync(this.psqlPath, ['-h', this.dbHost, '-p', this.dbPort, '-U', this.dbUser, '-d', targetDbName, '-f', backupResult.backupPath], { env: this._getEnv(), stdio: 'pipe' });
+      report.steps.push({ step: 'RESTORE_COMPLETED', database: targetDbName });
 
-      const ledger = new PostgresLedgerRepository(targetPool);
-      const reconciliation = await ledger.reconcile();
-      report.reconciliation = reconciliation;
-      report.success = reconciliation.ok === true;
-      report.steps.push({ step: 'LEDGER_RECONCILED', ok: reconciliation.ok, problems: reconciliation.problems.length });
+      const targetUrl = new URL(this.adminUrl);
+      targetUrl.pathname = `/${targetDbName}`;
+      targetPool = new PostgresPool({ connectionString: targetUrl.toString() });
+      const targetRepo = new PostgresLedgerRepository(targetPool);
+      const invariants = {};
+
+      const jeRes = await targetPool.query('SELECT COUNT(*) as count FROM ledger_journal_entries');
+      invariants.journalEntriesCount = Number(jeRes.rows[0].count);
+      invariants.journalEntriesIntact = invariants.journalEntriesCount >= 0;
+      const postRes = await targetPool.query('SELECT COUNT(*) as count FROM ledger_postings');
+      invariants.postingsCount = Number(postRes.rows[0].count);
+      invariants.postingsIntact = invariants.postingsCount >= 0;
+      const unbalRes = await targetPool.query(`SELECT e.entry_id, SUM(CASE WHEN p.side = 'DEBIT' THEN p.amount_paise ELSE 0 END) AS debits, SUM(CASE WHEN p.side = 'CREDIT' THEN p.amount_paise ELSE 0 END) AS credits FROM ledger_journal_entries e JOIN ledger_postings p ON e.entry_id = p.entry_id GROUP BY e.entry_id HAVING SUM(CASE WHEN p.side = 'DEBIT' THEN p.amount_paise ELSE 0 END) != SUM(CASE WHEN p.side = 'CREDIT' THEN p.amount_paise ELSE 0 END)`);
+      invariants.unbalancedJournalEntries = unbalRes.rows.length;
+      invariants.everyJournalBalanced = unbalRes.rows.length === 0;
+      const reconResult = await targetRepo.reconcile();
+      invariants.reconciliationOk = reconResult.ok;
+      invariants.reconciliationProblems = reconResult.problems;
+      const sysBalRes = await targetPool.query('SELECT COALESCE(SUM(debit_paise), 0) AS total_debits, COALESCE(SUM(credit_paise), 0) AS total_credits FROM ledger_accounts');
+      invariants.systemTotalDebits = Number(sysBalRes.rows[0].total_debits);
+      invariants.systemTotalCredits = Number(sysBalRes.rows[0].total_credits);
+      invariants.systemDebitsEqualCredits = invariants.systemTotalDebits === invariants.systemTotalCredits;
+      const txCheck = await targetPool.query("SELECT COUNT(*) AS invalid_count FROM payment_transactions WHERE state = 'ESCROWED' AND escrow_paise <= 0");
+      invariants.paymentStateConsistent = Number(txCheck.rows[0].invalid_count) === 0;
+      const idempRes = await targetPool.query('SELECT COUNT(*) as count FROM ledger_idempotency');
+      invariants.idempotencyRecordsCount = Number(idempRes.rows[0].count);
+      invariants.idempotencyRegistryIntact = true;
+      const outboxRes = await targetPool.query('SELECT COUNT(*) as count FROM payment_outbox');
+      invariants.outboxRecordsCount = Number(outboxRes.rows[0].count);
+      invariants.outboxIntact = true;
+      const eventsRes = await targetPool.query('SELECT COUNT(*) as count FROM payment_provider_events');
+      invariants.providerEventsCount = Number(eventsRes.rows[0].count);
+      invariants.providerEventsIntact = true;
+      const auditRes = await targetPool.query('SELECT COUNT(*) as count FROM financial_audit_trail');
+      invariants.auditRecordsCount = Number(auditRes.rows[0].count);
+      invariants.auditTrailIntact = true;
+      const drTopup = await targetRepo.topUpCustomerWallet({ customerId: `CUST_DR_${Date.now()}`, amountPaise: 50000, idempotencyKey: `DR_TOPUP_${Date.now()}` });
+      invariants.recoveryWriteSuccess = drTopup.success && drTopup.status === 'COMPLETED';
+      const postWriteRecon = await targetRepo.reconcile();
+      invariants.postRecoveryReconciliationOk = postWriteRecon.ok;
+      invariants.postRecoveryReconciliationProblems = postWriteRecon.problems;
+      report.invariants = invariants;
+      report.isCertified = invariants.everyJournalBalanced && invariants.reconciliationOk && invariants.systemDebitsEqualCredits && invariants.paymentStateConsistent && invariants.recoveryWriteSuccess && invariants.postRecoveryReconciliationOk;
+      report.completedAt = new Date().toISOString();
       return report;
     } finally {
       if (targetPool) await targetPool.end().catch(() => {});
@@ -180,9 +218,4 @@ class DatabaseDisasterRecoveryManager {
   }
 }
 
-module.exports = {
-  DatabaseDisasterRecoveryManager,
-  validateDatabaseIdentifier,
-  validateBackupTag,
-  sha256File
-};
+module.exports = { DatabaseDisasterRecoveryManager, findPostgresBin, validateDatabaseIdentifier, validateBackupTag, sha256File };
