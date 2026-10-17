@@ -64,7 +64,7 @@ jobs:
       - name: Transaction and payment recovery
         run: |
           set -euo pipefail
-          for suite in test:chaos test:payment-ingestion-recovery test:order-exception-recovery; do
+          for suite in test:chaos test:wallet-topup-idempotency test:payment-ingestion-recovery test:order-exception-recovery; do
             timeout --signal=TERM 7m npm run "$suite"
           done
       - name: Distributed recovery
