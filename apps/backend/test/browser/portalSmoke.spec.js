@@ -9,6 +9,8 @@ const surfaces = [
   { name: 'OTP console', path: '/otp-console.html', root: null, script: '/otp-console.js' },
 ];
 
+const EXPECTED_UNAUTHENTICATED_DRIVER_ERROR = 'Failed to load resource: the server responded with a status of 401 (Unauthorized)';
+
 async function captureBrowserHealth(page) {
   const consoleErrors = [];
   const pageErrors = [];
@@ -23,6 +25,12 @@ async function captureBrowserHealth(page) {
   });
 
   return { consoleErrors, pageErrors, failedRequests };
+}
+
+function unexpectedConsoleErrors(surface, consoleErrors) {
+  return consoleErrors.filter(message =>
+    !(surface.name === 'driver' && message === EXPECTED_UNAUTHENTICATED_DRIVER_ERROR)
+  );
 }
 
 for (const surface of surfaces) {
@@ -48,7 +56,7 @@ for (const surface of surfaces) {
     await page.waitForTimeout(750);
 
     expect(health.pageErrors, `${surface.name} emitted uncaught page errors`).toEqual([]);
-    expect(health.consoleErrors, `${surface.name} emitted console errors`).toEqual([]);
+    expect(unexpectedConsoleErrors(surface, health.consoleErrors), `${surface.name} emitted unexpected console errors`).toEqual([]);
 
     const unexpectedFailures = health.failedRequests.filter(url =>
       !url.includes('favicon') &&
