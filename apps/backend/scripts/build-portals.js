@@ -8,12 +8,17 @@ const esbuild = require('esbuild');
 
 const publicDir = path.join(__dirname, '..', 'public');
 const outDir = path.join(publicDir, 'built');
-const pages = ['index.html', 'merchant.html', 'fleet.html', 'admin.html', 'public-track.html'];
-
+const portalSrcDir = path.join(__dirname, '..', 'portal-src');
+const pages = fs.existsSync(portalSrcDir)
+  ? fs.readdirSync(portalSrcDir).filter((name) => name.endsWith('.html')).sort()
+  : [];
 const babelBlock = /<script\b[^>]*type=["']text\/babel["'][^>]*>([\s\S]*?)<\/script>/i;
 const styleBlock = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
-const portalSrcDir = path.join(__dirname, '..', 'portal-src');
 let generatedPortalCss = '';
+
+if (!pages.length) {
+  throw new Error('No portal source HTML files were found in apps/backend/portal-src.');
+}
 
 function hasLocalStylesheet(html, href) {
   return html.includes(`href="${href}"`) || html.includes(`href='${href}'`);
