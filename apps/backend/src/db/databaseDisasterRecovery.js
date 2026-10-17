@@ -8,7 +8,7 @@
  * directory, and every dump carries a SHA-256 integrity digest.
  */
 
-const { execFileSync, execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -39,13 +39,16 @@ function sha256File(filePath) {
 }
 
 function findPostgresBin(toolName) {
-  const defaultDir = 'C:\\Program Files\\PostgreSQL\\18\\bin';
-  const candidate = path.join(defaultDir, `${toolName}.exe`);
+  const isWindows = process.platform === 'win32';
+  const defaultDir = isWindows ? 'C:\\Program Files\\PostgreSQL\\18\\bin' : '/usr/bin';
+  const candidate = path.join(defaultDir, isWindows ? `${toolName}.exe` : toolName);
   if (fs.existsSync(candidate)) return candidate;
 
   try {
-    const which = execSync(`where ${toolName}`, { encoding: 'utf8' }).trim().split(/\r?\n/)[0];
-    if (which && fs.existsSync(which)) return which;
+    const locator = isWindows ? 'where' : 'which';
+    const output = execFileSync(locator, [toolName], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const located = output.trim().split(/\r?\n/)[0];
+    if (located && fs.existsSync(located)) return located;
   } catch (_) {}
 
   throw new Error(`PostgreSQL binary ${toolName} not found in ${defaultDir} or PATH.`);
@@ -133,8 +136,8 @@ class DatabaseDisasterRecoveryManager {
       if (!this.verifyBackup(backupResult.backupPath, backupResult.sha256)) throw new Error('Backup integrity verification failed.');
       report.steps.push({ step: 'BACKUP_CREATED', path: backupResult.backupPath, sizeBytes: backupResult.sizeBytes, sha256: backupResult.sha256 });
 
-      await adminPool.query(`DROP DATABASE IF EXISTS "${targetDbName}";`);
-      await adminPool.query(`CREATE DATABASE "${targetDbName}";`);
+      await adminPool.query(`DROP DATABASE IF EXISTS \"${targetDbName}\";`);
+      await adminPool.query(`CREATE DATABASE \"${targetDbName}\";`);
       report.steps.push({ step: 'TARGET_DB_PROVISIONED', database: targetDbName });
 
       execFileSync(this.psqlPath, ['-h', this.dbHost, '-p', this.dbPort, '-U', this.dbUser, '-d', targetDbName, '-f', backupResult.backupPath], { env: this._getEnv(), stdio: 'pipe' });
@@ -187,7 +190,7 @@ class DatabaseDisasterRecoveryManager {
       return report;
     } finally {
       if (targetPool) await targetPool.end().catch(() => {});
-      await adminPool.query(`DROP DATABASE IF EXISTS "${targetDbName}";`).catch(() => {});
+      await adminPool.query(`DROP DATABASE IF EXISTS \"${targetDbName}\";`).catch(() => {});
       await adminPool.end().catch(() => {});
     }
   }
