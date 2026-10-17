@@ -248,7 +248,7 @@ class PaymentIngestionService {
           await client.query('COMMIT');
           metricsService.increment('provider_webhook_duplicate_replays_total');
           return {
-            success: terminal || existing.status === 'PROCESSING',
+            success: terminal,
             idempotentReplay: true,
             code: terminal ? INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY : INGESTION_ERROR_CODES.STATE_TRANSITION_REJECTED,
             eventId: normalized.providerEventId,
