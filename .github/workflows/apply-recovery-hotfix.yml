@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   hotfix:
-    if: github.sha == 'f9c545208fd9277804d093f6ed089a21114b04a5'
+    if: github.sha == '3408d41d50e82d3e7cda4c80c7639982681fa091'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
