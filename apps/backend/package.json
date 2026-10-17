@@ -21,6 +21,7 @@
     "test:recon": "node --test test/unit/providerReconciliation.test.js",
     "test:security-audit": "node --test test/unit/financialSecurityAudit.test.js",
     "test:chaos": "node --test test/unit/chaosFaultInjection.test.js",
+    "test:wallet-topup-idempotency": "node --test test/unit/walletTopupIdempotency.test.js",
     "test:dr": "node --test test/unit/databaseDisasterRecovery.test.js",
     "test:dr-policy": "node --test test/unit/databaseDisasterRecoveryPolicy.test.js",
     "test:trace": "node --test test/unit/financialTraceObservability.test.js",
