@@ -53,7 +53,14 @@ function evaluateProductionReadiness(env = process.env) {
     }))
   ];
 
-  const blocking = checks.filter((check) => check.requiredInProduction && !check.ready);
+  // Deployment configuration is intentionally non-blocking outside production.
+  // The checks still expose what is incomplete so CI/development tooling can
+  // report configuration gaps without falsely declaring a test environment
+  // unready for commercial launch.
+  const blocking = production
+    ? checks.filter((check) => !check.ready && (check.requiredInProduction || check.name.endsWith('Provider')))
+    : [];
+
   return {
     environment: production ? 'production' : 'non-production',
     ready: blocking.length === 0,
