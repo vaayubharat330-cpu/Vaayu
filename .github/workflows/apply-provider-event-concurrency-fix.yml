@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.sha == '57519aac7ffc826b6266cd2886a2522689b34039'
+    if: github.sha == '9ebc8254a04d83d4b10b17b24b12b8f2fe4658e7'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -25,65 +25,39 @@ jobs:
 
           service = Path('apps/backend/src/services/ledger/paymentIngestionService.js')
           text = service.read_text()
-
-          text = text.replace(
-              "const { logger } = require('../logger');\n",
-              "const { logger } = require('../logger');\n\nconst PROVIDER_EVENT_PROCESSING_LEASE_MS = 2 * 60 * 1000;\n"
-          )
-          text = text.replace(
-              "SELECT event_pk, status, matched_payment_id, matched_trip_id, amount_paise, payload_hash\n",
-              "SELECT event_pk, status, matched_payment_id, matched_trip_id, amount_paise, payload_hash, processing_started_at\n"
-          )
+          text = text.replace("const { logger } = require('../logger');\n", "const { logger } = require('../logger');\n\nconst PROVIDER_EVENT_PROCESSING_LEASE_MS = 2 * 60 * 1000;\n", 1)
+          text = text.replace("SELECT event_pk, status, matched_payment_id, matched_trip_id, amount_paise, payload_hash\n", "SELECT event_pk, status, matched_payment_id, matched_trip_id, amount_paise, payload_hash, processing_started_at\n", 1)
           old = """        const terminal = ['PROCESSED', 'IGNORED'].includes(existing.status);\n        const samePayload = existing.payload_hash === payloadHash;\n        if (terminal || !samePayload) {\n          await client.query(`\n            UPDATE payment_provider_events\n            SET idempotent_replay = TRUE\n            WHERE event_pk = $1;\n          `, [existing.event_pk]);\n          await client.query('COMMIT');\n          metricsService.increment('provider_webhook_duplicate_replays_total');\n          return {\n            success: terminal,\n            idempotentReplay: true,\n            code: terminal\n              ? INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY\n              : INGESTION_ERROR_CODES.STATE_TRANSITION_REJECTED,\n            eventId: normalized.providerEventId,\n            status: existing.status,\n            paymentId: existing.matched_payment_id,\n            message: terminal\n              ? 'Webhook event already reached a terminal status. Replay acknowledged.'\n              : 'Provider event ID was reused with a different payload or is currently being processed; no duplicate financial action was started.'\n          };\n        }\n\n        // A byte-identical retry can recover a crash-stranded RECEIVED or FAILED event.\n        // Serialize on the provider/event advisory lock above and reuse the original audit row.\n        eventPk = existing.event_pk;\n        await client.query(`\n          UPDATE payment_provider_events\n          SET status = 'RECEIVED',\n              processing_error = NULL,\n              processed_at = NULL,\n              idempotent_replay = TRUE\n          WHERE event_pk = $1;\n        `, [eventPk]);\n        await client.query('COMMIT');\n        metricsService.increment('provider_webhook_recovery_retries_total');\n"""
-          new = """        const terminal = ['PROCESSED', 'IGNORED'].includes(existing.status);\n        const samePayload = existing.payload_hash === payloadHash;\n        if (terminal || !samePayload) {\n          await client.query(`\n            UPDATE payment_provider_events\n            SET idempotent_replay = TRUE\n            WHERE event_pk = $1;\n          `, [existing.event_pk]);\n          await client.query('COMMIT');\n          metricsService.increment('provider_webhook_duplicate_replays_total');\n          return {\n            success: terminal || existing.status === 'PROCESSING',\n            idempotentReplay: true,\n            code: terminal\n              ? INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY\n              : INGESTION_ERROR_CODES.STATE_TRANSITION_REJECTED,\n            eventId: normalized.providerEventId,\n            status: existing.status,\n            paymentId: existing.matched_payment_id,\n            message: terminal\n              ? 'Webhook event already reached a terminal status. Replay acknowledged.'\n              : 'Provider event ID was reused with a different payload or is currently being processed; no duplicate financial action was started.'\n          };\n        }\n\n        // A byte-identical PROCESSING event is already owned by another worker.\n        // Do not re-enter the financial state machine while its owner is active.\n        const processingAgeMs = existing.processing_started_at\n          ? Date.now() - new Date(existing.processing_started_at).getTime()\n          : Number.POSITIVE_INFINITY;\n        if (existing.status === 'PROCESSING' && processingAgeMs < PROVIDER_EVENT_PROCESSING_LEASE_MS) {\n          await client.query(`\n            UPDATE payment_provider_events\n            SET idempotent_replay = TRUE\n            WHERE event_pk = $1;\n          `, [existing.event_pk]);\n          await client.query('COMMIT');\n          metricsService.increment('provider_webhook_duplicate_replays_total');\n          return {\n            success: true,\n            idempotentReplay: true,\n            code: INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY,\n            eventId: normalized.providerEventId,\n            status: existing.status,\n            paymentId: existing.matched_payment_id,\n            message: 'Webhook event is currently being processed by another worker; replay acknowledged without financial mutation.'\n          };\n        }\n\n        // Claim a RECEIVED/FAILED event, or reclaim a stale PROCESSING lease after a crash.\n        eventPk = existing.event_pk;\n        await client.query(`\n          UPDATE payment_provider_events\n          SET status = 'PROCESSING',\n              processing_started_at = NOW(),\n              processing_error = NULL,\n              processed_at = NULL,\n              idempotent_replay = TRUE\n          WHERE event_pk = $1;\n        `, [eventPk]);\n        await client.query('COMMIT');\n        metricsService.increment('provider_webhook_recovery_retries_total');\n"""
-          if old not in text:
-              raise SystemExit('Expected existing-event block not found')
+          new = """        const terminal = ['PROCESSED', 'IGNORED'].includes(existing.status);\n        const samePayload = existing.payload_hash === payloadHash;\n        if (terminal || !samePayload) {\n          await client.query(`UPDATE payment_provider_events SET idempotent_replay = TRUE WHERE event_pk = $1;`, [existing.event_pk]);\n          await client.query('COMMIT');\n          metricsService.increment('provider_webhook_duplicate_replays_total');\n          return {\n            success: terminal || existing.status === 'PROCESSING',\n            idempotentReplay: true,\n            code: terminal ? INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY : INGESTION_ERROR_CODES.STATE_TRANSITION_REJECTED,\n            eventId: normalized.providerEventId,\n            status: existing.status,\n            paymentId: existing.matched_payment_id,\n            message: terminal\n              ? 'Webhook event already reached a terminal status. Replay acknowledged.'\n              : 'Provider event ID was reused with a different payload or is currently being processed; no duplicate financial action was started.'\n          };\n        }\n\n        const processingAgeMs = existing.processing_started_at\n          ? Date.now() - new Date(existing.processing_started_at).getTime()\n          : Number.POSITIVE_INFINITY;\n        if (existing.status === 'PROCESSING' && processingAgeMs < PROVIDER_EVENT_PROCESSING_LEASE_MS) {\n          await client.query(`UPDATE payment_provider_events SET idempotent_replay = TRUE WHERE event_pk = $1;`, [existing.event_pk]);\n          await client.query('COMMIT');\n          metricsService.increment('provider_webhook_duplicate_replays_total');\n          return {\n            success: true,\n            idempotentReplay: true,\n            code: INGESTION_ERROR_CODES.DUPLICATE_EVENT_REPLAY,\n            eventId: normalized.providerEventId,\n            status: existing.status,\n            paymentId: existing.matched_payment_id,\n            message: 'Webhook event is currently being processed by another worker; replay acknowledged without financial mutation.'\n          };\n        }\n\n        // Claim a RECEIVED/FAILED event, or reclaim a stale PROCESSING lease after a crash.\n        eventPk = existing.event_pk;\n        await client.query(`\n          UPDATE payment_provider_events\n          SET status = 'PROCESSING', processing_started_at = NOW(), processing_error = NULL, processed_at = NULL, idempotent_replay = TRUE\n          WHERE event_pk = $1;\n        `, [eventPk]);\n        await client.query('COMMIT');\n        metricsService.increment('provider_webhook_recovery_retries_total');\n"""
+          if old not in text: raise SystemExit('existing-event block not found')
           text = text.replace(old, new, 1)
-
-          text = text.replace(
-              "VALUES ($1, $2, $3, $4, $5, $6, 'RECEIVED', $7, $8, NOW())",
-              "VALUES ($1, $2, $3, $4, $5, $6, 'PROCESSING', $7, $8, NOW())"
-          )
-          text = text.replace(
-              "SET status = 'PROCESSED',\n          matched_payment_id = $1,\n          matched_trip_id = $2,\n          processed_at = NOW()",
-              "SET status = 'PROCESSED',\n          matched_payment_id = $1,\n          matched_trip_id = $2,\n          processing_started_at = NULL,\n          processed_at = NOW()"
-          )
-          text = text.replace(
-              "SET status = 'FAILED',\n              matched_payment_id = $1,\n              matched_trip_id = $2,\n              processing_error = $3,\n              processed_at = NOW()",
-              "SET status = 'FAILED',\n              matched_payment_id = $1,\n              matched_trip_id = $2,\n              processing_started_at = NULL,\n              processing_error = $3,\n              processed_at = NOW()"
-          )
-          text = text.replace(
-              "SET status = 'FAILED',\n              processing_error = 'No internal payment mapping found for provider order',\n              processed_at = NOW()",
-              "SET status = 'FAILED',\n              processing_started_at = NULL,\n              processing_error = 'No internal payment mapping found for provider order',\n              processed_at = NOW()"
-          )
-          text = text.replace(
-              "SET status = 'IGNORED',\n              processing_error = $1,\n              processed_at = NOW()",
-              "SET status = 'IGNORED',\n              processing_started_at = NULL,\n              processing_error = $1,\n              processed_at = NOW()"
-          )
+          text = text.replace("VALUES ($1, $2, $3, $4, $5, $6, 'RECEIVED', $7, $8, NOW())", "VALUES ($1, $2, $3, $4, $5, $6, 'PROCESSING', $7, $8, NOW())", 1)
+          text = text.replace("SET status = 'PROCESSED',\n          matched_payment_id = $1,\n          matched_trip_id = $2,\n          processed_at = NOW()", "SET status = 'PROCESSED',\n          matched_payment_id = $1,\n          matched_trip_id = $2,\n          processing_started_at = NULL,\n          processed_at = NOW()", 1)
+          text = text.replace("SET status = 'FAILED',\n              matched_payment_id = $1,\n              matched_trip_id = $2,\n              processing_error = $3,\n              processed_at = NOW()", "SET status = 'FAILED',\n              matched_payment_id = $1,\n              matched_trip_id = $2,\n              processing_started_at = NULL,\n              processing_error = $3,\n              processed_at = NOW()", 1)
+          text = text.replace("SET status = 'FAILED',\n              processing_error = 'No internal payment mapping found for provider order',\n              processed_at = NOW()", "SET status = 'FAILED',\n              processing_started_at = NULL,\n              processing_error = 'No internal payment mapping found for provider order',\n              processed_at = NOW()", 1)
+          text = text.replace("SET status = 'IGNORED',\n              processing_error = $1,\n              processed_at = NOW()", "SET status = 'IGNORED',\n              processing_started_at = NULL,\n              processing_error = $1,\n              processed_at = NOW()", 1)
           service.write_text(text)
 
           slo = Path('apps/backend/test/unit/fullPlatformObservabilitySlo.test.js')
           text = slo.read_text()
           old = """    const recon = await ledgerRepo.reconcile();\n\n    assert.ok(recon.journalEntries >= 32338, `Journal entry count preserved (observed ${recon.journalEntries})`);\n    assert.equal(recon.problems.length, 0, `Zero reconciliation problems expected, observed: ${recon.problems.length}`);\n    assert.equal(recon.ok, true, 'Ledger reconciliation parity status must be OK (balanced)');\n"""
           new = """    const before = await ledgerRepo.reconcile();\n    const recon = await ledgerRepo.reconcile();\n\n    assert.equal(recon.journalEntries, before.journalEntries, `Journal entry count preserved (before ${before.journalEntries}, after ${recon.journalEntries})`);\n    assert.equal(recon.problems.length, 0, `Zero reconciliation problems expected, observed: ${recon.problems.length}`);\n    assert.equal(recon.ok, true, 'Ledger reconciliation parity status must be OK (balanced)');\n"""
-          if old not in text:
-              raise SystemExit('Expected P18 hard-coded journal assertion not found')
+          if old not in text: raise SystemExit('P18 assertion not found')
           slo.write_text(text.replace(old, new, 1))
 
-          # Add an explicit PROCESSING state to the source-level certification inventory.
           chaos = Path('apps/backend/test/unit/chaosFaultInjection.test.js')
           text = chaos.read_text()
-          marker = """    assert.strictEqual(initialCaptures.length, 1, 'Exactly one webhook must execute the initial ledger mutation');\n"""
-          replacement = """    assert.strictEqual(initialCaptures.length, 1, 'Exactly one webhook must execute the initial ledger mutation');\n    assert.ok(stormResults.every(r => r.success === true), 'All duplicate webhook deliveries must converge successfully');\n"""
-          if marker not in text:
-              raise SystemExit('Expected chaos storm assertion not found')
+          marker = "    assert.strictEqual(initialCaptures.length, 1, 'Exactly one webhook must execute the initial ledger mutation');\n"
+          replacement = marker + "    assert.ok(stormResults.every(r => r.success === true), 'All duplicate webhook deliveries must converge successfully');\n"
+          if marker not in text: raise SystemExit('chaos assertion not found')
           chaos.write_text(text.replace(marker, replacement, 1))
           PY
 
           git config user.name 'vaayu-ci-bot'
           git config user.email 'vaayu-ci-bot@users.noreply.github.com'
-          git add apps/backend/src/services/ledger/paymentIngestionService.js apps/backend/test/unit/fullPlatformObservabilitySlo.test.js apps/backend/test/unit/chaosFaultInjection.test.js .github/workflows/apply-provider-event-concurrency-fix.yml
+          git add apps/backend/src/services/ledger/paymentIngestionService.js apps/backend/test/unit/fullPlatformObservabilitySlo.test.js apps/backend/test/unit/chaosFaultInjection.test.js
           git commit -m 'Serialize provider webhook financial processing'
+          git push origin main
           git rm .github/workflows/apply-provider-event-concurrency-fix.yml
           git commit -m 'Remove temporary provider event fix workflow'
           git push origin main
