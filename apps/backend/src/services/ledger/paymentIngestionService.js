@@ -292,8 +292,8 @@ class PaymentIngestionService {
       const insertEventSql = `
         INSERT INTO payment_provider_events (
           provider, provider_event_id, event_type, payload_hash, raw_payload,
-          signature, status, amount_paise, currency, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, 'PROCESSING', $7, $8, NOW())
+          signature, status, amount_paise, currency, created_at, processing_started_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'PROCESSING', $7, $8, NOW(), NOW())
         ON CONFLICT (provider, provider_event_id) DO NOTHING
         RETURNING event_pk;
       `;
