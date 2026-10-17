@@ -389,7 +389,7 @@ class PostgresLedgerRepository {
     await this.ensureAccount(account, 'LIABILITY', 'CREDIT');
 
     const result = await this.postJournalEntry({
-      referenceId: referenceId || `TOPUP_${customerId}_${Date.now()}`,
+      referenceId: referenceId || `TOPUP_${customerId}_${idempotencyKey}`,
       idempotencyKey,
       description: `Customer wallet top-up INR ${+(amountPaise / 100).toFixed(2)}`,
       postings: [
