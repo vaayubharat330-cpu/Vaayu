@@ -35,8 +35,13 @@ function injectBeforeHeadClose(html, markup) {
 function normalizePortalAssets(html) {
   let normalized = html;
 
+  // Tailwind and Babel are build-time concerns. Neither CDN script belongs in the
+  // production browser surface: Tailwind is compiled locally and JSX is compiled
+  // by esbuild. Keeping Babel in the page also triggers CSP unsafe-eval errors.
   normalized = normalized.replace(/\s*<!--\s*Tailwind CSS CDN\s*-->\s*/gi, '\n');
   normalized = normalized.replace(/<script\b[^>]+src=["']https:\/\/cdn\.tailwindcss\.com["'][^>]*><\/script>/gi, '');
+  normalized = normalized.replace(/\s*<!--\s*Babel Compiler CDN for JSX\s*-->\s*/gi, '\n');
+  normalized = normalized.replace(/<script\b[^>]+src=["']https:\/\/unpkg\.com\/@babel\/standalone[^"']*["'][^>]*><\/script>/gi, '');
 
   if (!hasLocalStylesheet(normalized, '/built/tailwind.css')) {
     normalized = injectBeforeHeadClose(
@@ -68,6 +73,7 @@ function assertGeneratedPortalHtml(html, page, name) {
     [html.includes('/built/portal.css'), 'missing /built/portal.css'],
     [html.includes(`/built/${name}.js`), `missing /built/${name}.js`],
     [!lower.includes('cdn.tailwindcss.com'), 'Tailwind CDN reference remains'],
+    [!lower.includes('@babel/standalone'), 'Babel standalone CDN reference remains'],
     [!lower.includes('type="text/babel"'), 'uncompiled text/babel script remains'],
     [!lower.includes('<style'), 'inline style block remains'],
   ];
