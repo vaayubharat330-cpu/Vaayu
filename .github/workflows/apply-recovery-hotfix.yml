@@ -1,0 +1,42 @@
+name: Apply recovery hotfix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  hotfix:
+    if: github.sha == 'f9c545208fd9277804d093f6ed089a21114b04a5'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - name: Fix deterministic wallet top-up idempotency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/backend/src/services/ledger/postgresLedgerRepository.js')
+          text = path.read_text()
+          old = "referenceId: referenceId || `TOPUP_${customerId}_${Date.now()}`"
+          new = "referenceId: referenceId || `TOPUP_${customerId}_${idempotencyKey}`"
+          if old not in text:
+              raise SystemExit('Expected top-up reference expression was not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+      - name: Commit and push hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/backend/src/services/ledger/postgresLedgerRepository.js .github/workflows/apply-recovery-hotfix.yml
+          git rm .github/workflows/apply-recovery-hotfix.yml
+          git commit -m 'Fix deterministic wallet top-up idempotency'
+          git push origin HEAD:main
