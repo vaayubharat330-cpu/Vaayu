@@ -13,6 +13,7 @@ const pages = ['index.html', 'merchant.html', 'fleet.html', 'admin.html', 'publi
 const babelBlock = /<script\b[^>]*type=["']text\/babel["'][^>]*>([\s\S]*?)<\/script>/i;
 const styleBlock = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
 const portalSrcDir = path.join(__dirname, '..', 'portal-src');
+let generatedPortalCss = '';
 
 function hasLocalStylesheet(html, href) {
   return html.includes(`href="${href}"`) || html.includes(`href='${href}'`);
@@ -26,7 +27,7 @@ function injectBeforeHeadClose(html, markup) {
   return `${html.slice(0, headClose.index)}${markup}${html.slice(headClose.index)}`;
 }
 
-function normalizePortalAssets(html, name) {
+function normalizePortalAssets(html) {
   let normalized = html;
 
   normalized = normalized.replace(/\s*<!--\s*Tailwind CSS CDN\s*-->\s*/gi, '\n');
@@ -39,26 +40,18 @@ function normalizePortalAssets(html, name) {
     );
   }
 
-  if (!hasLocalStylesheet(normalized, '/portal-shell.css')) {
-    normalized = injectBeforeHeadClose(
-      normalized,
-      '  <link rel="stylesheet" href="/portal-shell.css">\n'
-    );
-  }
-
-  let inlineCss = '';
+  // portal.css is already an explicitly allowlisted static asset in the HTTP
+  // server. Keep all shared/page CSS on that one asset so generated portals do
+  // not create unserved per-page stylesheet files.
   normalized = normalized.replace(styleBlock, (_, css) => {
-    inlineCss += `\n${css.trim()}\n`;
+    const trimmed = css.trim();
+    if (trimmed) generatedPortalCss += `\n${trimmed}\n`;
     return '';
   });
-
-  if (inlineCss.trim()) {
-    const cssPath = path.join(outDir, `${name}.inline.css`);
-    fs.mkdirSync(outDir, { recursive: true });
-    fs.writeFileSync(cssPath, `${inlineCss.trim()}\n`, 'utf8');
+  if (!hasLocalStylesheet(normalized, '/built/portal.css')) {
     normalized = injectBeforeHeadClose(
       normalized,
-      `  <link rel="stylesheet" href="/built/${name}.inline.css">\n`
+      '  <link rel="stylesheet" href="/built/portal.css">\n'
     );
   }
 
@@ -69,10 +62,11 @@ function assertGeneratedPortalHtml(html, page, name) {
   const lower = html.toLowerCase();
   const checks = [
     [html.includes('/built/tailwind.css'), 'missing /built/tailwind.css'],
-    [html.includes('/portal-shell.css'), 'missing /portal-shell.css'],
+    [html.includes('/built/portal.css'), 'missing /built/portal.css'],
     [html.includes(`/built/${name}.js`), `missing /built/${name}.js`],
     [!lower.includes('cdn.tailwindcss.com'), 'Tailwind CDN reference remains'],
     [!lower.includes('type="text/babel"'), 'uncompiled text/babel script remains'],
+    [!lower.includes('<style'), 'inline style block remains'],
   ];
 
   for (const [ok, message] of checks) {
@@ -96,7 +90,7 @@ async function buildPage(page) {
   }
 
   const name = page.replace(/\.html$/, '');
-  sourceHtml = normalizePortalAssets(sourceHtml, name);
+  sourceHtml = normalizePortalAssets(sourceHtml);
 
   const match = sourceHtml.match(babelBlock);
   if (!match) {
@@ -147,12 +141,27 @@ function buildStyles() {
   console.log('styles -> built/tailwind.css');
 }
 
+function writePortalCss() {
+  const portalCssPath = path.join(outDir, 'portal.css');
+  const existing = fs.existsSync(portalCssPath) ? fs.readFileSync(portalCssPath, 'utf8') : '';
+  const marker = '/* VAAYU GENERATED PORTAL CSS */';
+  const markerIndex = existing.indexOf(marker);
+  const stableBase = markerIndex >= 0 ? existing.slice(0, markerIndex).trimEnd() : existing.trimEnd();
+  const generated = generatedPortalCss.trim();
+  const content = generated
+    ? `${stableBase}${stableBase ? '\n\n' : ''}${marker}\n${generated}\n`
+    : `${stableBase}\n`;
+  fs.writeFileSync(portalCssPath, content, 'utf8');
+  console.log('styles -> built/portal.css');
+}
+
 (async () => {
   fs.mkdirSync(outDir, { recursive: true });
   for (const page of pages) {
     await buildPage(page);
   }
   buildStyles();
+  writePortalCss();
 })().catch((error) => {
   console.error('BUILD ERROR', error.stack || error.message);
   process.exit(1);
