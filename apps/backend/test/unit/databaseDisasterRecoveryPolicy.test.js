@@ -30,6 +30,7 @@ test('DR backup digest detects tampering and only accepts files in backup direct
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vaayu-dr-'));
   const backup = path.join(dir, 'backup.sql');
   const outsideBackup = path.join(path.dirname(dir), `${path.basename(dir)}-outside.sql`);
+  const symlinkBackup = path.join(dir, 'linked-backup.sql');
   fs.writeFileSync(backup, 'CREATE TABLE proof(id integer);');
   fs.writeFileSync(outsideBackup, 'CREATE TABLE outside(id integer);');
   const digest = sha256File(backup);
@@ -44,6 +45,12 @@ test('DR backup digest detects tampering and only accepts files in backup direct
   fs.appendFileSync(backup, '\n-- tampered');
   assert.equal(manager.verifyBackup(backup, digest), false);
   assert.throws(() => manager.verifyBackup(outsideBackup, digest), /Backup path must be inside/);
+
+  if (process.platform !== 'win32') {
+    fs.symlinkSync(outsideBackup, symlinkBackup);
+    assert.throws(() => manager.verifyBackup(symlinkBackup, digest), /Backup path must resolve inside/);
+  }
+
   assert.equal(digest.length, crypto.createHash('sha256').digest().length * 2);
 
   fs.rmSync(dir, { recursive: true, force: true });
