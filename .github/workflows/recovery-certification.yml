@@ -1,0 +1,83 @@
+name: VAAYU Recovery Certification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  NODE_ENV: test
+  PERSISTENCE_PROVIDER: postgres
+  DATABASE_URL: postgresql://vaayu_test:vaayu_test_password@localhost:5432/vaayu
+  REDIS_URL: redis://localhost:6379
+  ENABLE_DEV_REDIS: 'true'
+  JWT_SECRET: vaayu-ci-recovery-certification-secret-2026-32chars
+
+jobs:
+  recovery:
+    name: Failure Recovery Certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/backend
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: vaayu_test
+          POSTGRES_PASSWORD: vaayu_test_password
+          POSTGRES_DB: vaayu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U vaayu_test -d vaayu"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+      - run: npm ci
+      - name: Apply PostgreSQL schema migrations
+        run: npm run migrate:ledger
+      - name: Transaction and payment recovery
+        run: |
+          set -euo pipefail
+          for suite in test:chaos test:payment-ingestion-recovery test:order-exception-recovery; do
+            timeout --signal=TERM 7m npm run "$suite"
+          done
+      - name: Distributed recovery
+        run: |
+          set -euo pipefail
+          for suite in test:dispatch-recovery test:outbox test:redis-lock test:redis-rate-limit; do
+            timeout --signal=TERM 7m npm run "$suite"
+          done
+      - name: Disaster recovery
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM 10m npm run test:dr-policy
+          timeout --signal=TERM 12m npm run test:dr
+          timeout --signal=TERM 12m npm run test:p17
+      - name: Operational runbooks
+        run: timeout --signal=TERM 10m npm run test:runbooks
