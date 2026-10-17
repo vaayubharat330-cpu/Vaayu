@@ -58,6 +58,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: apps/backend/package-lock.json
+      - name: Install PostgreSQL client tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
       - run: npm ci
       - name: Apply PostgreSQL schema migrations
         run: npm run migrate:ledger
