@@ -42,6 +42,7 @@ function normalizePortalAssets(html) {
   normalized = normalized.replace(/<script\b[^>]+src=["']https:\/\/cdn\.tailwindcss\.com["'][^>]*><\/script>/gi, '');
   normalized = normalized.replace(/\s*<!--\s*Babel Compiler CDN for JSX\s*-->\s*/gi, '\n');
   normalized = normalized.replace(/<script\b[^>]+src=["']https:\/\/unpkg\.com\/@babel\/standalone[^"']*["'][^>]*><\/script>/gi, '');
+  normalized = normalized.replace(/[ \t]+\r?\n/g, '\n').replace(/\n{3,}/g, '\n\n');
 
   if (!hasLocalStylesheet(normalized, '/built/tailwind.css')) {
     normalized = injectBeforeHeadClose(
@@ -63,7 +64,7 @@ function normalizePortalAssets(html) {
     );
   }
 
-  return normalized;
+  return normalized.replace(/[ \t]+\r?\n/g, '\n').replace(/\n{3,}/g, '\n\n');
 }
 
 function assertGeneratedPortalHtml(html, page, name) {

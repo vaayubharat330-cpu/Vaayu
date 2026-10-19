@@ -129,8 +129,8 @@ class TelemetryPublisher {
       };
 
       // Send over active WebSocket if available, otherwise fallback to HTTP
-      if (_wsClient != null && _wsClient!.isConnected) {
-        _wsClient!.send({
+      if (_wsClient != null && _wsClient.isConnected) {
+        _wsClient.send({
           'type': 'driver_location_ping',
           'data': payload,
         });

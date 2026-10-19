@@ -32,3 +32,28 @@ body.portal-track-body { background-color: #090d16; }
 .pin-label-cyan { background: #06b6d4; color: #020617; font-weight: bold; font-size: 10px; padding: 3px 6px; border-radius: 10px; border: 2px solid #fff; }
 .pin-label-pickedup { background: #059669; color: #fff; font-weight: bold; font-size: 10px; padding: 3px 8px; border-radius: 12px; border: 2px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,0.5); white-space: nowrap; display: flex; align-items: center; gap: 4px; }
 .pin-label-destination { background: #f43f5e; color: #fff; font-weight: 900; font-size: 11px; padding: 4px 10px; border-radius: 14px; border: 2px solid #fff; box-shadow: 0 4px 12px rgba(244,63,94,0.6); white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+
+/* VAAYU GENERATED PORTAL CSS */
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    #admin-map { height: 100%; width: 100%; min-height: 440px; border-radius: 1.25rem; z-index: 1; }
+    .leaflet-pane { z-index: 10 !important; }
+    .leaflet-top, .leaflet-bottom { z-index: 20 !important; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    #map { height: 100%; width: 100%; min-height: 480px; border-radius: 1.25rem; z-index: 1; }
+    .leaflet-pane { z-index: 10 !important; }
+    .leaflet-top, .leaflet-bottom { z-index: 20 !important; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .clean-leaflet-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
+
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+    .leaflet-container { background: #090d16 !important; font-family: inherit; }
+
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #090d16; }
+    .leaflet-container { background: #090d16 !important; font-family: inherit; }

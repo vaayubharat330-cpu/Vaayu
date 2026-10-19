@@ -139,7 +139,7 @@ vaayu_app/
 | :--- | :--- | :--- | :--- |
 | **Node.js** | `>= 22.0.0` | `node -v` | Core backend runtime and portal bundler |
 | **npm** | `>= 10.0.0` | `npm -v` | Package management |
-| **Flutter SDK** | `>= 3.24.0` | `flutter --version` | Cross-platform mobile development |
+| **Flutter SDK** | `>= 3.41.0` | `flutter --version` | Cross-platform mobile development |
 | **Android SDK** | API 35 (Android 15) | `adb --version` | Target build SDK with NDK filters |
 | **PostgreSQL** | `>= 15` (16 recommended) | `psql --version` | Production persistence & double-entry ledger |
 | **Redis** | `>= 7.0` | `redis-cli --version` | Distributed locks, rate-limiting, and pub/sub |
