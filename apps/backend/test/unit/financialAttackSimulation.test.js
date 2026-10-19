@@ -18,6 +18,9 @@ require('dotenv').config();
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const { PaymentStateMachine } = require('../../src/services/ledger/paymentStateMachine');
 const { PaymentIntegrationService } = require('../../src/services/ledger/paymentIntegrationService');
@@ -63,7 +66,8 @@ function createMockResponse() {
 }
 
 test('Pillar 6C: Financial Attack Simulation Suite', async (suite) => {
-  const psm = new PaymentStateMachine();
+  const ledgerPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vaayu-financial-attack-')), 'ledger.json');
+  const psm = new PaymentStateMachine({ repositoryPath: ledgerPath });
   // Ensure common accounts & pre-fund test wallet so funds exist for tests
   psm.ledger.ensureAccount('customer:cust_funded_1:wallet', ACCOUNT_TYPES.LIABILITY);
   await psm.ledger.postJournalEntry({

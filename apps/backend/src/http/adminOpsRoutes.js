@@ -31,13 +31,15 @@ function createAdminOpsRoutes({ db, driverLocationService, redisLockManager, map
         const dutyStatus = (telemetry && telemetry.status) ? telemetry.status : dProf.status;
         const lastPingMs = hasTelemetry ? telemetry.lastPingMs : null;
 
-        if (livenessState === 'ONLINE') onlineCount++;
-        if (livenessState === 'DEGRADED') degradedCount++;
-        if (livenessState === 'STALE') staleCount++;
-        if (livenessState === 'OFFLINE' || dutyStatus === 'OFFLINE') offlineCount++;
+        const dutyOffline = dutyStatus === 'OFFLINE';
+        if (!dutyOffline && (livenessState === 'ONLINE' || livenessState === 'HEALTHY')) onlineCount++;
+        if (!dutyOffline && livenessState === 'DEGRADED') degradedCount++;
+        if (!dutyOffline && livenessState === 'STALE') staleCount++;
+        if (livenessState === 'OFFLINE' || dutyOffline) offlineCount++;
 
         // Filter by liveness or duty status.
-        if (statusFilter !== 'ALL' && livenessState !== statusFilter && dutyStatus !== statusFilter) {
+        const matchesLivenessFilter = !dutyOffline && (livenessState === statusFilter || (statusFilter === 'ONLINE' && livenessState === 'HEALTHY'));
+        if (statusFilter !== 'ALL' && !matchesLivenessFilter && dutyStatus !== statusFilter) {
           continue;
         }
 

@@ -255,6 +255,8 @@ class LedgerService {
     const state = this.repository.snapshot();
     const problems = [];
     const expected = {};
+    let totalDebitsPaise = 0;
+    let totalCreditsPaise = 0;
 
     for (const account of Object.values(state.accounts)) {
       expected[account.accountId] = { debitPaise: 0, creditPaise: 0 };
@@ -263,6 +265,8 @@ class LedgerService {
     for (const entry of state.journalEntries) {
       const debits = entry.postings.filter(p => p.side === 'DEBIT').reduce((s, p) => s + p.amountPaise, 0);
       const credits = entry.postings.filter(p => p.side === 'CREDIT').reduce((s, p) => s + p.amountPaise, 0);
+      totalDebitsPaise += debits;
+      totalCreditsPaise += credits;
       if (debits !== credits) problems.push(`Unbalanced journal ${entry.entryId}`);
       for (const p of entry.postings) {
         if (!expected[p.accountId]) problems.push(`Posting references missing account ${p.accountId}`);
@@ -280,7 +284,15 @@ class LedgerService {
       }
     }
 
-    return { ok: problems.length === 0, problems, journalEntries: state.journalEntries.length };
+    return {
+      ok: problems.length === 0,
+      problems,
+      journalEntries: state.journalEntries.length,
+      journalEntriesCount: state.journalEntries.length,
+      totalDebitsPaise,
+      totalCreditsPaise,
+      balanced: totalDebitsPaise === totalCreditsPaise
+    };
   }
 }
 

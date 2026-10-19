@@ -17,7 +17,7 @@ test('T5/T6: no db.x fallback reports success when the feature is missing', () =
   // A fallback may return success only when it claims no verified outcome, i.e. status PENDING_REVIEW.
   const offenders = src.split(/\r?\n/)
     .map((line, i) => ({ line, n: i + 1 }))
-    .filter(({ line }) => /db\.\w+ \? db\.\w+\(.*\) : .*success: true/.test(line))
+    .filter(({ line }) => /db\.\w+\s*\?\s*db\.\w+\([^;]*?\)\s*:\s*\{[^;]*?\bsuccess:\s*true\b/.test(line))
     .filter(({ line }) => !/status: 'PENDING_REVIEW'/.test(line));
   assert.deepEqual(offenders.map(o => o.n), [], `silent-success fallbacks at lines: ${offenders.map(o => o.n).join(', ')}`);
 });

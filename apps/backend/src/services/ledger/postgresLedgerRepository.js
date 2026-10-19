@@ -1206,11 +1206,23 @@ class PostgresLedgerRepository {
 
     const countRes = await this.pool.query('SELECT COUNT(*) as count FROM ledger_journal_entries');
     const journalEntries = parseInt(countRes.rows[0].count, 10);
+    const totalsRes = await this.pool.query(`
+      SELECT
+        COALESCE(SUM(CASE WHEN side = 'DEBIT' THEN amount_paise ELSE 0 END), 0) AS total_debits,
+        COALESCE(SUM(CASE WHEN side = 'CREDIT' THEN amount_paise ELSE 0 END), 0) AS total_credits
+      FROM ledger_postings;
+    `);
+    const totalDebitsPaise = Number(totalsRes.rows[0]?.total_debits || 0);
+    const totalCreditsPaise = Number(totalsRes.rows[0]?.total_credits || 0);
 
     return {
       ok: problems.length === 0,
       problems,
-      journalEntries
+      journalEntries,
+      journalEntriesCount: journalEntries,
+      totalDebitsPaise,
+      totalCreditsPaise,
+      balanced: totalDebitsPaise === totalCreditsPaise
     };
   }
 

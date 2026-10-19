@@ -148,22 +148,22 @@ test('Pillar 10: Location & Mobility Integrity Suite', async (suite) => {
   // =========================================================================
   // 10.3 MULTI-TIER LIVENESS STATE MACHINE & DISPATCH GATING
   // =========================================================================
-  await suite.test('10.3: Multi-Tier Liveness: ONLINE, DEGRADED, STALE, OFFLINE transitions & active trip continuity', async () => {
+  await suite.test('10.3: Multi-Tier Liveness: HEALTHY, DEGRADED, STALE, OFFLINE transitions & active trip continuity', async () => {
     const driverId = `drv_p10_liveness_${Date.now()}`;
     await driverLocationService.clearDriverLocation(driverId);
     const now = Date.now();
 
-    // 1. ONLINE State (age <= 15s)
-    assert.equal(driverLocationService.getLivenessState(now - 5000), 'ONLINE');
+    // 1. HEALTHY State (age <= 5s)
+    assert.equal(driverLocationService.getLivenessState(now - 1000), 'HEALTHY');
 
-    // 2. DEGRADED State (age between 15s and 30s)
-    assert.equal(driverLocationService.getLivenessState(now - 20000), 'DEGRADED');
+    // 2. DEGRADED State (age between 5s and 15s)
+    assert.equal(driverLocationService.getLivenessState(now - 10000), 'DEGRADED');
 
-    // 3. STALE State (age between 30s and 60s)
-    assert.equal(driverLocationService.getLivenessState(now - 45000), 'STALE');
+    // 3. STALE State (age between 15s and 60s)
+    assert.equal(driverLocationService.getLivenessState(now - 30000), 'STALE');
 
     // 4. OFFLINE State (age > 60s)
-    assert.equal(driverLocationService.getLivenessState(now - 75000), 'OFFLINE');
+    assert.equal(driverLocationService.getLivenessState(now - 61000), 'OFFLINE');
 
     // 5. Dispatch Eligibility Check
     // Set up driver in store with fresh ping
@@ -176,7 +176,7 @@ test('Pillar 10: Location & Mobility Integrity Suite', async (suite) => {
     });
 
     const stateFresh = await driverLocationService.getDriverState(driverId);
-    assert.equal(stateFresh.livenessState, 'ONLINE');
+    assert.equal(stateFresh.livenessState, 'HEALTHY');
     assert.equal(stateFresh.isDispatchEligible, true);
 
     // Age ping manually in store to STALE (45s old)

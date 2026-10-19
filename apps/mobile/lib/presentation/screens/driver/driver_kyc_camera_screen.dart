@@ -128,6 +128,7 @@ class _DriverKycCameraScreenState extends State<DriverKycCameraScreen> {
 
       setState(() { _captured = null; _extraction = null; _uploadIntent = null; });
       await _loadKyc();
+      if (!mounted) return;
       if (extractionPersisted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Image processed. Required fields were extracted and securely stored for verification.')));
       } else {
