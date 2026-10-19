@@ -138,6 +138,12 @@ class RedisDriverLocationStore extends DriverLocationStore {
     this.redis = redisClient || new RedisClient();
   }
 
+  async disconnect() {
+    if (this.redis && typeof this.redis.disconnect === 'function') {
+      await this.redis.disconnect();
+    }
+  }
+
   async clearDriverLocation(driverId) {
     if (!this.redis) return;
     const key = `driver:loc:${driverId}`;
