@@ -25,10 +25,28 @@ class RedisPubSubManager {
     this.isConnected = false;
   }
 
+  _unrefDisposableRedisSockets() {
+    // Certification processes must not remain alive solely because an external
+    // Redis Pub/Sub TCP socket is open. Production Redis connections remain
+    // referenced and are still managed explicitly through disconnect().
+    if (process.env.VAAYU_TEST_TARGET !== 'disposable') return;
+
+    const clients = [this.pubClient, this.subClient];
+    for (const client of clients) {
+      const streams = [client?.redis?.stream, client?.subscriber?.stream];
+      for (const stream of streams) {
+        try {
+          if (stream && typeof stream.unref === 'function') stream.unref();
+        } catch (_) {}
+      }
+    }
+  }
+
   async connect() {
     try {
       await this.pubClient.connect();
       await this.subClient.connect();
+      this._unrefDisposableRedisSockets();
       this.isConnected = true;
       return true;
     } catch (err) {
@@ -132,6 +150,7 @@ class RedisPubSubManager {
       const wrapper = this._createSubscriptionWrapper(channel);
       this.channelWrappers.set(channel, wrapper);
       await this.subClient.subscribe(channel, wrapper);
+      this._unrefDisposableRedisSockets();
     }
     this.subscriptions.get(channel).add(handler);
     return true;
