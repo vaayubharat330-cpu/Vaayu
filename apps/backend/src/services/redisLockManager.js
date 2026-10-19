@@ -20,6 +20,10 @@ class RedisLockManager {
     this.COMMAND_LOCK_TTL_MS = 15000;
   }
 
+  async disconnect() {
+    if (this.redis && typeof this.redis.disconnect === 'function') await this.redis.disconnect();
+  }
+
   async acquireDriverLock(driverId, orderId, ttlMs = this.DEFAULT_TTL_MS) {
     if (!driverId || !orderId) return { success: false, error: 'driverId and orderId are required' };
     const key = `${this.LOCK_PREFIX}${driverId}`;
