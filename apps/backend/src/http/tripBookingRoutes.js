@@ -71,7 +71,10 @@ function createTripBookingRoutes({
             paymentInfo={success:true,provider:'VAAYU_WALLET',status:'PAID',requiresPayment:false,isPaid:true,deferred:false,orderId:tempOrderId,amount:finalTotalFare,paymentMethod,timestamp:new Date().toISOString(),escrow:escrowResult};
           } else paymentInfo=await paymentProvider.processPayment(tempOrderId,finalTotalFare,paymentMethod);
           const newTrip={id:tempOrderId,tripId:tempOrderId,customerId,customerName:data.senderName||(req.user?req.user.name:null),customerPhone:data.senderPhone||(req.user?req.user.phone:null),vehicleId,vehicleName:vehicleEstimate.vehicleName,isOutstation,goodsCategory,isFragile,goodsNotes,dispatchMode,scheduledDate,scheduledTimeSlot,pickupAddress:data.pickupAddress||'Custom Pickup Location',pickupLat:pLat,pickupLng:pLng,dropAddress:data.dropAddress||'Custom Drop Location',dropLat:dLat,dropLng:dLng,intermediateStops,distanceKm:quoteRes.distanceKm,durationMin:quoteRes.durationMin,fareBreakdown:finalFareBreakdown,totalFare:finalTotalFare,fareProvider:quoteRes.provider,paymentInfo,pickupOtp,deliveryOtp,trackingToken:crypto.randomBytes(32).toString('base64url'),version:1,status:DELIVERY_STATES.CREATED,driver:null,createdAt:new Date().toISOString()};
-          orderIdService.attachInternalValues(newTrip,portalContext); db.createTrip(newTrip); tripPersisted=true;
+          orderIdService.attachInternalValues(newTrip,portalContext);
+          db.createTrip(newTrip);
+          await db.waitForCommit();
+          tripPersisted=true;
           try{const customerPhone=req.user?.phone||newTrip.customerPhone||null;otpService.recordDeliveryOtp(customerPhone,deliveryOtp,newTrip.id,'TRIP_DELIVERY');}catch(_){ }
           metricsService.increment('orders_created_total');logger.info('order_created',`New trip order created ${newTrip.id}`,{orderId:newTrip.id,customerId:newTrip.customerId});
           const dispatchRes=await dispatchService.findAndOfferDriver(newTrip.id);const createdTrip=db.getTripById(newTrip.id);
