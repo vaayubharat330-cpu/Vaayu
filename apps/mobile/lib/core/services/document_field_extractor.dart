@@ -20,8 +20,6 @@ class DocumentExtractionResult {
         'fields': fields,
         'warnings': warnings,
         'rawTextAvailable': rawText.isNotEmpty,
-        // Raw OCR text is deliberately not sent to the backend. The app sends
-        // only the fields required for the selected workflow.
       };
 }
 
@@ -99,8 +97,11 @@ class DocumentFieldExtractor {
         _put(fields, 'name', _extractAfterLabel(raw, const ['name']));
         _put(fields, 'dateOfBirth', _extractDateAfterLabel(raw, const ['dob', 'date of birth', 'year of birth']));
         final masked = _extractAadhaar(normalized);
-        if (masked != null) fields['aadhaarLast4'] = masked;
-        else warnings.add('Aadhaar number was not detected. The app stores only the last four digits, never the full Aadhaar number.');
+        if (masked != null) {
+          fields['aadhaarLast4'] = masked;
+        } else {
+          warnings.add('Aadhaar number was not detected. The app stores only the last four digits, never the full Aadhaar number.');
+        }
         break;
       default:
         break;
@@ -115,11 +116,15 @@ class DocumentFieldExtractor {
   }
 
   void _put(Map<String, String> target, String key, String? value) {
-    if (value != null && value.trim().isNotEmpty) target[key] = value.trim();
+    if (value != null && value.trim().isNotEmpty) {
+      target[key] = value.trim();
+    }
   }
 
   void _warnMissing(List<String> warnings, Map<String, String> fields, String key, String message) {
-    if (!fields.containsKey(key)) warnings.add(message);
+    if (!fields.containsKey(key)) {
+      warnings.add(message);
+    }
   }
 
   String _normalize(String value) => value
@@ -158,9 +163,13 @@ class DocumentFieldExtractor {
 
   String? _extractAadhaar(String text) {
     final groups = RegExp(r'\b\d{4}[ -]\d{4}[ -]\d{4}\b').firstMatch(text);
-    if (groups != null) return groups.group(0)!.replaceAll(RegExp(r'[^0-9]'), '').substring(8);
+    if (groups != null) {
+      return groups.group(0)!.replaceAll(RegExp(r'[^0-9]'), '').substring(8);
+    }
     final compact = RegExp(r'\b\d{12}\b').firstMatch(text);
-    if (compact != null) return compact.group(0)!.substring(8);
+    if (compact != null) {
+      return compact.group(0)!.substring(8);
+    }
     return null;
   }
 

@@ -1,4 +1,7 @@
-// Automated full test suite runner for VAAYU enterprise backend
+// Automated full test suite runner for VAAYU enterprise backend.
+// This runner performs destructive operations (Redis rate-limit cleanup and PostgreSQL
+// baseline restoration), so it refuses to run unless the caller explicitly identifies
+// the target as disposable certification infrastructure.
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -8,6 +11,45 @@ const envFile = path.resolve(__dirname, '..', '.env');
 const parsed = fs.existsSync(envFile) ? dotenv.parse(fs.readFileSync(envFile)) : {};
 const jwtSecret = parsed.JWT_SECRET || process.env.JWT_SECRET || '';
 const base = process.env.VAAYU_TEST_BASE || 'http://127.0.0.1:4000';
+const databaseUrl = process.env.DATABASE_URL || parsed.DATABASE_URL || '';
+const redisUrl = process.env.REDIS_URL || parsed.REDIS_URL || '';
+
+function hostOf(value, label) {
+  if (!value) throw new Error(`${label} is required for destructive certification.`);
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(value);
+  } catch {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+  return parsedUrl.hostname;
+}
+
+function assertDisposableTarget() {
+  if (process.env.VAAYU_TEST_TARGET !== 'disposable') {
+    throw new Error('Refusing destructive certification: set VAAYU_TEST_TARGET=disposable.');
+  }
+  if (process.env.VAAYU_ALLOW_DESTRUCTIVE_TESTS !== 'true') {
+    throw new Error('Refusing destructive certification: set VAAYU_ALLOW_DESTRUCTIVE_TESTS=true.');
+  }
+
+  const baseHost = hostOf(base, 'VAAYU_TEST_BASE');
+  if (!['127.0.0.1', 'localhost', '::1'].includes(baseHost)) {
+    throw new Error(`Refusing destructive certification against non-loopback base host: ${baseHost}`);
+  }
+
+  const dbHost = hostOf(databaseUrl, 'DATABASE_URL');
+  if (!['127.0.0.1', 'localhost', '::1'].includes(dbHost)) {
+    throw new Error(`Refusing destructive certification against non-loopback database host: ${dbHost}`);
+  }
+
+  if (redisUrl) {
+    const redisHost = hostOf(redisUrl, 'REDIS_URL');
+    if (!['127.0.0.1', 'localhost', '::1'].includes(redisHost)) {
+      throw new Error(`Refusing destructive certification against non-loopback Redis host: ${redisHost}`);
+    }
+  }
+}
 
 const suites = [
   'test/unit/security.test.js',
@@ -34,11 +76,18 @@ console.log('----------------------------------------------------');
 console.log('VAAYU Enterprise Test Battery Runner');
 console.log(`Base URL: ${base}`);
 console.log(`JWT Secret: ${jwtSecret ? 'Loaded (' + jwtSecret.length + ' chars)' : 'MISSING'}`);
+console.log(`Target: ${process.env.VAAYU_TEST_TARGET || 'UNSPECIFIED'}`);
 console.log(`Suites: ${suites.length}`);
 console.log('----------------------------------------------------\n');
 
 (async () => {
-  const redisUrl = process.env.REDIS_URL || parsed.REDIS_URL;
+  try {
+    assertDisposableTarget();
+  } catch (error) {
+    console.error(`\nCERTIFICATION ABORTED: ${error.message}`);
+    process.exit(2);
+  }
+
   if (redisUrl) {
     try {
       const Redis = require('ioredis');
@@ -46,7 +95,10 @@ console.log('----------------------------------------------------\n');
       const keys = await redis.keys('rate:limiter:*');
       if (keys.length) await redis.del(keys);
       await redis.quit();
-    } catch (e) {}
+    } catch (e) {
+      console.error(`Redis reset failed: ${e.message}`);
+      process.exit(2);
+    }
   }
 
   let failed = 0;
@@ -71,8 +123,11 @@ console.log('----------------------------------------------------\n');
     console.log(`ALL ${suites.length} TEST SUITES PASSED ✓`);
     try {
       execSync('node src/db/seedPostgres.js --force', { cwd: path.resolve(__dirname, '..'), stdio: 'pipe' });
-      console.log('Postgres clean baseline restored.');
-    } catch (e) {}
+      console.log('Disposable Postgres clean baseline restored.');
+    } catch (e) {
+      console.error(`Postgres baseline restore failed: ${e.message}`);
+      process.exit(2);
+    }
     process.exit(0);
   }
 

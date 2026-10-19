@@ -1,0 +1,28 @@
+# Disposable VAAYU certification infrastructure.
+# No named volumes are used: `docker compose down -v` destroys all certification state.
+name: vaayu-certification
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: vaayu_cert
+      POSTGRES_PASSWORD: vaayu_cert
+      POSTGRES_DB: vaayu_cert
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vaayu_cert -d vaayu_cert"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
