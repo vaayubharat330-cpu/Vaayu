@@ -22,6 +22,20 @@ class RedisLockManager {
 
   async disconnect() {
     if (this.redis && typeof this.redis.disconnect === 'function') await this.redis.disconnect();
+
+    // The disposable certification environment loads the driver-location service
+    // as part of dispatch tests. Close its singleton Redis client from the same
+    // teardown boundary so test processes never retain an idle Redis socket.
+    if (process.env.VAAYU_TEST_TARGET === 'disposable') {
+      try {
+        const { redisStore } = require('./driverLocationStore');
+        if (redisStore && typeof redisStore.disconnect === 'function') {
+          await redisStore.disconnect();
+        }
+      } catch (_) {
+        // Teardown must remain best-effort and never mask the test result.
+      }
+    }
   }
 
   async acquireDriverLock(driverId, orderId, ttlMs = this.DEFAULT_TTL_MS) {
