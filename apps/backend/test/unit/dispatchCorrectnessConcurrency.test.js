@@ -32,6 +32,8 @@ const crypto = require('crypto');
 const db = require('../../src/db/database');
 const { dispatchService, DispatchService } = require('../../src/services/dispatchService');
 const { redisLockManager } = require('../../src/services/redisLockManager');
+const { redisPubSub } = require('../../src/services/redisPubSub');
+const { redisRateLimiter } = require('../../src/services/redisRateLimiter');
 const { deliveryStateMachine, DELIVERY_STATES } = require('../../src/services/deliveryStateMachine');
 const { driverLocationService } = require('../../src/services/driverLocationService');
 const { PostgresPool } = require('../../src/db/postgresClient');
@@ -56,6 +58,9 @@ test('Pillar 9: Dispatch Correctness & Concurrency Certification Suite', async (
 
   suite.after(async () => {
     await dispatchService.resetDispatchState();
+    await redisLockManager.disconnect();
+    await redisPubSub.disconnect();
+    await redisRateLimiter.disconnect();
     await new Promise(r => setTimeout(r, 100));
     await pool.end();
   });
