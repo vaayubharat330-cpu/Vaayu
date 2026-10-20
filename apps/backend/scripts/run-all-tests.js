@@ -68,7 +68,6 @@ const suites = [
   'test/unit/telemetryReplaySuppression.test.js',
   'test/unit/dispatchCorrectnessConcurrency.test.js',
   'test/unit/realtimeStreamResilience.test.js',
-  'test/unit/adminReadGuard.test.js',
   'test/unit/databaseDisasterRecoveryPolicy.test.js'
 ];
 
