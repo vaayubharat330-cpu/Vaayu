@@ -81,13 +81,16 @@ test('customer portal uses local Tailwind instead of the Tailwind CDN', async ({
   expect(bodyBackground).not.toBe('rgba(0, 0, 0, 0)');
 });
 
-test('all core portal documents expose their expected local bundles', async ({ request }) => {
+test('all core portal documents expose their expected local bundles', async ({ request, baseURL }) => {
   for (const surface of surfaces) {
     const documentResponse = await request.get(surface.path);
     expect(documentResponse.status(), `${surface.name} document is unavailable`).toBe(200);
 
     const html = await documentResponse.text();
-    expect(html).toContain(surface.script);
+    const scriptSources = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)].map(match => match[1]);
+    const resolvedScriptUrls = scriptSources.map(source => new URL(source, new URL(surface.path, baseURL)).pathname);
+    expect(resolvedScriptUrls, `${surface.name} document should reference ${surface.script}`).toContain(surface.script);
+
     if (surface.name !== 'OTP console') {
       expect(html).toContain('/built/tailwind.css');
     }
