@@ -30,25 +30,20 @@ class RedisMemoryEngine {
     this.ttls = new Map();
   }
 
-  // 1. String / Lock Operations (SET / GET / DEL)
   async set(key, value, ...args) {
     if (this.ttls.has(key) && Date.now() > this.ttls.get(key)) {
       this.stringKeys.delete(key);
       this.ttls.delete(key);
     }
-
     let isNx = false;
     let ttlMs = null;
-
     for (let i = 0; i < args.length; i++) {
       const arg = String(args[i]).toUpperCase();
       if (arg === 'NX') isNx = true;
       if (arg === 'PX' && args[i + 1] != null) ttlMs = parseInt(args[i + 1], 10);
       if (arg === 'EX' && args[i + 1] != null) ttlMs = parseInt(args[i + 1], 10) * 1000;
     }
-
     if (isNx && this.stringKeys.has(key)) return null;
-
     this.stringKeys.set(key, String(value));
     if (ttlMs) this.ttls.set(key, Date.now() + ttlMs);
     return 'OK';
@@ -84,7 +79,6 @@ class RedisMemoryEngine {
     return 1;
   }
 
-  // 2. Set Operations (SADD / SMEMBERS)
   async sadd(key, member) {
     if (!this.setKeys.has(key)) this.setKeys.set(key, new Set());
     this.setKeys.get(key).add(String(member));
@@ -101,7 +95,6 @@ class RedisMemoryEngine {
     return set ? Array.from(set) : [];
   }
 
-  // 3. Hash Operations (HSET / HGETALL)
   async hset(key, obj) {
     if (!this.hashes.has(key)) this.hashes.set(key, {});
     const hash = this.hashes.get(key);
@@ -127,7 +120,6 @@ class RedisMemoryEngine {
     return 1;
   }
 
-  // 4. Spatial Operations (GEOADD / GEOSEARCH / ZREM)
   async geoadd(key, lng, lat, member) {
     if (!this.geoSpatialSets.has(key)) this.geoSpatialSets.set(key, new Map());
     const set = this.geoSpatialSets.get(key);
@@ -145,19 +137,16 @@ class RedisMemoryEngine {
     const radiusNum = parseFloat(radiusKm);
     const set = this.geoSpatialSets.get(key);
     if (!set) return [];
-
     const results = [];
     for (const [member, coords] of set.entries()) {
       const dist = calcHaversine(latNum, lngNum, coords.lat, coords.lng);
       if (dist <= radiusNum) results.push([member, dist.toFixed(2), [coords.lng, coords.lat]]);
     }
-
     if (sortOrderStr === 'ASC') results.sort((a, b) => parseFloat(a[1]) - parseFloat(b[1]));
     else if (sortOrderStr === 'DESC') results.sort((a, b) => parseFloat(b[1]) - parseFloat(a[1]));
     return results;
   }
 
-  // 5. List Operations (RPUSH / LTRIM / LRANGE)
   async rpush(key, value) {
     if (!this.lists.has(key)) this.lists.set(key, []);
     this.lists.get(key).push(value);
@@ -182,7 +171,6 @@ class RedisMemoryEngine {
     return list.slice(s, stop === -1 ? undefined : e + 1);
   }
 
-  // 6. Pub/Sub Operations (PUBLISH / SUBSCRIBE / UNSUBSCRIBE)
   async publish(channel, message) {
     if (!this.channels) this.channels = new Map();
     const handlers = this.channels.get(channel);
@@ -215,7 +203,6 @@ class RedisMemoryEngine {
   }
 }
 
-// Global Shared Engine Instance for Multi-Node Simulation
 const sharedMemoryRedisEngine = new RedisMemoryEngine();
 
 class RedisClient {
@@ -271,30 +258,40 @@ class RedisClient {
   }
   async geoadd(key, lng, lat, member) { return this.redis ? this.redis.geoadd(key, lng, lat, member) : this.engine.geoadd(key, lng, lat, member); }
   async geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr) {
-    if (this.redis) {
-      try {
-        // Redis GEOSEARCH requires ASC/DESC before the WITH* modifiers.
-        // The public adapter signature remains stable for existing callers.
-        return await this.redis.geosearch(
-          key,
-          fromWord, lng, lat,
-          byRadiusWord, radiusKm, unitWord,
-          sortOrderStr,
-          withDistWord,
-          withCoordsWord
-        );
-      } catch (err) {
-        if (err.message && err.message.includes('unknown command')) {
-          const args = [key, lng, lat, radiusKm, unitWord || 'km'];
-          if (withCoordsWord) args.push(withCoordsWord.replace('WITHCOORDS', 'WITHCOORD'));
-          if (withDistWord) args.push(withDistWord);
-          if (sortOrderStr) args.push(sortOrderStr);
-          return await this.redis.georadius(...args);
-        }
-        throw err;
+    if (!this.redis) return this.engine.geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr);
+
+    // Build the RESP command explicitly. ioredis' convenience method has a
+    // positional API whose optional arguments do not match this adapter's
+    // stable signature. Raw command construction guarantees Redis receives:
+    // GEOSEARCH key FROMLONLAT lon lat BYRADIUS radius unit ASC WITHDIST WITHCOORD
+    const args = [
+      'GEOSEARCH',
+      key,
+      fromWord,
+      lng,
+      lat,
+      byRadiusWord,
+      radiusKm,
+      unitWord || 'km'
+    ];
+    if (sortOrderStr) args.push(sortOrderStr);
+    if (withDistWord) args.push(withDistWord);
+    if (withCoordsWord) args.push(withCoordsWord);
+
+    try {
+      return await this.redis.call(...args);
+    } catch (err) {
+      if (err.message && err.message.toLowerCase().includes('unknown command')) {
+        const fallbackArgs = [
+          'GEORADIUS', key, lng, lat, radiusKm, unitWord || 'km'
+        ];
+        if (withDistWord) fallbackArgs.push(withDistWord);
+        if (withCoordsWord) fallbackArgs.push(withCoordsWord.replace('WITHCOORDS', 'WITHCOORD'));
+        if (sortOrderStr) fallbackArgs.push(sortOrderStr);
+        return await this.redis.call(...fallbackArgs);
       }
+      throw err;
     }
-    return this.engine.geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr);
   }
   async zrem(key, member) { return this.redis ? this.redis.zrem(key, member) : this.engine.zrem(key, member); }
   async rpush(key, value) { return this.redis ? this.redis.rpush(key, value) : this.engine.rpush(key, value); }
