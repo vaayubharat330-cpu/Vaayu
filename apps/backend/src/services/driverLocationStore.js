@@ -183,11 +183,13 @@ class RedisDriverLocationStore extends DriverLocationStore {
   async findNearbyDrivers(lat, lng, radiusKm = 10, vehicleId = null) {
     if (!this.redis) return [];
     const now = Date.now();
+    // Redis GEOSEARCH uses the singular WITHCOORD token. Keep the same wire
+    // contract in both the native Redis and in-memory adapters.
     const rawResults = await this.redis.geosearch(
       'drivers:active:spatial',
       'FROMLONGLAT', lng, lat,
       'BYRADIUS', radiusKm, 'km',
-      'WITHDIST', 'WITHCOORDS', 'ASC'
+      'WITHDIST', 'WITHCOORD', 'ASC'
     );
 
     const results = [];
