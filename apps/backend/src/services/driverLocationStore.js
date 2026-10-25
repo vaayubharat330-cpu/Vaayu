@@ -3,7 +3,7 @@ const db = require('../db/database');
 
 /**
  * VAAYU Driver Location Store Abstraction
- * 
+ *
  * Provides unified interface for:
  * 1. InMemoryDriverLocationStore (Default for single-process local dev)
  * 2. RedisDriverLocationStore (Production multi-instance shared spatial & telemetry state)
@@ -99,9 +99,7 @@ class InMemoryDriverLocationStore extends DriverLocationStore {
 
   async getDriverHistory(driverId, tripId = null) {
     const history = this.locationHistory.get(driverId) || [];
-    if (tripId) {
-      return history.filter(p => p.tripId === tripId);
-    }
+    if (tripId) return history.filter(p => p.tripId === tripId);
     return history;
   }
 
@@ -139,9 +137,7 @@ class RedisDriverLocationStore extends DriverLocationStore {
   }
 
   async disconnect() {
-    if (this.redis && typeof this.redis.disconnect === 'function') {
-      await this.redis.disconnect();
-    }
+    if (this.redis && typeof this.redis.disconnect === 'function') await this.redis.disconnect();
   }
 
   async clearDriverLocation(driverId) {
@@ -158,9 +154,7 @@ class RedisDriverLocationStore extends DriverLocationStore {
       ...record,
       updatedAt: record.updatedAt || new Date().toISOString()
     });
-    await this.redis.expire(key, 120); // 2 minute TTL
-
-    // Add to Spatial Index
+    await this.redis.expire(key, 120);
     await this.redis.geoadd('drivers:active:spatial', record.lng, record.lat, driverId);
     return record;
   }
@@ -182,48 +176,69 @@ class RedisDriverLocationStore extends DriverLocationStore {
 
   async findNearbyDrivers(lat, lng, radiusKm = 10, vehicleId = null) {
     if (!this.redis) return [];
-    const now = Date.now();
-    // Redis GEOSEARCH uses the singular WITHCOORD token. Keep the same wire
-    // contract in both the native Redis and in-memory adapters.
+    const latNum = Number(lat);
+    const lngNum = Number(lng);
+    const radiusNum = Number(radiusKm);
+    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum) || !Number.isFinite(radiusNum) || radiusNum < 0) return [];
+
     const rawResults = await this.redis.geosearch(
       'drivers:active:spatial',
-      'FROMLONGLAT', lng, lat,
-      'BYRADIUS', radiusKm, 'km',
+      'FROMLONGLAT', lngNum, latNum,
+      'BYRADIUS', radiusNum, 'km',
       'WITHDIST', 'WITHCOORD', 'ASC'
     );
 
+    const now = Date.now();
     const results = [];
-    for (const res of rawResults) {
-      const [driverId, distStr, coords] = res;
-      const driverLoc = await this.getDriverLocation(driverId);
-      if (driverLoc) {
-        const pingAgeSec = (now - driverLoc.lastPingMs) / 1000;
-        
-        let liveness = 'ONLINE';
-        if (pingAgeSec > 60) {
-          liveness = 'OFFLINE';
-          await this.clearDriverLocation(driverId);
-          continue;
-        } else if (pingAgeSec > 30) {
-          liveness = 'STALE';
-          continue; // Skip STALE drivers from candidate search
-        } else if (pingAgeSec > 15) {
-          liveness = 'DEGRADED';
-        }
+    for (const rawResult of rawResults || []) {
+      // Redis/ioredis returns [member, distance, [lng, lat]]. The memory
+      // adapter follows the same shape. Ignore malformed candidates rather
+      // than letting one corrupt result invalidate the whole search.
+      if (!Array.isArray(rawResult) || rawResult.length < 2) continue;
+      const driverId = String(rawResult[0]);
+      const redisDistanceKm = Number(rawResult[1]);
+      if (!Number.isFinite(redisDistanceKm)) continue;
 
-        if (driverLoc.status !== 'OFFLINE' && !driverLoc.currentTripId) {
-          if (!vehicleId || driverLoc.vehicleId === vehicleId) {
-            results.push({
-              ...driverLoc,
-              effectiveStatus: liveness,
-              distanceKm: parseFloat(distStr),
-              etaMinutes: Math.max(1, Math.round((parseFloat(distStr) / 25) * 60))
-            });
-          }
-        }
+      const driverLoc = await this.getDriverLocation(driverId);
+      if (!driverLoc) {
+        // Remove orphaned spatial members so subsequent searches cannot keep
+        // returning records whose authoritative location hash has expired.
+        await this.redis.zrem('drivers:active:spatial', driverId);
+        continue;
       }
+
+      const pingAgeSec = (now - driverLoc.lastPingMs) / 1000;
+      let liveness = 'ONLINE';
+      if (pingAgeSec > 60) {
+        await this.clearDriverLocation(driverId);
+        continue;
+      } else if (pingAgeSec > 30) {
+        continue;
+      } else if (pingAgeSec > 15) {
+        liveness = 'DEGRADED';
+      }
+
+      if (driverLoc.status === 'OFFLINE' || driverLoc.currentTripId) continue;
+      if (vehicleId && String(driverLoc.vehicleId) !== String(vehicleId)) continue;
+
+      // Recalculate from the authoritative hash coordinates. Redis distance is
+      // useful for candidate selection, but the returned driver object should
+      // always expose the same distance semantics as the in-memory provider.
+      const distanceKm = calcHaversine(latNum, lngNum, driverLoc.lat, driverLoc.lng);
+      if (distanceKm > radiusNum) continue;
+
+      results.push({
+        ...driverLoc,
+        effectiveStatus: liveness,
+        distanceKm: Math.round(distanceKm * 100) / 100,
+        etaMinutes: Math.max(1, Math.round((distanceKm / 25) * 60))
+      });
     }
-    return results;
+
+    // Redis promises ASC ordering, but filtering stale/offline/trip-bound
+    // candidates can change the returned set. Always establish the contract
+    // explicitly at the store boundary.
+    return results.sort((a, b) => a.distanceKm - b.distanceKm);
   }
 
   async appendHistory(driverId, point) {
@@ -286,9 +301,7 @@ const redisStore = new RedisDriverLocationStore();
 
 function getActiveDriverLocationStore() {
   const provider = (process.env.REDIS_PROVIDER || 'redis').toLowerCase();
-  if (provider === 'redis' || process.env.REDIS_URL || process.env.REDIS_HOST) {
-    return redisStore;
-  }
+  if (provider === 'redis' || process.env.REDIS_URL || process.env.REDIS_HOST) return redisStore;
   return inMemoryStore;
 }
 
