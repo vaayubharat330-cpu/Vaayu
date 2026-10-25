@@ -1,179 +1,254 @@
-const EventEmitter = require('events');
-
-class RedisMemoryEngine extends EventEmitter {
-  constructor() {
-    super();
-    this.hashes = new Map();
-    this.strings = new Map();
-    this.sets = new Map();
-    this.lists = new Map();
-    this.geo = new Map();
-    this.expiry = new Map();
-    this.subscriptions = new Map();
-  }
-
-  _checkExpiry(key) {
-    const expiresAt = this.expiry.get(key);
-    if (expiresAt && Date.now() >= expiresAt) {
-      this.expiry.delete(key);
-      this.hashes.delete(key);
-      this.strings.delete(key);
-      this.sets.delete(key);
-      this.lists.delete(key);
-      this.geo.delete(key);
-    }
-  }
-
-  async get(key) { this._checkExpiry(key); return this.strings.get(key) ?? null; }
-  async set(key, value, ...args) {
-    this.strings.set(key, String(value));
-    const exIndex = args.findIndex(a => String(a).toUpperCase() === 'EX');
-    if (exIndex >= 0 && args[exIndex + 1] != null) this.expiry.set(key, Date.now() + Number(args[exIndex + 1]) * 1000);
-    return 'OK';
-  }
-  async del(key) {
-    const existed = this.hashes.delete(key) || this.strings.delete(key) || this.sets.delete(key) || this.lists.delete(key) || this.geo.delete(key);
-    this.expiry.delete(key);
-    return existed ? 1 : 0;
-  }
-  async exists(key) { this._checkExpiry(key); return (this.hashes.has(key) || this.strings.has(key) || this.sets.has(key) || this.lists.has(key) || this.geo.has(key)) ? 1 : 0; }
-  async sadd(key, member) {
-    this._checkExpiry(key);
-    if (!this.sets.has(key)) this.sets.set(key, new Set());
-    const set = this.sets.get(key);
-    const before = set.size;
-    set.add(String(member));
-    return set.size > before ? 1 : 0;
-  }
-  async smembers(key) { this._checkExpiry(key); return [...(this.sets.get(key) || [])]; }
-  async srem(key, member) { this._checkExpiry(key); const set = this.sets.get(key); if (!set) return 0; return set.delete(String(member)) ? 1 : 0; }
-  async hset(key, obj) {
-    this._checkExpiry(key);
-    if (!this.hashes.has(key)) this.hashes.set(key, new Map());
-    const hash = this.hashes.get(key);
-    let changed = 0;
-    for (const [field, value] of Object.entries(obj || {})) {
-      if (!hash.has(field) || hash.get(field) !== String(value)) changed += 1;
-      hash.set(field, String(value));
-    }
-    return changed;
-  }
-  async hgetall(key) { this._checkExpiry(key); const hash = this.hashes.get(key); if (!hash) return {}; return Object.fromEntries(hash.entries()); }
-  async expire(key, seconds) { this.expiry.set(key, Date.now() + Number(seconds) * 1000); return 1; }
-  async eval() { throw new Error('EVAL_UNSUPPORTED_BY_MEMORY_ENGINE'); }
-  async geoadd(key, lng, lat, member) {
-    this._checkExpiry(key);
-    if (!this.geo.has(key)) this.geo.set(key, new Map());
-    this.geo.get(key).set(String(member), { lng: Number(lng), lat: Number(lat) });
-    return 1;
-  }
-  async geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr) {
-    const entries = this.geo.get(key) || new Map();
-    const originLng = Number(lng);
-    const originLat = Number(lat);
-    const radius = Number(radiusKm);
-    const results = [];
-    for (const [member, point] of entries.entries()) {
-      const distanceKm = calcHaversine(originLat, originLng, point.lat, point.lng);
-      if (distanceKm <= radius) {
-        const row = [member];
-        if (withDistWord) row.push(String(distanceKm));
-        if (withCoordsWord) row.push([String(point.lng), String(point.lat)]);
-        results.push({ row, distanceKm });
-      }
-    }
-    results.sort((a, b) => a.distanceKm - b.distanceKm);
-    return results.map(item => item.row);
-  }
-  async zrem(key, member) { const geo = this.geo.get(key); if (!geo) return 0; return geo.delete(String(member)) ? 1 : 0; }
-  async rpush(key, value) { if (!this.lists.has(key)) this.lists.set(key, []); const list = this.lists.get(key); list.push(String(value)); return list.length; }
-  async ltrim(key, start, stop) {
-    const list = this.lists.get(key) || [];
-    const normalizedStart = start < 0 ? Math.max(0, list.length + start) : start;
-    const normalizedStop = stop < 0 ? list.length + stop : stop;
-    this.lists.set(key, list.slice(normalizedStart, normalizedStop + 1));
-    return 'OK';
-  }
-  async lrange(key, start, stop) {
-    const list = this.lists.get(key) || [];
-    const normalizedStart = start < 0 ? Math.max(0, list.length + start) : start;
-    const normalizedStop = stop < 0 ? list.length + stop : stop;
-    return list.slice(normalizedStart, normalizedStop + 1);
-  }
-  async publish(channel, message) {
-    const handlers = this.subscriptions.get(channel) || [];
-    for (const handler of handlers) handler(message);
-    return handlers.length;
-  }
-  async subscribe(channel, handler) {
-    if (!this.subscriptions.has(channel)) this.subscriptions.set(channel, new Set());
-    this.subscriptions.get(channel).add(handler);
-    return true;
-  }
-  async unsubscribe(channel, handler) {
-    const handlers = this.subscriptions.get(channel);
-    if (!handlers) return true;
-    handlers.delete(handler);
-    if (!handlers.size) this.subscriptions.delete(channel);
-    return true;
-  }
-}
+const net = require('net');
+const Redis = require('ioredis');
 
 function calcHaversine(lat1, lon1, lat2, lon2) {
   const R = 6371;
-  const dLat = (Number(lat2) - Number(lat1)) * Math.PI / 180;
-  const dLon = (Number(lon2) - Number(lon1)) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(Number(lat1) * Math.PI / 180) * Math.cos(Number(lat2) * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 100) / 100;
+}
+
+/**
+ * VAAYU Milestone 6 Phase 6.2/6.3: Redis Client & Shared Operational Engine
+ *
+ * Provides:
+ * 1. Redis RESP TCP Client Adapter (connects to Redis Server 6379 via TCP socket).
+ * 2. Shared Memory Redis Engine (Simulates shared multi-node Redis cluster for local testing & multi-instance Node A/B/C verification).
+ */
+
+class RedisMemoryEngine {
+  constructor() {
+    this.hashes = new Map();
+    this.geoSpatialSets = new Map();
+    this.lists = new Map();
+    this.stringKeys = new Map();
+    this.setKeys = new Map();
+    this.ttls = new Map();
+  }
+
+  async set(key, value, ...args) {
+    if (this.ttls.has(key) && Date.now() > this.ttls.get(key)) {
+      this.stringKeys.delete(key);
+      this.ttls.delete(key);
+    }
+    let isNx = false;
+    let ttlMs = null;
+    for (let i = 0; i < args.length; i++) {
+      const arg = String(args[i]).toUpperCase();
+      if (arg === 'NX') isNx = true;
+      if (arg === 'PX' && args[i + 1] != null) ttlMs = parseInt(args[i + 1], 10);
+      if (arg === 'EX' && args[i + 1] != null) ttlMs = parseInt(args[i + 1], 10) * 1000;
+    }
+    if (isNx && this.stringKeys.has(key)) return null;
+    this.stringKeys.set(key, String(value));
+    if (ttlMs) this.ttls.set(key, Date.now() + ttlMs);
+    return 'OK';
+  }
+
+  async get(key) {
+    if (this.ttls.has(key) && Date.now() > this.ttls.get(key)) {
+      this.stringKeys.delete(key);
+      this.ttls.delete(key);
+      return null;
+    }
+    return this.stringKeys.get(key) || null;
+  }
+
+  async incr(key) {
+    if (this.ttls.has(key) && Date.now() > this.ttls.get(key)) {
+      this.stringKeys.delete(key);
+      this.ttls.delete(key);
+    }
+    const currentVal = parseInt(this.stringKeys.get(key) || '0', 10);
+    const newVal = currentVal + 1;
+    this.stringKeys.set(key, String(newVal));
+    return newVal;
+  }
+
+  async del(key) {
+    this.stringKeys.delete(key);
+    this.hashes.delete(key);
+    this.geoSpatialSets.delete(key);
+    this.lists.delete(key);
+    this.setKeys.delete(key);
+    this.ttls.delete(key);
+    return 1;
+  }
+
+  async sadd(key, member) {
+    if (!this.setKeys.has(key)) this.setKeys.set(key, new Set());
+    this.setKeys.get(key).add(String(member));
+    return 1;
+  }
+
+  async smembers(key) {
+    if (this.ttls.has(key) && Date.now() > this.ttls.get(key)) {
+      this.setKeys.delete(key);
+      this.ttls.delete(key);
+      return [];
+    }
+    const set = this.setKeys.get(key);
+    return set ? Array.from(set) : [];
+  }
+
+  async hset(key, obj) {
+    if (!this.hashes.has(key)) this.hashes.set(key, {});
+    const hash = this.hashes.get(key);
+    for (const [k, v] of Object.entries(obj)) hash[k] = String(v);
+    return Object.keys(obj).length;
+  }
+
+  async hgetall(key) {
+    if (this.ttls.has(key) && Date.now() > this.ttls.get(key)) {
+      this.hashes.delete(key);
+      this.ttls.delete(key);
+      return {};
+    }
+    return this.hashes.get(key) || {};
+  }
+
+  async expire(key, seconds) {
+    if (seconds <= 0) {
+      await this.del(key);
+      return 1;
+    }
+    this.ttls.set(key, Date.now() + seconds * 1000);
+    return 1;
+  }
+
+  async geoadd(key, lng, lat, member) {
+    if (!this.geoSpatialSets.has(key)) this.geoSpatialSets.set(key, new Map());
+    const set = this.geoSpatialSets.get(key);
+    set.set(member, { lng: parseFloat(lng), lat: parseFloat(lat) });
+    return 1;
+  }
+
+  async zrem(key, member) {
+    if (this.geoSpatialSets.has(key)) this.geoSpatialSets.get(key).delete(member);
+  }
+
+  async geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr) {
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+    const radiusNum = parseFloat(radiusKm);
+    const set = this.geoSpatialSets.get(key);
+    if (!set) return [];
+    const results = [];
+    for (const [member, coords] of set.entries()) {
+      const dist = calcHaversine(latNum, lngNum, coords.lat, coords.lng);
+      if (dist <= radiusNum) results.push([member, dist.toFixed(2), [coords.lng, coords.lat]]);
+    }
+    if (sortOrderStr === 'ASC') results.sort((a, b) => parseFloat(a[1]) - parseFloat(b[1]));
+    else if (sortOrderStr === 'DESC') results.sort((a, b) => parseFloat(b[1]) - parseFloat(a[1]));
+    return results;
+  }
+
+  async rpush(key, value) {
+    if (!this.lists.has(key)) this.lists.set(key, []);
+    this.lists.get(key).push(value);
+    return this.lists.get(key).length;
+  }
+
+  async ltrim(key, start, stop) {
+    if (!this.lists.has(key)) return 'OK';
+    const list = this.lists.get(key);
+    const len = list.length;
+    const s = start < 0 ? Math.max(0, len + start) : start;
+    const e = stop < 0 ? Math.max(0, len + stop) : stop;
+    this.lists.set(key, list.slice(s, e + 1));
+    return 'OK';
+  }
+
+  async lrange(key, start, stop) {
+    const list = this.lists.get(key) || [];
+    const len = list.length;
+    const s = start < 0 ? Math.max(0, len + start) : start;
+    const e = stop < 0 ? Math.max(0, len + stop) : stop;
+    return list.slice(s, stop === -1 ? undefined : e + 1);
+  }
+
+  async publish(channel, message) {
+    if (!this.channels) this.channels = new Map();
+    const handlers = this.channels.get(channel);
+    if (!handlers || handlers.size === 0) return 0;
+    const msgStr = typeof message === 'string' ? message : JSON.stringify(message);
+    let count = 0;
+    for (const handler of Array.from(handlers)) {
+      try {
+        handler(channel, msgStr);
+        count++;
+      } catch (err) {
+        console.error('[RedisMemoryEngine] PubSub handler error:', err);
+      }
+    }
+    return count;
+  }
+
+  async subscribe(channel, handler) {
+    if (!this.channels) this.channels = new Map();
+    if (!this.channels.has(channel)) this.channels.set(channel, new Set());
+    this.channels.get(channel).add(handler);
+    return true;
+  }
+
+  async unsubscribe(channel, handler) {
+    if (!this.channels || !this.channels.has(channel)) return true;
+    if (handler) this.channels.get(channel).delete(handler);
+    else this.channels.delete(channel);
+    return true;
+  }
 }
 
 const sharedMemoryRedisEngine = new RedisMemoryEngine();
 
 class RedisClient {
-  constructor(options = {}) {
-    this.redis = null;
+  constructor(config = {}) {
+    this.host = config.host || process.env.REDIS_HOST || 'localhost';
+    this.port = parseInt(config.port || process.env.REDIS_PORT || '6379', 10);
     this.engine = sharedMemoryRedisEngine;
+    this.isConnected = false;
+    this.redis = null;
     this.subscriber = null;
     this.subscriptionHandlers = new Map();
-    this.isConnected = false;
-
-    const redisUrl = options.url || process.env.REDIS_URL;
-    const useExternal = Boolean(redisUrl) && (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEV_REDIS === 'true' || options.forceExternal === true);
-    if (useExternal) {
-      try {
-        const Redis = require('ioredis');
-        this.redis = new Redis(redisUrl, {
-          lazyConnect: false,
-          maxRetriesPerRequest: 2,
-          enableOfflineQueue: false
-        });
-        this.redis.on('ready', () => { this.isConnected = true; });
-        this.redis.on('close', () => { this.isConnected = false; });
-        this.redis.on('error', () => {});
-      } catch (_) {
-        this.redis = null;
-      }
+    const redisUrl = config.url || process.env.REDIS_URL;
+    const useExternalRedis = Boolean(redisUrl) && (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEV_REDIS === 'true');
+    if (useExternalRedis) {
+      this.redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 2, enableReadyCheck: true });
+      this.redis.on('ready', () => { this.isConnected = true; });
+      this.redis.on('end', () => { this.isConnected = false; });
+      this.redis.on('error', () => { this.isConnected = false; });
+      if (this.redis.on) this.redis.on('error', () => {});
+    } else if (process.env.NODE_ENV === 'production') {
+      throw new Error('REDIS_URL is required in production; in-memory Redis is development-only');
     }
   }
 
   async connect() {
     if (this.redis) {
-      if (this.redis.status === 'wait') await this.redis.connect();
-      this.isConnected = this.redis.status === 'ready';
-      return this.isConnected;
+      try { await this.redis.ping(); this.isConnected = true; return true; }
+      catch (_) { this.isConnected = false; return false; }
     }
-    this.isConnected = true;
-    return true;
+    return new Promise((resolve) => {
+      const socket = net.createConnection({ host: this.host, port: this.port, timeout: 500 }, () => {
+        socket.destroy();
+        this.isConnected = true;
+        resolve(true);
+      });
+      socket.on('error', () => { socket.destroy(); this.isConnected = false; resolve(false); });
+      socket.on('timeout', () => { socket.destroy(); this.isConnected = false; resolve(false); });
+    });
   }
 
-  async ping() { return this.redis ? this.redis.ping() : 'PONG'; }
-  async get(key) { return this.redis ? this.redis.get(key) : this.engine.get(key); }
   async set(key, value, ...args) { return this.redis ? this.redis.set(key, value, ...args) : this.engine.set(key, value, ...args); }
+  async get(key) { return this.redis ? this.redis.get(key) : this.engine.get(key); }
+  async incr(key) { return this.redis ? this.redis.incr(key) : this.engine.incr(key); }
   async del(key) { return this.redis ? this.redis.del(key) : this.engine.del(key); }
-  async exists(key) { return this.redis ? this.redis.exists(key) : this.engine.exists(key); }
   async sadd(key, member) { return this.redis ? this.redis.sadd(key, member) : this.engine.sadd(key, member); }
   async smembers(key) { return this.redis ? this.redis.smembers(key) : this.engine.smembers(key); }
-  async srem(key, member) { return this.redis ? this.redis.srem(key, member) : this.engine.srem(key, member); }
   async hset(key, obj) { return this.redis ? this.redis.hset(key, obj) : this.engine.hset(key, obj); }
   async hgetall(key) { return this.redis ? this.redis.hgetall(key) : this.engine.hgetall(key); }
   async expire(key, seconds) { return this.redis ? this.redis.expire(key, seconds) : this.engine.expire(key, seconds); }
@@ -185,22 +260,14 @@ class RedisClient {
   async geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr) {
     if (!this.redis) return this.engine.geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr);
 
-    // Use GEORADIUS for the production spatial adapter. It is supported by
-    // the Redis versions used by VAAYU certification and avoids the divergent
-    // GEOSEARCH argument grammar across Redis/ioredis versions. The caller's
-    // stable adapter contract remains unchanged.
-    const args = [
-      'GEORADIUS',
-      key,
-      lng,
-      lat,
-      radiusKm,
-      unitWord || 'km'
-    ];
+    // Keep the adapter signature stable, but issue the mature Redis command
+    // directly. This avoids ioredis GEOSEARCH positional-argument differences.
+    // GEORADIUS returns the same [member, distance, [lng, lat]] shape required
+    // by RedisDriverLocationStore.
+    const args = ['GEORADIUS', key, lng, lat, radiusKm, unitWord || 'km'];
     if (withDistWord) args.push(withDistWord);
     if (withCoordsWord) args.push(withCoordsWord === 'WITHCOORDS' ? 'WITHCOORD' : withCoordsWord);
     if (sortOrderStr) args.push(sortOrderStr);
-
     return await this.redis.call(...args);
   }
   async zrem(key, member) { return this.redis ? this.redis.zrem(key, member) : this.engine.zrem(key, member); }
