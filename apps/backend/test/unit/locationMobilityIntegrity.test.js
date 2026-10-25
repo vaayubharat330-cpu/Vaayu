@@ -207,14 +207,24 @@ test('Pillar 10: Location & Mobility Integrity Suite', async (suite) => {
     const centerLat = 17.4400;
     const centerLng = 78.3800;
 
-    // Register 3 nearby drivers at known distances
-    const dClose = 'drv_p10_spatial_close'; // ~500m
-    const dMid = 'drv_p10_spatial_mid';     // ~2.5km
-    const dFar = 'drv_p10_spatial_far';     // ~15km (outside 10km radius)
+    // Use unique driver IDs so persisted Redis telemetry from a previous test run
+    // cannot retain a stale trip binding/status and contaminate the spatial query.
+    const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const dClose = `drv_p10_spatial_close_${runId}`; // ~500m
+    const dMid = `drv_p10_spatial_mid_${runId}`;     // ~2.5km
+    const dFar = `drv_p10_spatial_far_${runId}`;     // ~15km (outside 10km radius)
 
-    await driverLocationService.updateDriverLocation(dClose, { lat: 17.4440, lng: 78.3820, vehicleId: 'TATA_ACE', status: 'ONLINE' });
-    await driverLocationService.updateDriverLocation(dMid, { lat: 17.4600, lng: 78.3900, vehicleId: 'TATA_ACE', status: 'ONLINE' });
-    await driverLocationService.updateDriverLocation(dFar, { lat: 17.5700, lng: 78.4500, vehicleId: 'TATA_ACE', status: 'ONLINE' });
+    // Explicitly clear each fixture before writing the fresh spatial state.
+    await Promise.all([
+      driverLocationService.clearDriverLocation(dClose),
+      driverLocationService.clearDriverLocation(dMid),
+      driverLocationService.clearDriverLocation(dFar)
+    ]);
+
+    // Register 3 nearby drivers at known distances.
+    await driverLocationService.updateDriverLocation(dClose, { lat: 17.4440, lng: 78.3820, vehicleId: 'TATA_ACE', status: 'ONLINE', tripId: null });
+    await driverLocationService.updateDriverLocation(dMid, { lat: 17.4600, lng: 78.3900, vehicleId: 'TATA_ACE', status: 'ONLINE', tripId: null });
+    await driverLocationService.updateDriverLocation(dFar, { lat: 17.5700, lng: 78.4500, vehicleId: 'TATA_ACE', status: 'ONLINE', tripId: null });
 
     // Radial Query (radius = 10km)
     const nearby = await driverLocationService.findNearbyDrivers(centerLat, centerLng, 10, 'TATA_ACE');
