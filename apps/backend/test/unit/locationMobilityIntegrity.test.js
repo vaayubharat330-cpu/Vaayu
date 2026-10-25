@@ -57,16 +57,29 @@ test('Pillar 10: Location & Mobility Integrity Suite', async (suite) => {
     const centerLat = 17.4400; const centerLng = 78.3800;
     const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const dClose = `drv_p10_spatial_close_${runId}`; const dMid = `drv_p10_spatial_mid_${runId}`; const dFar = `drv_p10_spatial_far_${runId}`;
+    const store = getActiveDriverLocationStore();
+    console.log('[P10.4 DIAG] START store=', store.constructor.name, 'redis=', store.redis?.redis ? 'external' : 'memory');
     await Promise.all([driverLocationService.clearDriverLocation(dClose), driverLocationService.clearDriverLocation(dMid), driverLocationService.clearDriverLocation(dFar)]);
 
     const closeWrite = await driverLocationService.updateDriverLocation(dClose, { lat: 17.4440, lng: 78.3820, vehicleId: 'TATA_ACE', status: 'ONLINE', tripId: null });
     const midWrite = await driverLocationService.updateDriverLocation(dMid, { lat: 17.4600, lng: 78.3900, vehicleId: 'TATA_ACE', status: 'ONLINE', tripId: null });
     const farWrite = await driverLocationService.updateDriverLocation(dFar, { lat: 17.5700, lng: 78.4500, vehicleId: 'TATA_ACE', status: 'ONLINE', tripId: null });
+    console.log('[P10.4 DIAG] writes=', JSON.stringify({ close: closeWrite, mid: midWrite, far: farWrite }, null, 2));
     assert.equal(closeWrite.success, true, 'Close spatial fixture must be accepted'); assert.equal(midWrite.success, true, 'Mid spatial fixture must be accepted'); assert.equal(farWrite.success, true, 'Far spatial fixture must be accepted');
 
-    const nearby = await driverLocationService.findNearbyDrivers(centerLat, centerLng, 10, 'TATA_ACE');
+    const closeStored = await store.getDriverLocation(dClose);
+    const midStored = await store.getDriverLocation(dMid);
+    const farStored = await store.getDriverLocation(dFar);
+    console.log('[P10.4 DIAG] stored=', JSON.stringify({ close: closeStored, mid: midStored, far: farStored }, null, 2));
+
+    let nearby;
+    try {
+      nearby = await driverLocationService.findNearbyDrivers(centerLat, centerLng, 10, 'TATA_ACE');
+    } catch (error) {
+      console.error('[P10.4 DIAG] nearby search THREW=', error?.stack || error);
+      throw error;
+    }
     const nearbyIds = new Set(nearby.map(d => d.driverId));
-    console.log('[P10.4 DIAG] store=', getActiveDriverLocationStore().constructor.name);
     console.log('[P10.4 DIAG] nearby=', JSON.stringify(nearby, null, 2));
     console.log('[P10.4 DIAG] fixtureIds=', JSON.stringify({ dClose, dMid, dFar }));
     assert.ok(nearbyIds.has(dClose), `Close driver missing; nearbyIds=${JSON.stringify([...nearbyIds])}`);
