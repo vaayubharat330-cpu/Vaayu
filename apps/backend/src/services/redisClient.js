@@ -273,12 +273,21 @@ class RedisClient {
   async geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr) {
     if (this.redis) {
       try {
-        return await this.redis.geosearch(key, fromWord, lng, lat, byRadiusWord, radiusKm, unitWord, withDistWord, withCoordsWord, sortOrderStr);
+        // Redis GEOSEARCH requires ASC/DESC before the WITH* modifiers.
+        // The public adapter signature remains stable for existing callers.
+        return await this.redis.geosearch(
+          key,
+          fromWord, lng, lat,
+          byRadiusWord, radiusKm, unitWord,
+          sortOrderStr,
+          withDistWord,
+          withCoordsWord
+        );
       } catch (err) {
         if (err.message && err.message.includes('unknown command')) {
           const args = [key, lng, lat, radiusKm, unitWord || 'km'];
-          if (withDistWord) args.push(withDistWord);
           if (withCoordsWord) args.push(withCoordsWord.replace('WITHCOORDS', 'WITHCOORD'));
+          if (withDistWord) args.push(withDistWord);
           if (sortOrderStr) args.push(sortOrderStr);
           return await this.redis.georadius(...args);
         }
