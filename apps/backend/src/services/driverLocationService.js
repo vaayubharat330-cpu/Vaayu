@@ -9,20 +9,12 @@ const { getActiveDriverLocationStore, calcHaversine } = require('./driverLocatio
  * 3. Monotonic sequence protection for duplicate/out-of-order telemetry packets.
  * 4. Replay protection and physical jump/glitch filtering.
  * 5. Trip active protection: telemetry loss never terminates an active delivery state.
- * 6. Liveness considers both transport freshness and device packet age, so a delayed
- *    old GPS packet cannot masquerade as a fresh ONLINE driver.
+ * 6. Liveness considers both transport freshness and device packet age, so a delayed old GPS packet cannot masquerade as a fresh ONLINE driver.
  */
 class DriverLocationService {
   constructor(store = null) {
     this.store = store || getActiveDriverLocationStore();
-
-    this.LIVENESS_CONFIG = {
-      HEALTHY_THRESHOLD_SEC: 5,
-      DEGRADED_THRESHOLD_SEC: 15,
-      STALE_THRESHOLD_SEC: 60,
-      OFFLINE_THRESHOLD_SEC: 60
-    };
-
+    this.LIVENESS_CONFIG = { HEALTHY_THRESHOLD_SEC: 5, DEGRADED_THRESHOLD_SEC: 15, STALE_THRESHOLD_SEC: 60, OFFLINE_THRESHOLD_SEC: 60 };
     this.MAX_REALISTIC_SPEED_KMH = 130;
     this.MAX_ALLOWED_FUTURE_MS = 5000;
     this.MAX_ALLOWED_PAST_MS = 300000;
@@ -33,7 +25,6 @@ class DriverLocationService {
     if (rawTimestamp === undefined || rawTimestamp === null || rawTimestamp === '') return fallbackMs;
     const numeric = Number(rawTimestamp);
     if (!Number.isFinite(numeric)) return NaN;
-    // Accept Unix seconds from mobile SDKs as well as Unix milliseconds.
     return numeric < 100000000000 ? Math.round(numeric * 1000) : Math.round(numeric);
   }
 
@@ -42,48 +33,27 @@ class DriverLocationService {
     const lng = parseFloat(rawLng);
     const speed = parseFloat(rawSpeed) || 0;
     const accuracy = parseFloat(rawAccuracy) || 5;
-
     if (isNaN(lat) || isNaN(lng)) return { valid: false, reason: 'NaN coordinates' };
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return { valid: false, reason: 'Coordinates out of bounds' };
     if (lat === 0 && lng === 0) return { valid: false, reason: 'Zero null island coordinates' };
     if (accuracy > 100) return { valid: false, reason: `Low GPS accuracy (${accuracy}m)` };
-
     const pingTimestampMs = this.normalizeTimestamp(rawTimestamp, serverReceivedAt);
     if (!Number.isFinite(pingTimestampMs)) return { valid: false, reason: 'Invalid timestamp format' };
     if (pingTimestampMs > serverReceivedAt + this.MAX_ALLOWED_FUTURE_MS) return { valid: false, reason: 'Future timestamp detected' };
     if (pingTimestampMs < serverReceivedAt - this.MAX_ALLOWED_PAST_MS) return { valid: false, reason: 'Stale/expired timestamp detected' };
-
     const sequence = rawSequence === undefined || rawSequence === null || rawSequence === '' ? null : Number(rawSequence);
-    if (sequence !== null && (!Number.isSafeInteger(sequence) || sequence < 0)) {
-      return { valid: false, reason: 'Invalid telemetry sequence' };
-    }
-    if (existing && sequence !== null && Number.isSafeInteger(existing.lastSequence) && sequence <= existing.lastSequence) {
-      return { valid: false, reason: sequence === existing.lastSequence ? 'Duplicate telemetry sequence rejected' : 'Replayed or out-of-order telemetry sequence rejected' };
-    }
-    if (existing && existing.lastPingMs && pingTimestampMs < existing.lastPingMs) {
-      return { valid: false, reason: 'Replayed or out-of-order telemetry packet rejected' };
-    }
-
+    if (sequence !== null && (!Number.isSafeInteger(sequence) || sequence < 0)) return { valid: false, reason: 'Invalid telemetry sequence' };
+    if (existing && sequence !== null && Number.isSafeInteger(existing.lastSequence) && sequence <= existing.lastSequence) return { valid: false, reason: sequence === existing.lastSequence ? 'Duplicate telemetry sequence rejected' : 'Replayed or out-of-order telemetry sequence rejected' };
+    if (existing && existing.lastPingMs && pingTimestampMs < existing.lastPingMs) return { valid: false, reason: 'Replayed or out-of-order telemetry packet rejected' };
     return { valid: true, lat, lng, speed, accuracy, pingTimestampMs, sequence, serverReceivedAt };
   }
 
   getLivenessState(lastServerReceivedAt, lastPingMs = null, packetAgeMs = null) {
     if (!lastServerReceivedAt && !lastPingMs) return 'OFFLINE';
-
-    // A request arriving now does not make an old device-generated GPS fix fresh.
-    // Use the most conservative freshness signal so delayed/replayed packets cannot
-    // keep a driver dispatch-eligible merely because the transport is still active.
-    const serverAgeSec = lastServerReceivedAt
-      ? Math.max(0, (Date.now() - lastServerReceivedAt) / 1000)
-      : 0;
-    const deviceAgeSec = lastPingMs
-      ? Math.max(0, (Date.now() - lastPingMs) / 1000)
-      : 0;
-    const packetAgeSec = packetAgeMs === null || packetAgeMs === undefined
-      ? 0
-      : Math.max(0, Number(packetAgeMs) / 1000);
+    const serverAgeSec = lastServerReceivedAt ? Math.max(0, (Date.now() - lastServerReceivedAt) / 1000) : 0;
+    const deviceAgeSec = lastPingMs ? Math.max(0, (Date.now() - lastPingMs) / 1000) : 0;
+    const packetAgeSec = packetAgeMs === null || packetAgeMs === undefined ? 0 : Math.max(0, Number(packetAgeMs) / 1000);
     const ageSec = Math.max(serverAgeSec, deviceAgeSec, packetAgeSec);
-
     if (ageSec > this.LIVENESS_CONFIG.OFFLINE_THRESHOLD_SEC) return 'OFFLINE';
     if (ageSec > this.LIVENESS_CONFIG.DEGRADED_THRESHOLD_SEC) return 'STALE';
     if (ageSec > this.LIVENESS_CONFIG.HEALTHY_THRESHOLD_SEC) return 'DEGRADED';
@@ -94,16 +64,9 @@ class DriverLocationService {
     const serverReceivedAt = Date.now();
     const rawLat = telemetryData.lat !== undefined ? telemetryData.lat : telemetryData.latitude;
     const rawLng = telemetryData.lng !== undefined ? telemetryData.lng : telemetryData.longitude;
-    const {
-      bearing = 0,
-      speed = 0,
-      accuracy = 5,
-      timestamp = null,
-      deviceGeneratedAt = timestamp,
-      sequence = telemetryData.seq ?? telemetryData.sequence ?? null,
-      status = 'ONLINE',
-      tripId = null
-    } = telemetryData;
+    const { bearing = 0, speed = 0, accuracy = 5, timestamp = null, deviceGeneratedAt = timestamp, sequence = telemetryData.seq ?? telemetryData.sequence ?? null, status = 'ONLINE' } = telemetryData;
+    const tripBindingProvided = Object.prototype.hasOwnProperty.call(telemetryData, 'tripId');
+    const requestedTripId = telemetryData.tripId;
 
     const existing = await this.store.getDriverLocation(driverId);
     const validation = this.validateTelemetry(rawLat, rawLng, speed, accuracy, deviceGeneratedAt, existing, serverReceivedAt, sequence);
@@ -114,7 +77,6 @@ class DriverLocationService {
 
     const deviceGeneratedMs = validation.pingTimestampMs;
     const packetAgeMs = Math.max(0, serverReceivedAt - deviceGeneratedMs);
-
     if (existing && existing.lat && existing.lng && existing.lastPingMs) {
       const timeDeltaSec = Math.max(0.1, (deviceGeneratedMs - existing.lastPingMs) / 1000);
       const distanceKm = calcHaversine(existing.lat, existing.lng, validation.lat, validation.lng);
@@ -144,14 +106,18 @@ class DriverLocationService {
       return normalized.length > 0 && !/^(undefined|null)$/i.test(normalized);
     };
 
+    // A telemetry packet explicitly carrying tripId:null is an authoritative
+    // request to unbind the driver's active trip. Previously a null value fell
+    // back to the previous currentTripId, making trip clearing impossible and
+    // allowing stale trip bindings to suppress spatial candidates.
+    const currentTripId = tripBindingProvided
+      ? (requestedTripId || null)
+      : (existing ? existing.currentTripId : null);
+
     const updatedRecord = {
       driverId,
-      name: usableIdentityValue(telemetryData.name)
-        ? String(telemetryData.name).trim()
-        : (usableIdentityValue(existing?.name) ? existing.name : `Driver ${driverId}`),
-      phone: usableIdentityValue(telemetryData.phone)
-        ? String(telemetryData.phone).trim()
-        : (usableIdentityValue(existing?.phone) ? existing.phone : ''),
+      name: usableIdentityValue(telemetryData.name) ? String(telemetryData.name).trim() : (usableIdentityValue(existing?.name) ? existing.name : `Driver ${driverId}`),
+      phone: usableIdentityValue(telemetryData.phone) ? String(telemetryData.phone).trim() : (usableIdentityValue(existing?.phone) ? existing.phone : ''),
       vehicleId: telemetryData.vehicleId || (existing ? existing.vehicleId : 'v_ace'),
       lat: validation.lat,
       lng: validation.lng,
@@ -159,9 +125,9 @@ class DriverLocationService {
       bearingConfidence,
       speed: validation.speed,
       accuracy: validation.accuracy,
-      status: tripId ? 'ON_TRIP' : (status || 'ONLINE'),
+      status: requestedTripId ? 'ON_TRIP' : (status || 'ONLINE'),
       livenessState: 'HEALTHY',
-      currentTripId: tripId || (existing ? existing.currentTripId : null),
+      currentTripId,
       lastPingMs: deviceGeneratedMs,
       lastServerReceivedAt: serverReceivedAt,
       packetAgeMs,
@@ -170,64 +136,28 @@ class DriverLocationService {
     };
 
     await this.store.saveDriverLocation(driverId, updatedRecord);
-    await this.store.appendHistory(driverId, {
-      lat: validation.lat,
-      lng: validation.lng,
-      bearing: Math.round(finalBearing),
-      speed: validation.speed,
-      tripId: updatedRecord.currentTripId,
-      sequence: validation.sequence,
-      deviceGeneratedAt: new Date(deviceGeneratedMs).toISOString(),
-      serverReceivedAt: new Date(serverReceivedAt).toISOString(),
-      packetAgeMs,
-      timestampMs: deviceGeneratedMs,
-      isoTime: new Date(serverReceivedAt).toISOString()
-    });
-
+    await this.store.appendHistory(driverId, { lat: validation.lat, lng: validation.lng, bearing: Math.round(finalBearing), speed: validation.speed, tripId: updatedRecord.currentTripId, sequence: validation.sequence, deviceGeneratedAt: new Date(deviceGeneratedMs).toISOString(), serverReceivedAt: new Date(serverReceivedAt).toISOString(), packetAgeMs, timestampMs: deviceGeneratedMs, isoTime: new Date(deviceGeneratedMs).toISOString() });
     return { success: true, driver: updatedRecord };
   }
 
-  async findNearbyDrivers(lat, lng, radiusKm = 10, vehicleId = null) {
-    return await this.store.findNearbyDrivers(lat, lng, radiusKm, vehicleId);
-  }
+  async findNearbyDrivers(lat, lng, radiusKm = 10, vehicleId = null) { return this.store.findNearbyDrivers(lat, lng, radiusKm, vehicleId); }
+  async getDriverHistory(driverId, tripId = null) { return this.store.getDriverHistory(driverId, tripId); }
+  async clearDriverLocation(driverId) { return this.store.clearDriverLocation(driverId); }
 
   async getDriverState(driverId) {
     const driver = await this.store.getDriverLocation(driverId);
-    if (!driver) return null;
-
+    if (!driver) return { driverId, status: 'OFFLINE', livenessState: 'OFFLINE', isDispatchEligible: false };
     const livenessState = this.getLivenessState(driver.lastServerReceivedAt, driver.lastPingMs, driver.packetAgeMs);
-    return {
-      ...driver,
-      livenessState,
-      isDispatchEligible: (livenessState === 'HEALTHY' || livenessState === 'DEGRADED') && driver.status !== 'OFFLINE' && !driver.currentTripId
-    };
-  }
-
-  async getDriverHistory(driverId, tripId = null) {
-    return await this.store.getDriverHistory(driverId, tripId);
-  }
-
-  async clearDriverLocation(driverId) {
-    if (this.store.clearDriverLocation) await this.store.clearDriverLocation(driverId);
-  }
-
-  async setDriverAvailability(driverId, isOnline) {
-    return await this.store.setDriverAvailability(driverId, isOnline);
+    const status = driver.currentTripId ? 'ON_TRIP' : driver.status;
+    return { ...driver, status, livenessState, isDispatchEligible: !driver.currentTripId && driver.status !== 'OFFLINE' && (livenessState === 'HEALTHY' || livenessState === 'DEGRADED') };
   }
 
   calculateBearing(lat1, lon1, lat2, lon2) {
-    const toRad = deg => (deg * Math.PI) / 180;
-    const toDeg = rad => (rad * 180) / Math.PI;
-    const phi1 = toRad(lat1);
-    const phi2 = toRad(lat2);
-    const deltaLambda = toRad(lon2 - lon1);
-    const y = Math.sin(deltaLambda) * Math.cos(phi2);
-    const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
-    const theta = Math.atan2(y, x);
-    return (toDeg(theta) + 360) % 360;
+    const y = Math.sin((lon2 - lon1) * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180);
+    const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) - Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos((lon2 - lon1) * Math.PI / 180);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
   }
 }
 
 const driverLocationService = new DriverLocationService();
-
 module.exports = { DriverLocationService, driverLocationService };
