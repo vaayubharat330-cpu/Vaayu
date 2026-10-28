@@ -1,10 +1,14 @@
 const path = require('path');
 const { defineConfig } = require('@playwright/test');
 
-// Browser certification uses the same local admin configuration as the backend.
-// Credentials stay in the developer's ignored repository-root .env and are never committed here.
+// Browser certification should load the same local configuration as the backend.
+// Prefer apps/backend/.env (the backend's local runtime configuration), then fall
+// back to the repository-root .env for environments that keep shared settings there.
 try {
-  require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
+  const backendEnv = path.resolve(__dirname, '../../.env');
+  const rootEnv = path.resolve(__dirname, '../../../.env');
+  require('dotenv').config({ path: backendEnv });
+  require('dotenv').config({ path: rootEnv });
 } catch (_) {
   // dotenv is optional for environments that inject variables directly.
 }
