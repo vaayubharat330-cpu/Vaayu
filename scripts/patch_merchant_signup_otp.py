@@ -38,42 +38,55 @@ FUNCTION_INSERT = '''      const handleSendRegistrationOtp = async (e) => {
 PHONE_INPUT = '        <input type="text" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono" placeholder="9849012345" required />'
 PHONE_INPUT_PATCHED = '        <input type="text" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono" placeholder="9849012345" required disabled={regOtpSent} />'
 
-SUBMIT_INPUT = '''<button type="submit">
-          {isAuthSubmitting ? 'Creating Business Account...' : 'Complete Registration & Launch Workspace'}
-        </button>'''
-SUBMIT_PATCHED = '''<div className="flex gap-2 items-end">
-              <div className="flex-1">
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Phone Verification OTP</label>
-                {regOtpSent ? (
-                  <input
-                    value={regOtpCode}
-                    onChange={(e) => setRegOtpCode(e.target.value.replace(/\\D/g, '').slice(0, 6))}
-                    placeholder="6-digit OTP"
-                    maxLength="6"
-                    inputMode="numeric"
-                    required
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-                  />
-                ) : (
-                  <p className="text-xs text-slate-500 py-2">Send a verification OTP before creating the business account.</p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleSendRegistrationOtp}
-                disabled={isAuthSubmitting || regOtpSent}
-                className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold hover:bg-slate-600 disabled:opacity-50"
-              >
-                {isAuthSubmitting ? 'Sending OTP...' : (regOtpSent ? 'OTP Sent' : 'Send Verification OTP')}
-              </button>
-            </div>
-            <button type="submit" disabled={!regOtpSent || !regOtpCode || isAuthSubmitting}>
-          {isAuthSubmitting ? 'Creating Business Account...' : 'Complete Registration & Launch Workspace'}
-        </button>'''
+SUBMIT_INPUT = '''                  <button
+                    type="submit"
+                    disabled={isAuthSubmitting}
+                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 text-slate-950 font-black rounded-2xl transition shadow-xl shadow-emerald-500/20 text-xs uppercase tracking-wider"
+                  >
+                    {isAuthSubmitting ? 'Creating Business Account...' : 'Complete Registration & Launch Workspace'}
+                  </button>'''
+SUBMIT_PATCHED = '''                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs text-slate-400 font-bold mb-1 uppercase">PHONE VERIFICATION OTP</label>
+                      {regOtpSent ? (
+                        <input
+                          type="text"
+                          value={regOtpCode}
+                          onChange={(e) => setRegOtpCode(e.target.value.replace(/\\D/g, '').slice(0, 6))}
+                          placeholder="6-digit OTP"
+                          maxLength="6"
+                          inputMode="numeric"
+                          required
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono text-center tracking-widest"
+                        />
+                      ) : (
+                        <p className="text-[10px] text-slate-500 py-2">Send a verification OTP before creating the business account.</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSendRegistrationOtp}
+                      disabled={isAuthSubmitting || regOtpSent}
+                      className="rounded-xl bg-slate-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-600 disabled:opacity-50"
+                    >
+                      {isAuthSubmitting ? 'Sending OTP...' : (regOtpSent ? 'OTP Sent' : 'Send Verification OTP')}
+                    </button>
+                  </div>
 
+                  <button
+                    type="submit"
+                    disabled={!regOtpSent || !regOtpCode || isAuthSubmitting}
+                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 text-slate-950 font-black rounded-2xl transition shadow-xl shadow-emerald-500/20 text-xs uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isAuthSubmitting ? 'Creating Business Account...' : 'Complete Registration & Launch Workspace'}
+                  </button>'''
+
+TRANSITION = "onClick={() => { setAuthMode('REGISTER'); setRegPhone(authPhone); }}"
+TRANSITION_PATCHED = "onClick={() => { setAuthMode('REGISTER'); setRegPhone(authPhone); setRegOtpSent(false); setRegOtpCode(''); }}"
+
+prepared = []
 for path in FILES:
     text = path.read_text(encoding='utf-8')
-    original = text
 
     if text.count(STATE_ANCHOR) != 1:
         raise SystemExit(f'{path}: expected one registration state anchor, found {text.count(STATE_ANCHOR)}')
@@ -101,13 +114,13 @@ for path in FILES:
         raise SystemExit(f'{path}: expected exact registration submit block once, found {text.count(SUBMIT_INPUT)}')
     text = text.replace(SUBMIT_INPUT, SUBMIT_PATCHED, 1)
 
-    marker = "setAuthMode('REGISTER');"
-    if text.count(marker) != 1:
-        raise SystemExit(f'{path}: expected one REGISTER mode transition, found {text.count(marker)}')
-    text = text.replace(marker, "setAuthMode('REGISTER'); setRegOtpSent(false); setRegOtpCode('');", 1)
+    if text.count(TRANSITION) != 1:
+        raise SystemExit(f'{path}: expected one registration mode transition, found {text.count(TRANSITION)}')
+    text = text.replace(TRANSITION, TRANSITION_PATCHED, 1)
 
-    if text == original:
-        raise SystemExit(f'{path}: no changes produced')
+    prepared.append((path, text))
+
+for path, text in prepared:
     path.write_text(text, encoding='utf-8')
     print(f'patched {path}')
 
