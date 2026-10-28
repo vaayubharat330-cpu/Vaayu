@@ -52,12 +52,13 @@ for path in FILES:
     text = text.replace(FUNCTION_ANCHOR, FUNCTION_INSERT + FUNCTION_ANCHOR, 1)
 
     start = text.index(FUNCTION_ANCHOR)
-    end = text.find("      const ", start + len(FUNCTION_ANCHOR))
+    end_marker = "\n      const handleLogout = () => {"
+    end = text.find(end_marker, start + len(FUNCTION_ANCHOR))
     if end == -1:
         raise SystemExit(f'{path}: could not find end of handleRegisterBusiness')
     block = text[start:end]
     if block.count('otp: otpCode') != 1:
-        raise SystemExit(f'{path}: expected exactly one registration OTP verification call')
+        raise SystemExit(f'{path}: expected exactly one registration OTP verification call, found {block.count("otp: otpCode")}')
     block = block.replace('otp: otpCode', 'otp: regOtpCode', 1)
     text = text[:start] + block + text[end:]
 
