@@ -1,9 +1,6 @@
 from pathlib import Path
 
-FILES = [
-    Path('apps/backend/portal-src/merchant.html'),
-    Path('apps/backend/public/merchant.html'),
-]
+FILES = [Path('apps/backend/portal-src/merchant.html')]
 
 STATE_ANCHOR = "      const [regGstin, setRegGstin] = useState('');"
 STATE_INSERT = STATE_ANCHOR + "\n      const [regOtpSent, setRegOtpSent] = useState(false);\n      const [regOtpCode, setRegOtpCode] = useState('');"
