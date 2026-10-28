@@ -36,7 +36,9 @@ FUNCTION_INSERT = r'''      const handleSendRegistrationOtp = async (e) => {
 
 '''
 
-REG_PHONE_RE = re.compile(r'''(<input\b[^>]*\bvalue=\{regPhone\}[^>]*/>)''')
+# The merchant source uses type="text" before value={regPhone}; match the complete input
+# without assuming attribute order.
+REG_PHONE_RE = re.compile(r'''(<input(?=[^>]*\bvalue=\{regPhone\})(?=[^>]*\bonChange=\{\(e\) => setRegPhone\(e\.target\.value\)\})[^>]*\brequired\s*/>)''')
 REG_SUBMIT_RE = re.compile(r'''(\s*<button\s+type="submit"\s+className="[^"]*"\s*>\s*\{isAuthSubmitting \? 'Creating Business Account\.\.\.' : 'Complete Registration & Launch Workspace'\}\s*</button>)''')
 
 for path in FILES:
@@ -80,7 +82,7 @@ for path in FILES:
                   {regOtpSent ? (
                     <input
                       value={regOtpCode}
-                      onChange={(e) => setRegOtpCode(e.target.value.replace(/\\D/g, '').slice(0, 6))}
+                      onChange={(e) => setRegOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="6-digit OTP"
                       maxLength="6"
                       inputMode="numeric"
@@ -116,6 +118,7 @@ for path in FILES:
     path.write_text(text, encoding='utf-8')
     print(f'patched {path}')
 
+# This helper is intentionally ephemeral: after a successful patch, remove the helper itself.
 helper = Path(__file__)
 try:
     helper.unlink()
