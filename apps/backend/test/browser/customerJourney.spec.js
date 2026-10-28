@@ -49,20 +49,34 @@ test.describe('Customer interactive journey certification', () => {
     expect(response?.status()).toBe(200);
     await expect(page).toHaveTitle(/VAAYU/i);
 
-    // The first real interaction: exercise the visible signup form instead of merely checking that React mounted.
+    // The real customer form uses text inputs for phone numbers, so identify the field by its semantic UI metadata.
     const inputsBeforeAuth = await visibleInputs(page);
     expect(inputsBeforeAuth.length, 'Customer page rendered no interactive form controls').toBeGreaterThan(0);
 
-    const telInput = page.locator('input[type="tel"]:visible').first();
-    await expect(telInput, `Could not find the visible customer phone field. Visible inputs: ${JSON.stringify(inputsBeforeAuth)}`).toBeVisible();
-    await telInput.fill(phone);
+    const phoneInput = page.locator('input:visible').filter({ has: undefined }).locator('xpath=..').first();
+    const phoneCandidates = page.locator('input:visible');
+    const phoneCount = await phoneCandidates.count();
+    let customerPhoneField = null;
+    for (let i = 0; i < phoneCount; i += 1) {
+      const candidate = phoneCandidates.nth(i);
+      const placeholder = ((await candidate.getAttribute('placeholder')) || '').toLowerCase();
+      const name = ((await candidate.getAttribute('name')) || '').toLowerCase();
+      const aria = ((await candidate.getAttribute('aria-label')) || '').toLowerCase();
+      if (placeholder.includes('mobile') || placeholder.includes('phone') || name.includes('phone') || name.includes('mobile') || aria.includes('phone') || aria.includes('mobile')) {
+        customerPhoneField = candidate;
+        break;
+      }
+    }
+
+    expect(customerPhoneField, `Could not find the visible customer phone field. Visible inputs: ${JSON.stringify(inputsBeforeAuth)}`).not.toBeNull();
+    await customerPhoneField.fill(phone);
 
     const textInputs = page.locator('input[type="text"]:visible');
     if (await textInputs.count()) {
       const firstText = textInputs.first();
       const placeholder = ((await firstText.getAttribute('placeholder')) || '').toLowerCase();
       const aria = ((await firstText.getAttribute('aria-label')) || '').toLowerCase();
-      if (placeholder.includes('name') || aria.includes('name') || await page.getByText(/full name/i).count()) {
+      if (placeholder.includes('name') || aria.includes('name')) {
         await firstText.fill(customerName);
       }
     }
@@ -76,7 +90,6 @@ test.describe('Customer interactive journey certification', () => {
       message: 'Customer OTP request completed without exposing the development OTP to the browser test',
     }).not.toBeNull();
 
-    const otpInput = page.locator('input:visible').filter({ has: undefined }).locator('..').first();
     const otpCandidates = page.locator('input:visible');
     const otpCount = await otpCandidates.count();
     let otpField = null;
@@ -108,13 +121,13 @@ test.describe('Customer interactive journey certification', () => {
     const bookingControls = page.locator('input:visible, textarea:visible, select:visible, button:visible');
     expect(await bookingControls.count(), 'Authenticated customer workspace contains no usable controls').toBeGreaterThan(0);
 
-    // Exercise pickup validation: clearing the pickup and attempting to continue must not silently create a booking.
+    // Exercise pickup validation: clearing the pickup must not silently create a booking.
     const textareas = page.locator('textarea:visible');
-    const pickupLike = page.locator('input:visible').filter({ hasText: '' });
+    const pickupInputs = page.locator('input:visible');
     if (await textareas.count()) {
       await textareas.first().fill('');
-    } else if (await pickupLike.count() >= 2) {
-      await pickupLike.nth(0).fill('');
+    } else if (await pickupInputs.count() >= 2) {
+      await pickupInputs.nth(0).fill('');
     }
 
     const bodyAfterAuth = await page.locator('body').innerText();
