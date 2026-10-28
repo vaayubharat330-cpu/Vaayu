@@ -75,7 +75,7 @@ async function waitForCustomerOtp(page, phone) {
     const match = latestRequests.find(request => String(request.maskedPhone || '').includes(suffix));
     otp = match?.code ? String(match.code) : null;
     return otp;
-  }, { timeout: 8_000, message: `Customer OTP did not appear in the operator console for phone ending ${suffix}` }).not.toBeNull();
+  }, { timeout: 8_000, message: `Customer OTP did not appear in the operator console for phone ending ${suffix}. Requests: ${JSON.stringify(latestRequests)}` }).not.toBeNull();
 
   expect(otp, `Customer OTP console returned no code. Requests: ${JSON.stringify(latestRequests)}`).toMatch(/^\d{6}$/);
   return otp;
@@ -117,7 +117,15 @@ test.describe('Customer interactive journey certification', () => {
 
     const sendOtp = page.getByRole('button', { name: /send otp|continue|sign up|create account/i }).first();
     await expect(sendOtp, 'Customer signup form has no usable OTP submission button').toBeVisible();
+    const otpResponsePromise = page.waitForResponse(
+      response => response.url().includes('/api/auth/send-otp') && response.request().method() === 'POST',
+      { timeout: 8_000 },
+    );
     await sendOtp.click();
+    const otpResponse = await otpResponsePromise;
+    const otpResponseBody = await otpResponse.json().catch(() => ({}));
+    expect(otpResponse.ok(), `Customer OTP request failed with HTTP ${otpResponse.status()}: ${JSON.stringify(otpResponseBody)}`).toBeTruthy();
+    expect(otpResponseBody.success, `Customer OTP request returned success=false: ${JSON.stringify(otpResponseBody)}`).toBeTruthy();
 
     const otpFromConsole = await waitForCustomerOtp(page, phone);
 
