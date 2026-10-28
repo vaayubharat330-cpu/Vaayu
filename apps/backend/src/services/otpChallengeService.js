@@ -20,6 +20,7 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_SENDS_PER_HOUR = 5;
 const RETENTION_MS = 24 * 60 * 60 * 1000;
 const APPS = new Set(['CUSTOMER', 'MERCHANT', 'DRIVER', 'FLEET_OWNER', 'ADMIN']);
+const DISPOSABLE_OTP_HASH_SECRET = 'vaayu-disposable-certification-otp-hash-secret-2026-10-28';
 
 class OtpError extends Error {
   constructor(code, message, status, extra = {}) {
@@ -40,11 +41,18 @@ function normalizeApp(appType) {
 }
 
 function pepper() {
-  const secret = process.env.OTP_HASH_SECRET || '';
-  if (secret.length < 32) {
-    throw new OtpError('OTP_NOT_CONFIGURED', 'OTP verification is not configured.', 503);
+  const configured = process.env.OTP_HASH_SECRET || '';
+  if (configured.length >= 32) return configured;
+
+  // Disposable certification is deliberately self-contained: it must be able to exercise
+  // the real OTP challenge/verification path without requiring a real SMS provider or a
+  // developer-specific secret. This fallback is unreachable unless the disposable target
+  // is explicitly selected, and production continues to fail closed.
+  if (process.env.VAAYU_TEST_TARGET === 'disposable' && process.env.NODE_ENV !== 'production') {
+    return DISPOSABLE_OTP_HASH_SECRET;
   }
-  return secret;
+
+  throw new OtpError('OTP_NOT_CONFIGURED', 'OTP verification is not configured.', 503);
 }
 
 function hashCode(challengeId, phone, appType, code) {
