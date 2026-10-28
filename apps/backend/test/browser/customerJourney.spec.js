@@ -17,13 +17,39 @@ async function visibleInputs(page) {
   })));
 }
 
-async function waitForCustomerOtp(page, phone) {
-  const username = process.env.VAAYU_TEST_ADMIN_USERNAME || '';
-  const password = process.env.VAAYU_TEST_ADMIN_PASSWORD || '';
-  const role = process.env.VAAYU_TEST_ADMIN_ROLE || 'ADMIN';
-  expect(username && password, 'Browser certification requires VAAYU_TEST_ADMIN_USERNAME and VAAYU_TEST_ADMIN_PASSWORD in the test environment.').toBeTruthy();
+function configuredTestAdmin() {
+  if (process.env.VAAYU_TEST_ADMIN_USERNAME && process.env.VAAYU_TEST_ADMIN_PASSWORD) {
+    return {
+      username: process.env.VAAYU_TEST_ADMIN_USERNAME,
+      password: process.env.VAAYU_TEST_ADMIN_PASSWORD,
+      role: process.env.VAAYU_TEST_ADMIN_ROLE || 'ADMIN',
+    };
+  }
 
-  const loginResponse = await page.request.post('/api/admin/login', { data: { username, password, role } });
+  try {
+    const configuredAdmins = JSON.parse(process.env.VAAYU_ADMIN_USERS_JSON || '[]');
+    const admin = Array.isArray(configuredAdmins)
+      ? configuredAdmins.find(record =>
+        record && typeof record.username === 'string' &&
+        typeof record.password === 'string' &&
+        ['ADMIN', 'SUPER_ADMIN'].includes(record.role)
+      )
+      : null;
+    return admin ? {
+      username: admin.username,
+      password: admin.password,
+      role: admin.role || 'ADMIN',
+    } : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function waitForCustomerOtp(page, phone) {
+  const admin = configuredTestAdmin();
+  expect(admin, 'Browser certification requires a configured ADMIN/SUPER_ADMIN in VAAYU_ADMIN_USERS_JSON.').not.toBeNull();
+
+  const loginResponse = await page.request.post('/api/admin/login', { data: admin });
   expect(loginResponse.ok(), `Admin OTP-console login failed with HTTP ${loginResponse.status()}`).toBeTruthy();
   const loginBody = await loginResponse.json();
   expect(loginBody.success, `Admin OTP-console login failed: ${JSON.stringify(loginBody)}`).toBeTruthy();
