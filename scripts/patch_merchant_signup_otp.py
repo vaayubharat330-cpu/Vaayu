@@ -36,8 +36,7 @@ FUNCTION_INSERT = r'''      const handleSendRegistrationOtp = async (e) => {
 
 '''
 
-# The merchant source uses type="text" before value={regPhone}; match the complete input
-# without assuming attribute order.
+# Match the registration phone input by semantic attributes, regardless of JSX attribute order.
 REG_PHONE_RE = re.compile(r'''(<input(?=[^>]*\bvalue=\{regPhone\})(?=[^>]*\bonChange=\{\(e\) => setRegPhone\(e\.target\.value\)\})[^>]*\brequired\s*/>)''')
 REG_SUBMIT_RE = re.compile(r'''(\s*<button\s+type="submit"\s+className="[^"]*"\s*>\s*\{isAuthSubmitting \? 'Creating Business Account\.\.\.' : 'Complete Registration & Launch Workspace'\}\s*</button>)''')
 
@@ -75,7 +74,7 @@ for path in FILES:
     submit_match = REG_SUBMIT_RE.search(text)
     if not submit_match:
         raise SystemExit(f'{path}: registration submit button not found')
-    otp_ui = '''
+    otp_ui = r'''
               <div className="flex gap-2 items-end">
                 <div className="flex-1">
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Phone Verification OTP</label>
@@ -118,7 +117,6 @@ for path in FILES:
     path.write_text(text, encoding='utf-8')
     print(f'patched {path}')
 
-# This helper is intentionally ephemeral: after a successful patch, remove the helper itself.
 helper = Path(__file__)
 try:
     helper.unlink()
