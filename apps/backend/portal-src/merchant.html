@@ -171,6 +171,8 @@
       const [regCategory, setRegCategory] = useState('Furniture & Interior Supplies');
       const [regAddress, setRegAddress] = useState('');
       const [regGstin, setRegGstin] = useState('');
+      const [regOtpSent, setRegOtpSent] = useState(false);
+      const [regOtpCode, setRegOtpCode] = useState('');
 
       // Bulk Excel Import Side Panel State
       const [showExcelPanel, setShowExcelPanel] = useState(false);
@@ -322,6 +324,30 @@
         }
       };
 
+      const handleSendRegistrationOtp = async (e) => {
+        e.preventDefault();
+        setAuthError('');
+        if (!regPhone || regPhone.length < 10) {
+          setAuthError('Please enter a valid 10-digit mobile number.');
+          return;
+        }
+        setIsAuthSubmitting(true);
+        try {
+          const response = await nativeMerchantFetch('/api/auth/send-otp', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: regPhone })
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) throw new Error(result.error || 'Could not send OTP.');
+          setRegOtpCode(result.otp || '');
+          setRegOtpSent(true);
+        } catch (error) {
+          setAuthError(error.message || 'Could not send OTP.');
+        } finally {
+          setIsAuthSubmitting(false);
+        }
+      };
+
       const handleRegisterBusiness = async (e) => {
         e.preventDefault();
         setAuthError('');
@@ -329,7 +355,7 @@
         try {
           const verifyResponse = await nativeMerchantFetch('/api/auth/verify-otp', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone: regPhone, otp: otpCode, isSignUp: true, name: regContactName })
+            body: JSON.stringify({ phone: regPhone, otp: regOtpCode, isSignUp: true, name: regContactName })
           });
           const verified = await verifyResponse.json();
           if (!verifyResponse.ok || !verified.success) throw new Error(verified.error || 'Verify your phone before registering.');
@@ -870,7 +896,7 @@
                   <div className="text-center pt-2 border-t border-slate-800">
                     <button
                       type="button"
-                      onClick={() => { setAuthMode('REGISTER'); setRegPhone(authPhone); }}
+                      onClick={() => { setAuthMode('REGISTER'); setRegPhone(authPhone); setRegOtpSent(false); setRegOtpCode(''); }}
                       className="text-xs text-slate-400 hover:text-amber-400 font-bold transition"
                     >
                       New business? Register your enterprise fleet →
@@ -899,7 +925,7 @@
                     </div>
                     <div>
                       <label className="text-slate-400 font-bold block mb-1 uppercase text-[10px]">MOBILE PHONE</label>
-                      <input type="text" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono" placeholder="9849012345" required />
+                      <input type="text" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono" placeholder="9849012345" required disabled={regOtpSent} />
                     </div>
                   </div>
 
@@ -954,10 +980,38 @@
                     </div>
                   </div>
 
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs text-slate-400 font-bold mb-1 uppercase">PHONE VERIFICATION OTP</label>
+                      {regOtpSent ? (
+                        <input
+                          type="text"
+                          value={regOtpCode}
+                          onChange={(e) => setRegOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="6-digit OTP"
+                          maxLength="6"
+                          inputMode="numeric"
+                          required
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono text-center tracking-widest"
+                        />
+                      ) : (
+                        <p className="text-[10px] text-slate-500 py-2">Send a verification OTP before creating the business account.</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSendRegistrationOtp}
+                      disabled={isAuthSubmitting || regOtpSent}
+                      className="rounded-xl bg-slate-700 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-600 disabled:opacity-50"
+                    >
+                      {isAuthSubmitting ? 'Sending OTP...' : (regOtpSent ? 'OTP Sent' : 'Send Verification OTP')}
+                    </button>
+                  </div>
+
                   <button
                     type="submit"
-                    disabled={isAuthSubmitting}
-                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 text-slate-950 font-black rounded-2xl transition shadow-xl shadow-emerald-500/20 text-xs uppercase tracking-wider"
+                    disabled={!regOtpSent || !regOtpCode || isAuthSubmitting}
+                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 text-slate-950 font-black rounded-2xl transition shadow-xl shadow-emerald-500/20 text-xs uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isAuthSubmitting ? 'Creating Business Account...' : 'Complete Registration & Launch Workspace'}
                   </button>
