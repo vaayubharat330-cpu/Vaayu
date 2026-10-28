@@ -12,15 +12,11 @@ function adminCredentials() {
 
 async function readLatestConsoleOtp(request, phone) {
   const admin = adminCredentials();
-  const login = await request.post(`${BASE_URL}/api/admin/login`, {
-    data: { username: admin.username, password: admin.password },
-  });
+  const login = await request.post(`${BASE_URL}/api/admin/login`, { data: { username: admin.username, password: admin.password } });
   expect(login.ok()).toBeTruthy();
   const loginBody = await login.json();
   expect(loginBody.success).toBeTruthy();
-  const response = await request.get(`${BASE_URL}/api/admin/otp/requests?limit=50`, {
-    headers: { Authorization: `Bearer ${loginBody.token}` },
-  });
+  const response = await request.get(`${BASE_URL}/api/admin/otp/requests?limit=50`, { headers: { Authorization: `Bearer ${loginBody.token}` } });
   expect(response.ok()).toBeTruthy();
   const body = await response.json();
   const normalized = String(phone).replace(/\D/g, '');
@@ -44,18 +40,40 @@ test.describe('Merchant portal — interactive journey certification', () => {
     await expect(page).toHaveTitle(/VAAYU Enterprise Portal/i);
 
     const phone = `9${Date.now().toString().slice(-9)}`;
-    const inputs = page.locator('input:visible');
-    await expect(inputs.first()).toBeVisible();
+    await expect(page.locator('input:visible').first()).toBeVisible();
 
     const signupToggle = page.getByRole('button', { name: /sign\s*up|register|create.*merchant|new.*merchant/i }).first();
     if (await signupToggle.count()) await signupToggle.click();
 
+    // The generated merchant build may use generic text metadata for the phone field.
+    // Prefer explicit phone/numeric metadata, then fall back to the first visible text
+    // input that is not clearly an email/password field.
+    const visibleInputs = page.locator('input:visible');
+    const inputCount = await visibleInputs.count();
     let phoneInput = null;
-    for (let i = 0; i < await page.locator('input:visible').count(); i += 1) {
-      const input = page.locator('input:visible').nth(i);
-      const placeholder = (await input.getAttribute('placeholder')) || '';
-      const type = (await input.getAttribute('type')) || '';
-      if (/phone|mobile/i.test(placeholder) || /tel/i.test(type)) { phoneInput = input; break; }
+    for (let i = 0; i < inputCount; i += 1) {
+      const input = visibleInputs.nth(i);
+      const marker = [
+        await input.getAttribute('placeholder'),
+        await input.getAttribute('name'),
+        await input.getAttribute('aria-label'),
+        await input.getAttribute('autocomplete'),
+        await input.getAttribute('inputmode'),
+      ].filter(Boolean).join(' ');
+      const type = ((await input.getAttribute('type')) || 'text').toLowerCase();
+      const maxLength = Number(await input.getAttribute('maxlength'));
+      if (/phone|mobile|contact number|telephone/i.test(marker) || type === 'tel' || /numeric|decimal/i.test(marker) || maxLength === 10) {
+        phoneInput = input;
+        break;
+      }
+    }
+    if (!phoneInput) {
+      for (let i = 0; i < inputCount; i += 1) {
+        const input = visibleInputs.nth(i);
+        const type = ((await input.getAttribute('type')) || 'text').toLowerCase();
+        const marker = [await input.getAttribute('placeholder'), await input.getAttribute('name'), await input.getAttribute('aria-label')].filter(Boolean).join(' ');
+        if (type === 'text' && !/email|password/i.test(marker)) { phoneInput = input; break; }
+      }
     }
     if (!phoneInput) throw new Error('Merchant phone input was not discovered');
     await phoneInput.fill(phone);
