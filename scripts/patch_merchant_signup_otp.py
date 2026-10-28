@@ -105,9 +105,9 @@ for path in FILES:
     replacement = otp_ui + submit
     text = text[:submit_match.start(1)] + replacement + text[submit_match.end(1):]
 
-    if 'setAuthMode(\'REGISTER\');' in text:
+    if "setAuthMode('REGISTER');" in text:
         text = text.replace("setAuthMode('REGISTER');", "setAuthMode('REGISTER'); setRegOtpSent(false); setRegOtpCode('');", 1)
-    elif 'setAuthMode(\"REGISTER\");' in text:
+    elif 'setAuthMode("REGISTER");' in text:
         text = text.replace('setAuthMode("REGISTER");', 'setAuthMode("REGISTER"); setRegOtpSent(false); setRegOtpCode(\'\');', 1)
 
     if text == original:
