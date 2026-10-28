@@ -115,8 +115,12 @@ test.describe('Customer interactive journey certification', () => {
       if (placeholder.includes('name') || aria.includes('name')) await firstText.fill(customerName);
     }
 
-    const sendOtp = page.getByRole('button', { name: /send otp|continue|sign up|create account/i }).first();
-    await expect(sendOtp, 'Customer signup form has no usable OTP submission button').toBeVisible();
+    // Submit the form that actually contains the customer phone field. This avoids accidentally
+    // clicking a navigation/tab button that happens to contain words such as "Sign Up" or "Continue".
+    const authForm = customerPhoneField.locator('xpath=ancestor::form[1]');
+    expect(await authForm.count(), 'Customer phone field is not inside a usable authentication form').toBe(1);
+    const sendOtp = authForm.getByRole('button').first();
+    await expect(sendOtp, 'Customer authentication form has no usable OTP submission button').toBeVisible();
     const otpResponsePromise = page.waitForResponse(
       response => response.url().includes('/api/auth/send-otp') && response.request().method() === 'POST',
       { timeout: 8_000 },
