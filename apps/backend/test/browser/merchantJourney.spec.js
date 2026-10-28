@@ -98,10 +98,13 @@ test.describe('Merchant portal — interactive journey certification', () => {
     await phoneInput.fill(phone);
     await fillSignupFields(page, phone);
 
-    // Do not match the signup-mode toggle itself. The OTP action is the actual
-    // control that must produce the /api/auth/send-otp request.
-    const sendOtpButton = page.getByRole('button', { name: /send.*otp|continue|verify.*phone/i }).first();
+    // Registration has a dedicated OTP action. Use the exact accessible name so
+    // this test can never accidentally click a generic Continue/Verify control.
+    const sendOtpButton = page.getByRole('button', { name: /^Send Verification OTP$/i });
+    await expect(sendOtpButton).toHaveCount(1);
     await expect(sendOtpButton).toBeVisible();
+    await expect(sendOtpButton).toBeEnabled();
+
     const otpResponsePromise = page.waitForResponse(
       (response) => response.url().includes('/api/auth/send-otp') && response.request().method() === 'POST',
       { timeout: 8000 },
