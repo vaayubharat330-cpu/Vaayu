@@ -39,7 +39,7 @@ test.describe('Customer interactive journey certification', () => {
       if (!response.url().includes('/api/auth/send-otp') || response.request().method() !== 'POST') return;
       try {
         const body = await response.json();
-        if (body?.success && body.otp) otpFromApi = String(body.otp);
+        if (body?.success && body.demoOtp) otpFromApi = String(body.demoOtp);
       } catch (_) {
         // The assertion below will provide the actionable failure if the dev OTP is unavailable.
       }
@@ -49,11 +49,9 @@ test.describe('Customer interactive journey certification', () => {
     expect(response?.status()).toBe(200);
     await expect(page).toHaveTitle(/VAAYU/i);
 
-    // The real customer form uses text inputs for phone numbers, so identify the field by its semantic UI metadata.
     const inputsBeforeAuth = await visibleInputs(page);
     expect(inputsBeforeAuth.length, 'Customer page rendered no interactive form controls').toBeGreaterThan(0);
 
-    const phoneInput = page.locator('input:visible').filter({ has: undefined }).locator('xpath=..').first();
     const phoneCandidates = page.locator('input:visible');
     const phoneCount = await phoneCandidates.count();
     let customerPhoneField = null;
@@ -87,7 +85,7 @@ test.describe('Customer interactive journey certification', () => {
 
     await expect.poll(() => otpFromApi, {
       timeout: 5_000,
-      message: 'Customer OTP request completed without exposing the development OTP to the browser test',
+      message: 'Customer OTP request completed without exposing demoOtp to the browser test',
     }).not.toBeNull();
 
     const otpCandidates = page.locator('input:visible');
@@ -113,7 +111,6 @@ test.describe('Customer interactive journey certification', () => {
     await expect(verifyOtp, 'OTP screen has no usable verification button').toBeVisible();
     await verifyOtp.click();
 
-    // Authentication must result in a customer workspace, not merely a successful HTTP response.
     await expect.poll(async () => {
       return await page.locator('body').innerText();
     }, { timeout: 8_000 }).toMatch(/book|pickup|drop|vehicle|trip|wallet/i);
@@ -121,7 +118,6 @@ test.describe('Customer interactive journey certification', () => {
     const bookingControls = page.locator('input:visible, textarea:visible, select:visible, button:visible');
     expect(await bookingControls.count(), 'Authenticated customer workspace contains no usable controls').toBeGreaterThan(0);
 
-    // Exercise pickup validation: clearing the pickup must not silently create a booking.
     const textareas = page.locator('textarea:visible');
     const pickupInputs = page.locator('input:visible');
     if (await textareas.count()) {
@@ -133,7 +129,6 @@ test.describe('Customer interactive journey certification', () => {
     const bodyAfterAuth = await page.locator('body').innerText();
     expect(bodyAfterAuth).not.toMatch(/uncaught TypeError|Cannot read properties of undefined/i);
 
-    // Reload is part of the real journey: session and application shell must survive navigation.
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page).toHaveTitle(/VAAYU/i);
     await expect(page.locator('body')).toContainText(/book|pickup|drop|vehicle|trip|wallet/i);
