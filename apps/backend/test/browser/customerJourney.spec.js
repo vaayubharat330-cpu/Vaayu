@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { configuredAdminUsers } = require('../../src/http/helpers');
 
 async function browserHealth(page) {
   const consoleErrors = [];
@@ -17,43 +18,49 @@ async function visibleInputs(page) {
   })));
 }
 
-function configuredTestAdmin() {
+function configuredTestAdmins() {
   if (process.env.VAAYU_TEST_ADMIN_USERNAME && process.env.VAAYU_TEST_ADMIN_PASSWORD) {
-    return {
+    return [{
       username: process.env.VAAYU_TEST_ADMIN_USERNAME,
       password: process.env.VAAYU_TEST_ADMIN_PASSWORD,
       role: process.env.VAAYU_TEST_ADMIN_ROLE || 'ADMIN',
-    };
+    }];
   }
 
-  try {
-    const configuredAdmins = JSON.parse(process.env.VAAYU_ADMIN_USERS_JSON || '[]');
-    const admin = Array.isArray(configuredAdmins)
-      ? configuredAdmins.find(record =>
-        record && typeof record.username === 'string' &&
-        typeof record.password === 'string' &&
-        ['ADMIN', 'SUPER_ADMIN'].includes(record.role)
-      )
-      : null;
-    return admin ? {
-      username: admin.username,
-      password: admin.password,
-      role: admin.role || 'ADMIN',
-    } : null;
-  } catch (_) {
-    return null;
-  }
+  return configuredAdminUsers().map(admin => ({
+    username: admin.username,
+    password: admin.password,
+    role: admin.role,
+  }));
 }
 
 async function waitForCustomerOtp(page, phone) {
-  const admin = configuredTestAdmin();
-  expect(admin, 'Browser certification requires a configured ADMIN/SUPER_ADMIN in VAAYU_ADMIN_USERS_JSON.').not.toBeNull();
+  const admins = configuredTestAdmins();
+  expect(admins.length, 'Browser certification requires at least one valid configured admin account.').toBeGreaterThan(0);
 
-  const loginResponse = await page.request.post('/api/admin/login', { data: admin });
-  expect(loginResponse.ok(), `Admin OTP-console login failed with HTTP ${loginResponse.status()}`).toBeTruthy();
-  const loginBody = await loginResponse.json();
-  expect(loginBody.success, `Admin OTP-console login failed: ${JSON.stringify(loginBody)}`).toBeTruthy();
-  expect(loginBody.token).toBeTruthy();
+  let loginBody = null;
+  const attemptedRoles = [];
+  for (const admin of admins) {
+    const loginResponse = await page.request.post('/api/admin/login', { data: admin });
+    const body = await loginResponse.json().catch(() => ({}));
+    if (!loginResponse.ok() || !body.token) {
+      attemptedRoles.push(`${admin.role}:login-${loginResponse.status()}`);
+      continue;
+    }
+
+    const otpProbe = await page.request.get('/api/admin/otp/requests?app=CUSTOMER&limit=1', {
+      headers: { Authorization: `Bearer ${body.token}` },
+    });
+    if (!otpProbe.ok()) {
+      attemptedRoles.push(`${admin.role}:otp-${otpProbe.status()}`);
+      continue;
+    }
+
+    loginBody = body;
+    break;
+  }
+
+  expect(loginBody, `No configured admin account can access the OTP console. Roles/statuses tested: ${attemptedRoles.join(', ')}`).not.toBeNull();
 
   const suffix = phone.replace(/\D/g, '').slice(-4);
   let latestRequests = [];
