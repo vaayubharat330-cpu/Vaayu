@@ -27,6 +27,54 @@ async function readLatestConsoleOtp(request, phone) {
   return match ? String(match.code) : null;
 }
 
+async function findPhoneInput(page) {
+  const visibleInputs = page.locator('input:visible');
+  const inputCount = await visibleInputs.count();
+  for (let i = 0; i < inputCount; i += 1) {
+    const input = visibleInputs.nth(i);
+    const marker = [
+      await input.getAttribute('placeholder'),
+      await input.getAttribute('name'),
+      await input.getAttribute('aria-label'),
+      await input.getAttribute('autocomplete'),
+      await input.getAttribute('inputmode'),
+    ].filter(Boolean).join(' ');
+    const type = ((await input.getAttribute('type')) || 'text').toLowerCase();
+    const maxLength = Number(await input.getAttribute('maxlength'));
+    if (/phone|mobile|contact number|telephone/i.test(marker) || type === 'tel' || /numeric|decimal/i.test(marker) || maxLength === 10) return input;
+  }
+  for (let i = 0; i < inputCount; i += 1) {
+    const input = visibleInputs.nth(i);
+    const type = ((await input.getAttribute('type')) || 'text').toLowerCase();
+    const marker = [await input.getAttribute('placeholder'), await input.getAttribute('name'), await input.getAttribute('aria-label')].filter(Boolean).join(' ');
+    if (type === 'text' && !/email|password|otp|code/i.test(marker)) return input;
+  }
+  return null;
+}
+
+async function fillSignupFields(page, phone) {
+  const inputs = page.locator('input:visible');
+  for (let i = 0; i < await inputs.count(); i += 1) {
+    const input = inputs.nth(i);
+    if (!(await input.isVisible())) continue;
+    const type = ((await input.getAttribute('type')) || 'text').toLowerCase();
+    const marker = [await input.getAttribute('placeholder'), await input.getAttribute('name'), await input.getAttribute('aria-label')].filter(Boolean).join(' ');
+    if (/phone|mobile|telephone|contact number/i.test(marker) || type === 'tel') {
+      await input.fill(phone);
+    } else if (/business|company|merchant.*name|shop.*name/i.test(marker)) {
+      await input.fill(`VAAYU Certification ${Date.now()}`);
+    } else if (/contact.*name|owner|full.*name/i.test(marker)) {
+      await input.fill('Certification Merchant');
+    } else if (type === 'email' || /email/i.test(marker)) {
+      await input.fill(`merchant.${Date.now()}@example.com`);
+    } else if (/gst/i.test(marker)) {
+      await input.fill('36ABCDE1234F1Z5');
+    } else if (/address/i.test(marker)) {
+      await input.fill('Hyderabad, Telangana');
+    }
+  }
+}
+
 test.describe('Merchant portal — interactive journey certification', () => {
   test('merchant registration, authentication and workspace are actually operable', async ({ page, request }) => {
     const pageErrors = [];
@@ -45,40 +93,14 @@ test.describe('Merchant portal — interactive journey certification', () => {
     const signupToggle = page.getByRole('button', { name: /sign\s*up|register|create.*merchant|new.*merchant/i }).first();
     if (await signupToggle.count()) await signupToggle.click();
 
-    // The generated merchant build may use generic text metadata for the phone field.
-    // Prefer explicit phone/numeric metadata, then fall back to the first visible text
-    // input that is not clearly an email/password field.
-    const visibleInputs = page.locator('input:visible');
-    const inputCount = await visibleInputs.count();
-    let phoneInput = null;
-    for (let i = 0; i < inputCount; i += 1) {
-      const input = visibleInputs.nth(i);
-      const marker = [
-        await input.getAttribute('placeholder'),
-        await input.getAttribute('name'),
-        await input.getAttribute('aria-label'),
-        await input.getAttribute('autocomplete'),
-        await input.getAttribute('inputmode'),
-      ].filter(Boolean).join(' ');
-      const type = ((await input.getAttribute('type')) || 'text').toLowerCase();
-      const maxLength = Number(await input.getAttribute('maxlength'));
-      if (/phone|mobile|contact number|telephone/i.test(marker) || type === 'tel' || /numeric|decimal/i.test(marker) || maxLength === 10) {
-        phoneInput = input;
-        break;
-      }
-    }
-    if (!phoneInput) {
-      for (let i = 0; i < inputCount; i += 1) {
-        const input = visibleInputs.nth(i);
-        const type = ((await input.getAttribute('type')) || 'text').toLowerCase();
-        const marker = [await input.getAttribute('placeholder'), await input.getAttribute('name'), await input.getAttribute('aria-label')].filter(Boolean).join(' ');
-        if (type === 'text' && !/email|password/i.test(marker)) { phoneInput = input; break; }
-      }
-    }
+    const phoneInput = await findPhoneInput(page);
     if (!phoneInput) throw new Error('Merchant phone input was not discovered');
     await phoneInput.fill(phone);
+    await fillSignupFields(page, phone);
 
-    const sendOtpButton = page.getByRole('button', { name: /send.*otp|continue|verify.*phone|register/i }).first();
+    // Do not match the signup-mode toggle itself. The OTP action is the actual
+    // control that must produce the /api/auth/send-otp request.
+    const sendOtpButton = page.getByRole('button', { name: /send.*otp|continue|verify.*phone/i }).first();
     await expect(sendOtpButton).toBeVisible();
     const otpResponsePromise = page.waitForResponse(
       (response) => response.url().includes('/api/auth/send-otp') && response.request().method() === 'POST',
