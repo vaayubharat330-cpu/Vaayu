@@ -80,6 +80,17 @@ test('E2E: Full delivery lifecycle with automatic dispatch, geofenced telemetry,
   assert.equal(onlineRes.status, 200, 'Driver online must succeed');
   assert.ok(onlineData.success, 'Driver online flag');
 
+  // Dispatch eligibility is intentionally based on fresh driver telemetry, not stale profile coordinates.
+  // Establish a canonical location-service ping before booking so this fixture exercises the real dispatch gate.
+  const dispatchTelemetryRes = await fetch(base + '/api/driver/location/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + driverToken },
+    body: JSON.stringify({ driverId: driver.id, lat: 17.3850, lng: 78.4867, speed: 0, bearing: 0 })
+  });
+  const dispatchTelemetryData = await dispatchTelemetryRes.json();
+  assert.equal(dispatchTelemetryRes.status, 200, 'Fresh dispatch telemetry must be accepted');
+  assert.ok(dispatchTelemetryData.success, 'Fresh dispatch telemetry success flag');
+
   // 4. Customer booking. Dispatch is automatic in the booking transaction flow.
   const customerToken = makeToken({ id: 'cust_auto_1', name: 'Ananya Sharma', phone: '9876543211', role: 'CUSTOMER' });
   const bookingIdempotencyKey = `e2e-booking-${Date.now()}`;
