@@ -27,6 +27,12 @@ async function readLatestConsoleOtp(request, phone) {
   return match ? String(match.code) : null;
 }
 
+function isPhoneMarker(marker) {
+  return /phone|mobile|contact number|telephone/i.test(marker)
+    || /^\d{10}$/.test(marker.trim())
+    || /\b\d{10}\b/.test(marker);
+}
+
 async function findPhoneInput(page) {
   const visibleInputs = page.locator('input:visible');
   const inputCount = await visibleInputs.count();
@@ -41,7 +47,7 @@ async function findPhoneInput(page) {
     ].filter(Boolean).join(' ');
     const type = ((await input.getAttribute('type')) || 'text').toLowerCase();
     const maxLength = Number(await input.getAttribute('maxlength'));
-    if (/phone|mobile|contact number|telephone/i.test(marker) || type === 'tel' || /numeric|decimal/i.test(marker) || maxLength === 10) return input;
+    if (isPhoneMarker(marker) || type === 'tel' || /numeric|decimal/i.test(marker) || maxLength === 10) return input;
   }
   for (let i = 0; i < inputCount; i += 1) {
     const input = visibleInputs.nth(i);
@@ -59,7 +65,7 @@ async function fillSignupFields(page, phone) {
     if (!(await input.isVisible())) continue;
     const type = ((await input.getAttribute('type')) || 'text').toLowerCase();
     const marker = [await input.getAttribute('placeholder'), await input.getAttribute('name'), await input.getAttribute('aria-label')].filter(Boolean).join(' ');
-    if (/phone|mobile|telephone|contact number/i.test(marker) || type === 'tel') {
+    if (isPhoneMarker(marker) || type === 'tel') {
       await input.fill(phone);
     } else if (/business|company|merchant.*name|shop.*name/i.test(marker)) {
       await input.fill(`VAAYU Certification ${Date.now()}`);
@@ -98,8 +104,6 @@ test.describe('Merchant portal — interactive journey certification', () => {
     await phoneInput.fill(phone);
     await fillSignupFields(page, phone);
 
-    // Registration has a dedicated OTP action. Use the exact accessible name so
-    // this test can never accidentally click a generic Continue/Verify control.
     const sendOtpButton = page.getByRole('button', { name: /^Send Verification OTP$/i });
     await expect(sendOtpButton).toHaveCount(1);
     await expect(sendOtpButton).toBeVisible();
