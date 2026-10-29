@@ -60,6 +60,14 @@ test('E2E: Merchant booking -> dispatch -> driver accept -> recipient tracking -
   assert.equal(onlineRes.status, 200);
   assert.ok(onlineData.success);
 
+  // Dispatch requires fresh canonical telemetry. The profile update above is not a telemetry ping.
+  const { response: telemetryRes, body: telemetryData } = await jsonRequest('/api/driver/location/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + driverToken },
+    body: JSON.stringify({ driverId: driver.id, lat: 17.3850, lng: 78.4867, speed: 0, bearing: 0 })
+  });
+  assert.equal(telemetryRes.status, 200, `Fresh driver telemetry must be accepted: ${JSON.stringify(telemetryData)}`);
+
   // 2. Register the merchant through the customer->merchant onboarding boundary.
   const merchantPhone = '90200' + Math.floor(10000 + Math.random() * 90000);
   const merchantOwnerToken = makeToken({ id: `cust_merchant_${Date.now()}`, name: 'Merchant Owner', phone: merchantPhone, role: 'CUSTOMER' });
