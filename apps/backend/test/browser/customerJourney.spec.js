@@ -5,10 +5,16 @@ async function browserHealth(page) {
   const consoleErrors = [];
   const pageErrors = [];
   const failedRequests = [];
+  const badResponses = [];
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
   page.on('pageerror', error => pageErrors.push(error.message));
   page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText || 'unknown'}`));
-  return { consoleErrors, pageErrors, failedRequests };
+  page.on('response', response => {
+    if (response.status() >= 400) {
+      badResponses.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+    }
+  });
+  return { consoleErrors, pageErrors, failedRequests, badResponses };
 }
 
 async function visibleInputs(page) {
@@ -115,8 +121,6 @@ test.describe('Customer interactive journey certification', () => {
       if (placeholder.includes('name') || aria.includes('name')) await firstText.fill(customerName);
     }
 
-    // Submit the form that actually contains the customer phone field. This avoids accidentally
-    // clicking a navigation/tab button that happens to contain words such as "Sign Up" or "Continue".
     const authForm = customerPhoneField.locator('xpath=ancestor::form[1]');
     expect(await authForm.count(), 'Customer phone field is not inside a usable authentication form').toBe(1);
     const sendOtp = authForm.getByRole('button').first();
@@ -171,5 +175,6 @@ test.describe('Customer interactive journey certification', () => {
     expect(health.pageErrors, 'Customer journey emitted uncaught page errors').toEqual([]);
     expect(health.consoleErrors.filter(message => !/favicon|net::ERR_/i.test(message)), 'Customer journey emitted unexpected console errors').toEqual([]);
     expect(health.failedRequests.filter(entry => !entry.includes('favicon') && !entry.includes('fonts.googleapis.com') && !entry.includes('fonts.gstatic.com')), 'Customer journey has failed browser requests').toEqual([]);
+    expect(health.badResponses.filter(entry => !/\s(?:GET|POST)\s.*(?:favicon|fonts\.googleapis\.com|fonts\.gstatic\.com)/i.test(entry)), `Customer journey received unexpected HTTP error responses: ${health.badResponses.join('\n')}`).toEqual([]);
   });
 });
