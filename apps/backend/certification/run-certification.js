@@ -39,6 +39,7 @@ function run(name, args, mode = 'playwright') {
     const output = [];
     const env = {
       ...process.env,
+      ENABLE_TEST_ENDPOINTS: 'true',
       JWT_SECRET: process.env.JWT_SECRET || DISPOSABLE_JWT_SECRET,
       VAAYU_TEST_JWT_SECRET:
         process.env.VAAYU_TEST_JWT_SECRET ||
@@ -106,18 +107,14 @@ function assertEnvironment() {
   if (process.env.NODE_ENV === 'production' || process.env.VAAYU_TEST_TARGET !== 'disposable') {
     throw new Error('Certification runner requires VAAYU_TEST_TARGET=disposable and must never run in production.');
   }
-  if (!process.env.VAAYU_TEST_BASE) {
-    process.env.VAAYU_TEST_BASE = 'http://127.0.0.1:4000';
-  }
+  if (!process.env.VAAYU_TEST_BASE) process.env.VAAYU_TEST_BASE = 'http://127.0.0.1:4000';
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = DISPOSABLE_JWT_SECRET;
   if (!process.env.VAAYU_TEST_JWT_SECRET) process.env.VAAYU_TEST_JWT_SECRET = process.env.JWT_SECRET;
 }
 
 (async () => {
   assertEnvironment();
-  if (!suites.length) {
-    throw new Error(`No valid certification suites selected. Available: ${allSuites.map(x => x[0]).join(', ')}`);
-  }
+  if (!suites.length) throw new Error(`No valid certification suites selected. Available: ${allSuites.map(x => x[0]).join(', ')}`);
 
   const runId = `cert-${Date.now()}`;
   const startedAt = new Date().toISOString();
@@ -127,9 +124,7 @@ function assertEnvironment() {
   });
 
   const results = [];
-  for (const [name, args, mode] of suites) {
-    results.push(await run(name, args, mode));
-  }
+  for (const [name, args, mode] of suites) results.push(await run(name, args, mode));
 
   const summary = {
     runId,
