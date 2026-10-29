@@ -21,6 +21,7 @@ const DATABASE_URL = process.env.DATABASE_URL || '';
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:56379';
 const PUBLIC_DIR = path.resolve(__dirname, 'public');
 const EVIDENCE_DIR = path.resolve(__dirname, 'artifacts');
+const ARTIFACT_ROOTS = [path.resolve(__dirname, '..', 'test-results'), path.resolve(__dirname, '..', 'playwright-report')];
 fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 
 const suites = {
@@ -77,8 +78,28 @@ function evidenceSummary() {
     .filter(Boolean)
     .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt)))
     .slice(0, 20)
-    .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total }));
+    .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total, artifacts: item.artifacts || [] }));
   return { latest, running, suites: suiteResults, historicalRuns };
+}
+
+function artifactInventory() {
+  const files = [];
+  const walk = base => {
+    if (!fs.existsSync(base)) return;
+    const visit = current => {
+      for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory()) visit(full);
+        else {
+          const stat = fs.statSync(full);
+          files.push({ root: path.basename(base), path: path.relative(path.resolve(__dirname, '..'), full), bytes: stat.size, modifiedAt: stat.mtime.toISOString() });
+        }
+      }
+    };
+    visit(base);
+  };
+  ARTIFACT_ROOTS.forEach(walk);
+  return files.sort((a, b) => String(b.modifiedAt).localeCompare(String(a.modifiedAt))).slice(0, 1000);
 }
 
 async function backendHealth() {
@@ -125,7 +146,7 @@ async function systemSnapshot() {
   return {
     timestamp: new Date().toISOString(),
     certification: { target: process.env.VAAYU_TEST_TARGET, backendUrl: BACKEND_URL, controlCenterPort: PORT, mode: 'read-only-observer' },
-    backend, postgres, redis, suites, evidence: evidenceSummary(),
+    backend, postgres, redis, suites, evidence: evidenceSummary(), artifacts: artifactInventory(),
   };
 }
 
@@ -141,6 +162,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/system') return json(res, 200, await systemSnapshot());
     if (url.pathname === '/api/database') return json(res, 200, await postgresSnapshot());
     if (url.pathname === '/api/evidence') return json(res, 200, evidenceSummary());
+    if (url.pathname === '/api/artifacts') return json(res, 200, { artifacts: artifactInventory() });
     if (url.pathname === '/api/runs') return json(res, 200, evidenceSummary().historicalRuns);
     if (url.pathname === '/api/suites') return json(res, 200, { suites });
     if (url.pathname.startsWith('/api/evidence/')) {
