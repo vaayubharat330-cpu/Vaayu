@@ -45,6 +45,8 @@ function run(name, args, mode = 'playwright') {
       cwd: root,
       env: {
         ...process.env,
+        JWT_SECRET: process.env.JWT_SECRET || DISPOSABLE_JWT_SECRET,
+        VAAYU_TEST_JWT_SECRET: process.env.VAAYU_TEST_JWT_SECRET || process.env.JWT_SECRET || DISPOSABLE_JWT_SECRET,
         PLAYWRIGHT_BASE_URL: process.env.PLAYWRIGHT_BASE_URL || process.env.VAAYU_TEST_BASE || 'http://127.0.0.1:4000',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -99,10 +101,6 @@ function assertEnvironment() {
   if (!process.env.VAAYU_TEST_BASE) {
     process.env.VAAYU_TEST_BASE = 'http://127.0.0.1:4000';
   }
-
-  // The runner is the certification boundary. A test invocation must be
-  // self-contained and must not depend on secrets exported in another shell.
-  // Only disposable certification receives this deterministic test secret.
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = DISPOSABLE_JWT_SECRET;
   if (!process.env.VAAYU_TEST_JWT_SECRET) process.env.VAAYU_TEST_JWT_SECRET = process.env.JWT_SECRET;
 }
