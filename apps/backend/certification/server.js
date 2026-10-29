@@ -1,7 +1,7 @@
 'use strict';
 
 // VAAYU Certification Control Center.
-// Read-only by default. It refuses to start outside the disposable certification target.
+// Read-only observer. It refuses to start outside the disposable certification target.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -24,12 +24,17 @@ const EVIDENCE_DIR = path.resolve(__dirname, 'artifacts');
 fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 
 const suites = {
-  'portal-smoke': 'Portal smoke — all six entry surfaces',
+  'portal-smoke': 'Portal smoke — six entry surfaces',
   'customer-journey': 'Customer — registration, authentication and booking workspace',
   'merchant-journey': 'Merchant — registration, authentication and workspace',
-  browser: 'All browser certification tests',
+  'browser-all': 'All browser certification tests',
   lifecycle: 'Backend delivery lifecycle E2E',
-  merchant_e2e: 'Backend merchant lifecycle E2E',
+  'merchant-e2e': 'Backend merchant lifecycle E2E',
+  'enterprise-operations': 'Enterprise operations E2E',
+  'websocket-e2e': 'WebSocket E2E',
+  'location-integrity': 'Location & mobility integrity',
+  'postgres-ledger': 'PostgreSQL ledger certification',
+  security: 'Comprehensive security certification',
 };
 
 function json(res, status, payload) {
@@ -41,39 +46,39 @@ function json(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function safeError(error) {
-  return error?.message || String(error);
-}
+function safeError(error) { return error?.message || String(error); }
 
-function evidenceFiles() {
-  try {
-    return fs.readdirSync(EVIDENCE_DIR).filter(name => name.endsWith('.json')).sort();
-  } catch (_) {
-    return [];
-  }
-}
-
-function readEvidence(name) {
-  if (!/^[a-zA-Z0-9_-]+\.json$/.test(name)) return null;
-  const file = path.join(EVIDENCE_DIR, name);
+function readJsonFile(fileName) {
+  if (!/^[a-zA-Z0-9_-]+\.json$/.test(fileName)) return null;
+  const file = path.join(EVIDENCE_DIR, fileName);
   if (!fs.existsSync(file)) return null;
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) { return { error: safeError(error) }; }
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) { return { status: 'CORRUPT', error: safeError(error) }; }
 }
 
 function evidenceSummary() {
-  const latest = readEvidence('latest.json');
-  const result = {};
+  const latest = readJsonFile('latest.json');
+  const running = readJsonFile('running.json');
+  const suiteResults = {};
   for (const key of Object.keys(suites)) {
-    const item = readEvidence(`${key}.json`);
-    result[key] = item ? {
-      status: item.status || (item.results ? 'COMPLETED' : 'AVAILABLE'),
+    const item = readJsonFile(`${key}.json`);
+    suiteResults[key] = item ? {
+      status: item.status || 'COMPLETED',
       startedAt: item.startedAt,
       finishedAt: item.finishedAt,
       exitCode: item.exitCode,
-      outputTail: item.output ? String(item.output).slice(-4000) : undefined,
+      mode: item.mode,
+      error: item.error,
+      outputTail: item.output ? String(item.output).slice(-5000) : undefined,
     } : { status: 'NOT_RUN' };
   }
-  return { latest, suites: result, files: evidenceFiles() };
+  const historicalRuns = fs.readdirSync(EVIDENCE_DIR)
+    .filter(name => /^cert-\d+\.json$/.test(name))
+    .map(name => readJsonFile(name))
+    .filter(Boolean)
+    .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt)))
+    .slice(0, 20)
+    .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total }));
+  return { latest, running, suites: suiteResults, historicalRuns };
 }
 
 async function backendHealth() {
@@ -100,9 +105,7 @@ async function postgresSnapshot() {
     return { ok: true, database, recordCountByCollection: counts.rows, recentRecords: recent.rows };
   } catch (error) {
     return { ok: false, error: safeError(error) };
-  } finally {
-    await pool.end().catch(() => {});
-  }
+  } finally { await pool.end().catch(() => {}); }
 }
 
 async function redisHealth() {
@@ -114,27 +117,15 @@ async function redisHealth() {
     return { ok: pong === 'PONG', ping: pong, dbSize, version };
   } catch (error) {
     return { ok: false, error: safeError(error) };
-  } finally {
-    redis.disconnect();
-  }
+  } finally { redis.disconnect(); }
 }
 
 async function systemSnapshot() {
   const [backend, postgres, redis] = await Promise.all([backendHealth(), postgresSnapshot(), redisHealth()]);
-  const evidence = evidenceSummary();
   return {
     timestamp: new Date().toISOString(),
-    certification: {
-      target: process.env.VAAYU_TEST_TARGET,
-      backendUrl: BACKEND_URL,
-      controlCenterPort: PORT,
-      mode: 'read-only-observer',
-    },
-    backend,
-    postgres,
-    redis,
-    suites,
-    evidence,
+    certification: { target: process.env.VAAYU_TEST_TARGET, backendUrl: BACKEND_URL, controlCenterPort: PORT, mode: 'read-only-observer' },
+    backend, postgres, redis, suites, evidence: evidenceSummary(),
   };
 }
 
@@ -150,23 +141,20 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/system') return json(res, 200, await systemSnapshot());
     if (url.pathname === '/api/database') return json(res, 200, await postgresSnapshot());
     if (url.pathname === '/api/evidence') return json(res, 200, evidenceSummary());
+    if (url.pathname === '/api/runs') return json(res, 200, evidenceSummary().historicalRuns);
+    if (url.pathname === '/api/suites') return json(res, 200, { suites });
     if (url.pathname.startsWith('/api/evidence/')) {
       const name = decodeURIComponent(url.pathname.slice('/api/evidence/'.length));
-      const item = readEvidence(name);
+      const item = readJsonFile(name);
       return item ? json(res, 200, item) : json(res, 404, { error: 'Evidence not found' });
     }
-    if (url.pathname === '/api/runs') return json(res, 200, evidenceSummary());
-    if (url.pathname === '/api/suites') return json(res, 200, { suites });
     return json(res, 404, { error: 'Not found' });
-  } catch (error) {
-    return json(res, 500, { error: safeError(error) });
-  }
+  } catch (error) { return json(res, 500, { error: safeError(error) }); }
 });
 
 server.listen(PORT, HOST, () => {
   console.log(`[VAAYU CERT] Control Center listening on http://${HOST}:${PORT}`);
   console.log(`[VAAYU CERT] Observing backend ${BACKEND_URL}`);
 });
-
 process.on('SIGTERM', () => server.close(() => process.exit(0)));
 process.on('SIGINT', () => server.close(() => process.exit(0)));
