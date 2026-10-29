@@ -34,27 +34,35 @@ function writeJson(name, value) {
 }
 
 function run(name, args, mode = 'playwright') {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const startedAt = new Date().toISOString();
     const output = [];
-    const command = mode === 'node'
-      ? [process.execPath, ['--test', ...args]]
-      : [process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...args, '--config', 'playwright.config.js']];
-
-    const child = spawn(command[0], command[1], {
+    const env = {
+      ...process.env,
+      JWT_SECRET: process.env.JWT_SECRET || DISPOSABLE_JWT_SECRET,
+      VAAYU_TEST_JWT_SECRET:
+        process.env.VAAYU_TEST_JWT_SECRET ||
+        process.env.JWT_SECRET ||
+        DISPOSABLE_JWT_SECRET,
+    };
+    const command = mode === 'node' ? process.execPath : process.execPath;
+    const commandArgs = mode === 'node'
+      ? args
+      : [path.resolve(root, 'node_modules/@playwright/test/cli.js'), 'test', ...args, '--config', 'playwright.config.js'];
+    const child = spawn(command, commandArgs, {
       cwd: root,
-      env: {
-        ...process.env,
-        JWT_SECRET: process.env.JWT_SECRET || DISPOSABLE_JWT_SECRET,
-        VAAYU_TEST_JWT_SECRET: process.env.VAAYU_TEST_JWT_SECRET || process.env.JWT_SECRET || DISPOSABLE_JWT_SECRET,
-        PLAYWRIGHT_BASE_URL: process.env.PLAYWRIGHT_BASE_URL || process.env.VAAYU_TEST_BASE || 'http://127.0.0.1:4000',
-      },
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    const collect = chunk => output.push(chunk.toString());
-    child.stdout.on('data', collect);
-    child.stderr.on('data', collect);
+    child.stdout.on('data', chunk => {
+      output.push(chunk.toString());
+      process.stdout.write(chunk);
+    });
+    child.stderr.on('data', chunk => {
+      output.push(chunk.toString());
+      process.stderr.write(chunk);
+    });
     child.on('error', error => {
       const result = {
         name, mode, startedAt, finishedAt: new Date().toISOString(),
@@ -150,4 +158,4 @@ function assertEnvironment() {
   });
   console.error(error);
   process.exit(1);
-})();
+});
