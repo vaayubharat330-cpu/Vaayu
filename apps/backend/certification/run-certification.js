@@ -7,6 +7,8 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const evidenceDir = path.resolve(__dirname, 'artifacts');
 const DISPOSABLE_JWT_SECRET = 'vaayu-disposable-certification-secret-2026-10-19-strong';
+const DISPOSABLE_DATABASE_URL = 'postgresql://vaayu_cert:vaayu_cert@127.0.0.1:55432/vaayu_cert';
+const DISPOSABLE_REDIS_URL = 'redis://127.0.0.1:56379';
 fs.mkdirSync(evidenceDir, { recursive: true });
 
 const allSuites = [
@@ -108,6 +110,12 @@ function assertEnvironment() {
     throw new Error('Certification runner requires VAAYU_TEST_TARGET=disposable and must never run in production.');
   }
   if (!process.env.VAAYU_TEST_BASE) process.env.VAAYU_TEST_BASE = 'http://127.0.0.1:4000';
+  if (!process.env.PERSISTENCE_PROVIDER) process.env.PERSISTENCE_PROVIDER = 'postgres';
+  if (!process.env.DATABASE_ADMIN_URL) process.env.DATABASE_ADMIN_URL = DISPOSABLE_DATABASE_URL;
+  if (!process.env.DATABASE_URL) process.env.DATABASE_URL = DISPOSABLE_DATABASE_URL;
+  if (!process.env.REDIS_URL) process.env.REDIS_URL = DISPOSABLE_REDIS_URL;
+  if (!process.env.VAAYU_ALLOW_DESTRUCTIVE_TESTS) process.env.VAAYU_ALLOW_DESTRUCTIVE_TESTS = 'true';
+  if (!process.env.ENABLE_TEST_ENDPOINTS) process.env.ENABLE_TEST_ENDPOINTS = 'true';
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = DISPOSABLE_JWT_SECRET;
   if (!process.env.VAAYU_TEST_JWT_SECRET) process.env.VAAYU_TEST_JWT_SECRET = process.env.JWT_SECRET;
 }
