@@ -14,6 +14,13 @@ const routingModule = require('../../src/map-engine/routing');
 const { routingService } = require('../../src/services/routingService');
 
 test('Pillar 10: Location & Mobility Integrity Suite', async (suite) => {
+  suite.after(async () => {
+    const store = getActiveDriverLocationStore();
+    if (store && typeof store.disconnect === 'function') {
+      await store.disconnect();
+    }
+  });
+
   await suite.test('10.1: Telemetry Sanitization: Coordinate bounds, Null Island rejection & GPS accuracy radius bounds', async () => {
     const driverId = 'drv_p10_sanity_01';
     const nullIslandRes = await driverLocationService.updateDriverLocation(driverId, { lat: 0.0, lng: 0.0, accuracy: 5 });
