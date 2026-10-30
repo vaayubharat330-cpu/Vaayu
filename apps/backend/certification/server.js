@@ -36,6 +36,7 @@ const suites = {
   'location-integrity': 'Location & mobility integrity',
   'postgres-ledger': 'PostgreSQL ledger certification',
   security: 'Comprehensive security certification',
+  'component-audit': 'Backend component inventory, syntax and infrastructure audit',
 };
 
 function json(res, status, payload) {
@@ -59,6 +60,7 @@ function readJsonFile(fileName) {
 function evidenceSummary() {
   const latest = readJsonFile('latest.json');
   const running = readJsonFile('running.json');
+  const componentAudit = readJsonFile('component-audit.json');
   const suiteResults = {};
   for (const key of Object.keys(suites)) {
     const item = readJsonFile(`${key}.json`);
@@ -79,7 +81,7 @@ function evidenceSummary() {
     .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt)))
     .slice(0, 20)
     .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total, artifacts: item.artifacts || [] }));
-  return { latest, running, suites: suiteResults, historicalRuns };
+  return { latest, running, suites: suiteResults, componentAudit, historicalRuns };
 }
 
 function artifactInventory() {
@@ -165,6 +167,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/artifacts') return json(res, 200, { artifacts: artifactInventory() });
     if (url.pathname === '/api/runs') return json(res, 200, evidenceSummary().historicalRuns);
     if (url.pathname === '/api/suites') return json(res, 200, { suites });
+    if (url.pathname === '/api/components') return json(res, 200, evidenceSummary().componentAudit || { status: 'NOT_RUN' });
     if (url.pathname.startsWith('/api/evidence/')) {
       const name = decodeURIComponent(url.pathname.slice('/api/evidence/'.length));
       const item = readJsonFile(name);
