@@ -22,7 +22,7 @@ async function readLatestConsoleOtp(request, phone) {
   const normalized = String(phone).replace(/\D/g, '');
   const match = (body.requests || []).find((entry) => {
     const entryPhone = String(entry.phone || entry.maskedPhone || '').replace(/\D/g, '');
-    return entryPhone.endsWith(normalized.slice(-10)) && entry.code;
+    return entryPhone.endsWith(normalized.slice(-4)) && entry.code;
   });
   return match ? String(match.code) : null;
 }
