@@ -23,6 +23,7 @@ const allSuites = [
   ['location-integrity', ['test/unit/locationMobilityIntegrity.test.js'], 'node'],
   ['postgres-ledger', ['test/unit/postgresLedger.test.js'], 'node'],
   ['security', ['test/unit/comprehensiveSecurityAudit.test.js'], 'node'],
+  ['component-audit', ['certification/component-audit.js'], 'node'],
 ];
 
 const requested = String(process.env.CERTIFICATION_SUITES || '')
@@ -48,7 +49,7 @@ function run(name, args, mode = 'playwright') {
         process.env.JWT_SECRET ||
         DISPOSABLE_JWT_SECRET,
     };
-    const command = mode === 'node' ? process.execPath : process.execPath;
+    const command = process.execPath;
     const commandArgs = mode === 'node'
       ? args
       : [path.resolve(root, 'node_modules/@playwright/test/cli.js'), 'test', ...args, '--config', 'playwright.config.js'];
