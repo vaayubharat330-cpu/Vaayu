@@ -24,6 +24,7 @@ const allSuites = [
   ['postgres-ledger', ['test/unit/postgresLedger.test.js'], 'node'],
   ['security', ['test/unit/comprehensiveSecurityAudit.test.js'], 'node'],
   ['component-audit', ['certification/component-audit.js'], 'node'],
+  ['enterprise-battery', ['certification/enterprise-battery.js'], 'node'],
 ];
 
 const requested = String(process.env.CERTIFICATION_SUITES || '')
