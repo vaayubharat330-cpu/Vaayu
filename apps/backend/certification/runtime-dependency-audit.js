@@ -5,8 +5,9 @@
  *
  * Unlike the source/component inventory audits, this test performs real runtime
  * operations against the disposable backend dependencies. It deliberately
- * verifies PostgreSQL and Redis with write/read/delete round trips, then checks
- * the live HTTP server and authenticated WebSocket handshake. These checks prove
+ * verifies PostgreSQL and Redis with write/read/delete round trips, exercises
+ * the application's Redis-backed driver-location abstraction, then checks the
+ * live HTTP server and authenticated WebSocket handshake. These checks prove
  * that the runtime dependency path is usable; they do not replace the domain suites.
  */
 
@@ -79,6 +80,56 @@ async function redisProbe() {
   }
 }
 
+async function driverLocationStoreProbe() {
+  if (!redisUrl) throw new Error('REDIS_URL is required');
+
+  // The production adapter is selected explicitly for this probe. This avoids
+  // accidentally certifying the in-memory fallback while the real Redis path is broken.
+  process.env.ENABLE_DEV_REDIS = 'true';
+  const { RedisClient } = require(path.join(root, 'src', 'services', 'redisClient'));
+  const { RedisDriverLocationStore } = require(path.join(root, 'src', 'services', 'driverLocationStore'));
+  const client = new RedisClient({ url: redisUrl });
+  const store = new RedisDriverLocationStore(client);
+  const driverId = `cert-driver-${crypto.randomUUID()}`;
+  const record = {
+    driverId,
+    lat: 17.3850,
+    lng: 78.4867,
+    bearing: 90,
+    speed: 12,
+    lastPingMs: Date.now(),
+    status: 'ONLINE',
+    vehicleId: 'cert-vehicle',
+    currentTripId: null,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const saved = await store.saveDriverLocation(driverId, record);
+    const read = await store.getDriverLocation(driverId);
+    const nearby = await store.findNearbyDrivers(record.lat, record.lng, 1, record.vehicleId);
+    const historyPoint = { tripId: 'cert-trip', lat: record.lat, lng: record.lng, timestamp: new Date().toISOString() };
+    await store.appendHistory(driverId, historyPoint);
+    const history = await store.getDriverHistory(driverId, 'cert-trip');
+
+    const result = {
+      connected: true,
+      saveReadRoundTrip: saved?.driverId === driverId && read?.driverId === driverId,
+      numericLocationRoundTrip: read?.lat === record.lat && read?.lng === record.lng,
+      spatialIndexRoundTrip: nearby.some(driver => driver.driverId === driverId),
+      historyRoundTrip: history.length === 1 && history[0]?.tripId === 'cert-trip',
+      staleOrOfflineExclusionContract: read?.status === 'ONLINE' && read?.currentTripId == null,
+    };
+
+    const failures = Object.entries(result).filter(([, ok]) => ok !== true).map(([name]) => name);
+    return { ...result, passed: failures.length === 0, failures };
+  } finally {
+    try { await store.clearDriverLocation(driverId); } catch (_) {}
+    try { await store.redis?.del(`driver:history:${driverId}`); } catch (_) {}
+    try { await store.disconnect(); } catch (_) {}
+  }
+}
+
 async function websocketProbe() {
   if (secret.length < 32) throw new Error('JWT secret must be at least 32 chars');
   const wsUrl = baseUrl.replace(/^http/, 'ws');
@@ -104,9 +155,18 @@ async function websocketProbe() {
 async function main() {
   const checks = {};
   const errors = [];
-  for (const [name, probe] of Object.entries({ http: httpProbe, postgres: postgresProbe, redis: redisProbe, websocket: websocketProbe })) {
+  for (const [name, probe] of Object.entries({
+    http: httpProbe,
+    postgres: postgresProbe,
+    redis: redisProbe,
+    driverLocationStore: driverLocationStoreProbe,
+    websocket: websocketProbe,
+  })) {
     try {
-      checks[name] = { status: 'PASSED', ...(await probe()) };
+      const result = await probe();
+      const passed = result.passed === undefined ? Object.values(result).every(value => value === true || typeof value !== 'boolean') : result.passed;
+      checks[name] = { status: passed ? 'PASSED' : 'FAILED', ...result };
+      if (!passed) errors.push(`${name}: ${result.failures?.join(', ') || 'runtime contract failure'}`);
     } catch (error) {
       checks[name] = { status: 'FAILED', error: error.message };
       errors.push(`${name}: ${error.message}`);
@@ -124,9 +184,10 @@ async function main() {
       failed: errors.length,
     },
     policy: {
-      scope: 'Runtime dependency reachability and read/write behavior only.',
+      scope: 'Runtime dependency reachability, read/write behavior, and the production Redis-backed driver-location adapter.',
       nonClaim: 'Passing this audit does not prove domain correctness; domain certification suites remain mandatory.',
       productionSafe: true,
+      adapterPath: 'apps/backend/src/services/driverLocationStore.js -> RedisDriverLocationStore -> RedisClient -> external Redis',
     },
   };
 
