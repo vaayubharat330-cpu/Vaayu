@@ -8,6 +8,7 @@
  */
 
 const SUITES = Object.freeze([
+  ['certification-preflight', ['certification/certification-preflight.js'], 'node'],
   ['portal-smoke', ['test/browser/portalSmoke.spec.js']],
   ['customer-journey', ['test/browser/customerJourney.spec.js']],
   ['merchant-journey', ['test/browser/merchantJourney.spec.js']],
