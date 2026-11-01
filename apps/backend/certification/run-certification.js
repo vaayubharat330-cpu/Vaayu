@@ -130,6 +130,17 @@ function assertEnvironment() {
   };
   writeJson('latest.json', summary);
   writeJson(`${runId}.json`, summary);
+
+  // Run only after latest.json exists: this gate verifies that the evidence
+  // presented by the Control Center is complete, current, and authoritative.
+  const integrity = await run('certification-integrity-audit', ['certification/certification-integrity-audit.js'], 'node');
+  const integrityEvidence = fs.existsSync(path.join(evidenceDir, 'certification-integrity-audit.json'))
+    ? JSON.parse(fs.readFileSync(path.join(evidenceDir, 'certification-integrity-audit.json',), 'utf8'))
+    : null;
+  summary.certificationIntegrity = integrityEvidence || { status: integrity.status, error: integrity.error };
+  if (integrity.status !== 'PASSED') summary.failed += 1;
+  writeJson('latest.json', summary);
+  writeJson(`${runId}.json`, summary);
   fs.writeFileSync(path.join(evidenceDir, 'running.json'), JSON.stringify({ ...summary, status: summary.failed ? 'FAILED' : 'PASSED' }, null, 2));
   process.exit(summary.failed ? 1 : 0);
 })();
