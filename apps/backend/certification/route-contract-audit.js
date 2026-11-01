@@ -3,7 +3,8 @@
 // Runtime contract audit for the enterprise route registry.
 // This is intentionally read-only: protected routes are probed without credentials so
 // authentication/authorization gates are exercised, while public POST commands are not
-// invoked because they may create external state.
+// invoked because they may create external state. Both legacy and /api/v1 aliases are
+// checked because the registry promises versioned routing as part of its contract.
 const fs = require('fs');
 const path = require('path');
 const { routeRegistryService } = require('../src/services/routeRegistryService');
@@ -27,11 +28,11 @@ function walk(dir) {
   return out;
 }
 
-async function probe(route) {
+async function probe(pathname, method) {
   const started = Date.now();
   try {
-    const response = await fetch(`${base}${route.path}`, {
-      method: route.method,
+    const response = await fetch(`${base}${pathname}`, {
+      method,
       signal: AbortSignal.timeout(5000),
       headers: { Accept: 'application/json' },
     });
@@ -39,6 +40,10 @@ async function probe(route) {
   } catch (error) {
     return { status: null, latencyMs: Date.now() - started, error: error.message };
   }
+}
+
+function reachable(runtime) {
+  return runtime && runtime.status !== 404 && runtime.status !== 405;
 }
 
 async function main() {
@@ -58,16 +63,22 @@ async function main() {
     // an auth/authorization response rather than a missing route. Public GET routes are also
     // safe to probe. Public POST routes are catalogued but deliberately not invoked.
     const safeToProbe = route.method === 'GET' || route.requiredRole !== 'PUBLIC';
-    const runtime = safeToProbe ? await probe(route) : { skipped: true, reason: 'public-mutating-post' };
-    const runtimeReachable = runtime.skipped || (runtime.status !== 404 && runtime.status !== 405);
+    const legacyRuntime = safeToProbe
+      ? await probe(route.path, route.method)
+      : { skipped: true, reason: 'public-mutating-post' };
+    const v1Runtime = safeToProbe
+      ? await probe(route.v1Path, route.method)
+      : { skipped: true, reason: 'public-mutating-post' };
     const sourceReferenced = textualImplementations.length > 0;
+    const legacyReachable = v1Runtime.skipped || reachable(legacyRuntime);
+    const v1Reachable = v1Runtime.skipped || reachable(v1Runtime);
 
     results.push({
       ...route,
       sourceReferenced,
       sourceImplementations: textualImplementations,
-      runtime,
-      contract: sourceReferenced && runtimeReachable ? 'REACHABLE' : 'GAP'
+      runtime: { legacy: legacyRuntime, v1: v1Runtime },
+      contract: sourceReferenced && legacyReachable && v1Reachable ? 'REACHABLE' : 'GAP'
     });
   }
 
@@ -78,14 +89,16 @@ async function main() {
     baseUrl: base,
     totalRegisteredRoutes: results.length,
     sourceReferenced: results.filter(item => item.sourceReferenced).length,
-    runtimeProbed: results.filter(item => !item.runtime.skipped).length,
-    runtimeReachable: results.filter(item => item.runtime.skipped || (item.runtime.status !== 404 && item.runtime.status !== 405)).length,
+    runtimeProbed: results.filter(item => !item.runtime.legacy.skipped).length,
+    legacyRuntimeReachable: results.filter(item => item.runtime.legacy.skipped || reachable(item.runtime.legacy)).length,
+    v1RuntimeReachable: results.filter(item => item.runtime.v1.skipped || reachable(item.runtime.v1)).length,
     gaps: gaps.length,
     policy: {
       sourcePresence: 'REQUIRED',
       runtimeReachability: 'REQUIRED',
+      versionedAliasReachability: 'REQUIRED',
       publicMutatingPost: 'NOT_INVOKED',
-      rule: 'A registered route is not considered implemented until source and runtime routing both agree.'
+      rule: 'A registered route is not considered implemented until source, legacy runtime routing and /api/v1 runtime routing all agree.'
     }
   };
 
