@@ -18,7 +18,9 @@ function token(user) {
 
 async function post(url, auth, body) {
   const res = await fetch(base + url, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth}` }, body: JSON.stringify(body)
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth}` },
+    body: JSON.stringify(body)
   });
   return { status: res.status, data: await res.json() };
 }
@@ -29,7 +31,13 @@ async function readTrip(tripId) {
     const { rows } = await pool.query("SELECT data FROM vaayu_records WHERE collection='trips' AND record_key=$1", [`id:${tripId}`]);
     assert.equal(rows.length, 1, 'Authoritative PostgreSQL trip must exist');
     return rows[0].data;
-  } finally { await pool.end(); }
+  } finally {
+    await pool.end();
+  }
+}
+
+function assignedDriverId(trip) {
+  return trip?.driver?.id || trip?.driver?.userId || null;
 }
 
 test('Cross-role shared state: customer booking, dispatch, driver acceptance and public tracking converge', async () => {
@@ -43,6 +51,8 @@ test('Cross-role shared state: customer booking, dispatch, driver acceptance and
   });
   assert.equal(created.status, 201, 'Admin driver creation must succeed');
   const driver = created.data.driver;
+  assert.ok(driver?.id && driver?.userId, 'Driver creation must return both profile and user identity');
+
   const kyc = await post('/api/admin/drivers/update-kyc', admin, { driverId: driver.id, kycStatus: 'APPROVED' });
   assert.equal(kyc.status, 200, 'Driver KYC approval must succeed');
 
@@ -56,9 +66,15 @@ test('Cross-role shared state: customer booking, dispatch, driver acceptance and
   const customer = token({ id: customerId, name: 'Shared State Customer', phone: '9876501234', role: 'CUSTOMER' });
   const key = `shared-state-${Date.now()}`;
   const booking = await post('/api/trips/create', customer, {
-    pickupLat: 17.3850, pickupLng: 78.4867, dropLat: 17.4400, dropLng: 78.3489,
-    pickupAddress: 'Abids, Hyderabad', dropAddress: 'Hitec City, Hyderabad', vehicleId: 'v_2w',
-    paymentMethod: 'CASH_ON_DELIVERY', idempotencyKey: key
+    pickupLat: 17.3850,
+    pickupLng: 78.4867,
+    dropLat: 17.4400,
+    dropLng: 78.3489,
+    pickupAddress: 'Abids, Hyderabad',
+    dropAddress: 'Hitec City, Hyderabad',
+    vehicleId: 'v_2w',
+    paymentMethod: 'CASH_ON_DELIVERY',
+    idempotencyKey: key
   });
   assert.equal(booking.status, 200, 'Customer booking must succeed');
   assert.ok(booking.data.dispatch?.success, 'Automatic dispatch must succeed');
@@ -69,7 +85,8 @@ test('Cross-role shared state: customer booking, dispatch, driver acceptance and
   let trip = await readTrip(tripId);
   assert.equal(trip.id, tripId, 'PostgreSQL id must match booking');
   assert.equal(trip.customerId, customerId, 'PostgreSQL customer must match booking actor');
-  assert.equal(trip.driverId, driver.id, 'PostgreSQL driver must match dispatch');
+  assert.equal(assignedDriverId(trip), driver.id, 'PostgreSQL assigned driver must match dispatch');
+  assert.equal(trip.status, 'DRIVER_ASSIGNED', 'PostgreSQL state must reflect the dispatch offer');
   assert.ok(trip.trackingToken, 'Authoritative trip must contain tracking token');
   assert.ok(trip.pickupOtp && trip.deliveryOtp, 'Authoritative trip must contain protected OTPs');
 
@@ -77,18 +94,21 @@ test('Cross-role shared state: customer booking, dispatch, driver acceptance and
   const trackingData = await tracking.json();
   assert.equal(tracking.status, 200, 'Customer tracking must resolve');
   assert.equal(trackingData.trip.id, tripId, 'Tracking must resolve the same trip');
-  assert.equal(trackingData.trip.driverId, trip.driverId, 'Tracking driver must equal PostgreSQL driver');
+  assert.equal(trackingData.trip.status, trip.status, 'Tracking status must equal PostgreSQL state');
   assert.equal(Object.hasOwn(trackingData.trip, 'deliveryOtp'), false, 'Tracking must not expose delivery OTP');
+  assert.equal(Object.hasOwn(trackingData.trip, 'pickupOtp'), false, 'Tracking must not expose pickup OTP');
 
   const accept = await post('/api/orders/accept', driverToken, { orderId: tripId, idempotencyKey: `shared-accept-${tripId}` });
   assert.equal(accept.status, 200, 'Driver acceptance must succeed');
+  assert.equal(accept.data.success, true, 'Driver acceptance command must report success');
   trip = await readTrip(tripId);
-  assert.equal(trip.driverId, driver.id, 'Accepted trip must retain the dispatched driver');
-  assert.equal(trip.status, 'ACCEPTED', 'PostgreSQL state must become ACCEPTED after driver action');
+  assert.equal(assignedDriverId(trip), driver.id, 'Accepted trip must retain the dispatched driver');
+  assert.equal(trip.status, 'DRIVER_ACCEPTED', 'PostgreSQL state must become DRIVER_ACCEPTED after driver action');
 
   const replay = await post('/api/orders/accept', driverToken, { orderId: tripId, idempotencyKey: `shared-accept-${tripId}` });
   assert.equal(replay.status, 200, 'Acceptance replay must remain successful/idempotent');
   const afterReplay = await readTrip(tripId);
   assert.equal(afterReplay.id, tripId, 'Acceptance replay must not create a second trip');
-  assert.equal(afterReplay.status, 'ACCEPTED', 'Acceptance replay must not corrupt terminal transition state');
+  assert.equal(afterReplay.status, 'DRIVER_ACCEPTED', 'Acceptance replay must not corrupt lifecycle state');
+  assert.equal(assignedDriverId(afterReplay), driver.id, 'Acceptance replay must preserve driver identity');
 });
