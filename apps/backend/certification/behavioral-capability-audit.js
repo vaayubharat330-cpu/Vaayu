@@ -44,6 +44,11 @@ const capabilities = {
     file: 'certification/state-integrity.js',
     markers: ['redis', 'state'],
   },
+  runtime_dependencies: {
+    suite: 'runtime-dependency-audit',
+    file: 'certification/runtime-dependency-audit.js',
+    markers: ['postgres', 'redis', 'WebSocket', 'writeReadRoundTrip'],
+  },
   delivery_lifecycle: {
     suite: 'deep-lifecycle-consistency',
     file: 'test/integration/deepLifecycleConsistency.test.js',
@@ -104,7 +109,7 @@ const runnerSuites = new Set([
   'enterprise-operations', 'websocket-e2e', 'location-integrity',
   'postgres-ledger', 'security', 'component-audit', 'route-contract-audit',
   'state-integrity', 'enterprise-battery', 'component-behavior-coverage',
-  'behavioral-capability-audit',
+  'behavioral-capability-audit', 'runtime-dependency-audit',
 ]);
 
 function assertionCount(content) {
