@@ -18,6 +18,7 @@ const allSuites = [
   ['browser-all', ['test/browser']],
   ['lifecycle', ['test/integration/lifecycle.test.js'], 'node'],
   ['shared-state-consistency', ['test/integration/sharedStateConsistency.test.js'], 'node'],
+  ['failure-resilience', ['test/integration/failureResilience.test.js'], 'node'],
   ['merchant-e2e', ['test/integration/merchantLifecycle.test.js'], 'node'],
   ['enterprise-operations', ['test/integration/operations.test.js'], 'node'],
   ['websocket-e2e', ['test/integration/websocket.test.js'], 'node'],
