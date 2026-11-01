@@ -34,6 +34,7 @@ const suites = {
   'deep-lifecycle-consistency': 'Full delivery lifecycle with geofence, OTP, persistence and tracking reconciliation',
   'realtime-state-reconciliation': 'PostgreSQL → WebSocket → telemetry → public tracking reconciliation',
   'financial-lifecycle-reconciliation': 'Wallet → escrow → delivered trip → settlement → ledger reconciliation',
+  'merchant-operational-reconciliation': 'Merchant → driver → trip → PostgreSQL → merchant orders → proof-of-delivery reconciliation',
   'failure-resilience': 'Negative-path authorization and state-preservation certification',
   'merchant-e2e': 'Backend merchant lifecycle E2E',
   'enterprise-operations': 'Enterprise operations E2E',
