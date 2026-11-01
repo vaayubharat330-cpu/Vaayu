@@ -36,6 +36,7 @@ const allSuites = [
   ['route-contract-audit', ['certification/route-contract-audit.js'], 'node'],
   ['state-integrity', ['certification/state-integrity.js'], 'node'],
   ['enterprise-battery', ['certification/enterprise-battery.js'], 'node'],
+  ['component-runtime-ownership-audit', ['certification/component-runtime-ownership-audit.js'], 'node'],
 ];
 
 const requested = String(process.env.CERTIFICATION_SUITES || '')
@@ -123,7 +124,7 @@ function assertEnvironment() {
 
   const summary = {
     runId, startedAt, finishedAt: new Date().toISOString(), target: process.env.VAAYU_TEST_TARGET,
-    baseUrl: process.env.VAAYU_TEST_BASE, results,
+    baseUrl: process.env.VAAYU_TEST_BASE, selectedSuites: suites.map(x => x[0]), results,
     passed: results.filter(r => r.status === 'PASSED').length,
     failed: results.filter(r => r.status !== 'PASSED').length,
     artifacts: collectArtifacts()
