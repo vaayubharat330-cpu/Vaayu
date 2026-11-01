@@ -12,6 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { hasSuite } = require('./suite-registry');
 
 const root = path.resolve(__dirname, '..');
 const evidenceDir = path.resolve(__dirname, 'artifacts');
@@ -101,17 +102,6 @@ const capabilities = {
   },
 };
 
-const runnerSuites = new Set([
-  'portal-smoke', 'customer-journey', 'merchant-journey', 'browser-all',
-  'lifecycle', 'shared-state-consistency', 'deep-lifecycle-consistency',
-  'realtime-state-reconciliation', 'financial-lifecycle-reconciliation',
-  'merchant-operational-reconciliation', 'failure-resilience', 'merchant-e2e',
-  'enterprise-operations', 'websocket-e2e', 'location-integrity',
-  'postgres-ledger', 'security', 'component-audit', 'route-contract-audit',
-  'state-integrity', 'enterprise-battery', 'component-behavior-coverage',
-  'behavioral-capability-audit', 'runtime-dependency-audit',
-]);
-
 function assertionCount(content) {
   return (content.match(/\b(?:assert|expect|strictEqual|deepStrictEqual|ok|equal|notEqual|t\.assert|t\.equal|t\.deepEqual|t\.ok)\b/g) || []).length;
 }
@@ -124,7 +114,7 @@ function main() {
     const lower = content.toLowerCase();
     const missingMarkers = spec.markers.filter(marker => !lower.includes(marker.toLowerCase()));
     const assertions = assertionCount(content);
-    const suiteRegistered = runnerSuites.has(spec.suite);
+    const suiteRegistered = hasSuite(spec.suite);
     const passed = exists && suiteRegistered && assertions > 0 && missingMarkers.length === 0;
     return {
       capability: name,
@@ -146,6 +136,7 @@ function main() {
     policy: {
       purpose: 'Every critical backend capability must have executable behavioural evidence.',
       nonClaim: 'Static evidence does not prove runtime correctness; the named suite must also pass.',
+      suiteRegistrySourceOfTruth: 'apps/backend/certification/suite-registry.js',
       productionSafe: true,
     },
     summary: {
