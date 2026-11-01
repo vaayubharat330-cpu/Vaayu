@@ -32,6 +32,7 @@ const allSuites = [
   ['component-audit', ['certification/component-audit.js'], 'node'],
   ['component-behavior-coverage', ['certification/component-behavior-coverage.js'], 'node'],
   ['behavioral-capability-audit', ['certification/behavioral-capability-audit.js'], 'node'],
+  ['runtime-dependency-audit', ['certification/runtime-dependency-audit.js'], 'node'],
   ['route-contract-audit', ['certification/route-contract-audit.js'], 'node'],
   ['state-integrity', ['certification/state-integrity.js'], 'node'],
   ['enterprise-battery', ['certification/enterprise-battery.js'], 'node'],
