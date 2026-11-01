@@ -82,6 +82,7 @@ jobs:
           DATABASE_URL: postgres://vaayu:vaayu@127.0.0.1:5432/vaayu
           JWT_SECRET: browser-certification-jwt-secret-012345678901234567890123
           OTP_HASH_SECRET: browser-certification-otp-secret-012345678901234567890123
+          VAAYU_ADMIN_USERS_JSON: '[{"username":"certification-admin","password":"certification-${{ github.run_id }}","role":"ADMIN","name":"Certification Admin"}]'
           NODE_ENV: test
           PERSISTENCE_PROVIDER: postgres
           REDIS_PROVIDER: redis
@@ -110,6 +111,8 @@ jobs:
         env:
           CI: true
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:4000
+          VAAYU_TEST_BASE: http://127.0.0.1:4000
+          VAAYU_ADMIN_USERS_JSON: '[{"username":"certification-admin","password":"certification-${{ github.run_id }}","role":"ADMIN","name":"Certification Admin"}]'
         run: npx playwright test --config=test/browser/playwright.config.js
 
       - name: Upload Playwright report and traces
