@@ -51,10 +51,17 @@ function main() {
   const missingEntries = entries.filter(entry => !entry.exists);
   const emptyDirectories = entries.filter(entry => entry.exists && entry.type === 'directory' && Number(entry.entries) === 0);
   const syntaxTargets = entries.filter(entry => entry.exists && entry.type === 'file' && /\.(js|cjs|mjs)$/.test(entry.path));
-  const syntaxChecks = syntaxTargets.map(entry => ({ suite: entry.suite, mode: entry.mode, ...syntaxCheck(entry.path) }));
-  const syntaxFailures = syntaxChecks.filter(check => !check.ok);
   const requiredFiles = ['certification/run-certification.js', 'certification/certification-integrity-audit.js', 'certification/server.js'];
   const requiredFileChecks = requiredFiles.map(inspectEntry);
+  const requiredSyntaxTargets = requiredFileChecks.filter(entry => entry.exists && entry.type === 'file' && /\.(js|cjs|mjs)$/.test(entry.path));
+  const syntaxTargetsByPath = new Map([...syntaxTargets, ...requiredSyntaxTargets].map(entry => [entry.path, entry]));
+  const syntaxChecks = [...syntaxTargetsByPath.values()].map(entry => ({
+    suite: entry.suite || null,
+    controlFile: !entry.suite,
+    mode: entry.mode || null,
+    ...syntaxCheck(entry.path),
+  }));
+  const syntaxFailures = syntaxChecks.filter(check => !check.ok);
   const missingRequiredFiles = requiredFileChecks.filter(item => !item.exists);
 
   const checks = [
@@ -79,7 +86,8 @@ function main() {
       checks: checks.length,
       passed: checks.filter(check => check.ok).length,
       failed: checks.filter(check => !check.ok).length,
-      registeredSourceFiles: syntaxChecks.length,
+      registeredSourceFiles: syntaxChecks.filter(check => !check.controlFile).length,
+      syntaxTargetsChecked: syntaxChecks.length,
       syntaxValid: syntaxFailures.length === 0,
       preflightPassed: checks.every(check => check.ok),
     },
