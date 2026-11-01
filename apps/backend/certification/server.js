@@ -33,6 +33,7 @@ const suites = {
   'shared-state-consistency': 'Cross-role shared-state reconciliation',
   'deep-lifecycle-consistency': 'Full delivery lifecycle with geofence, OTP, persistence and tracking reconciliation',
   'realtime-state-reconciliation': 'PostgreSQL → WebSocket → telemetry → public tracking reconciliation',
+  'financial-lifecycle-reconciliation': 'Wallet → escrow → delivered trip → settlement → ledger reconciliation',
   'failure-resilience': 'Negative-path authorization and state-preservation certification',
   'merchant-e2e': 'Backend merchant lifecycle E2E',
   'enterprise-operations': 'Enterprise operations E2E',
