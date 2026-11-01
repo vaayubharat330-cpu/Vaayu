@@ -34,7 +34,7 @@ function redisPing(url) {
       socket.destroy();
       resolve({ ok: false, error: 'Redis PING timeout' });
     }, 3000);
-    socket.once('connect', () => socket.write('*1\\r\\n$4\\r\\nPING\\r\\n'));
+    socket.once('connect', () => socket.write('*1\r\n$4\r\nPING\r\n'));
     socket.on('data', chunk => {
       clearTimeout(timer);
       const response = chunk.toString();
@@ -67,6 +67,7 @@ async function main() {
     let malformed = 0;
     let missingIdentity = 0;
     let missingVersion = 0;
+    let duplicateTrackingTokens = 0;
 
     for (const row of trips.rows) {
       const data = row.data || {};
@@ -78,7 +79,7 @@ async function main() {
 
       if (data.trackingToken) {
         const prior = trackingTokens.get(data.trackingToken);
-        if (prior && prior !== data.id) malformed++;
+        if (prior && prior !== data.id) duplicateTrackingTokens++;
         trackingTokens.set(data.trackingToken, data.id);
       }
     }
@@ -86,7 +87,7 @@ async function main() {
     checks.push({ name: 'trip-record-identity', ok: missingIdentity === 0, failures: missingIdentity });
     checks.push({ name: 'trip-version-integrity', ok: missingVersion === 0, failures: missingVersion });
     checks.push({ name: 'trip-structure', ok: malformed === 0, failures: malformed });
-    checks.push({ name: 'tracking-token-uniqueness', ok: trackingTokens.size === new Set(trackingTokens.keys()).size });
+    checks.push({ name: 'tracking-token-uniqueness', ok: duplicateTrackingTokens === 0, failures: duplicateTrackingTokens });
     checks.push({ name: 'redis-connectivity', ...redis });
 
     const result = {
