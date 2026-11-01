@@ -100,7 +100,7 @@ function main() {
     },
   };
 
-  fs.writeFileSync(path.join(evidenceDir, 'certification-integrity-audit.json'), JSON.stringify(output, null, 2));
+  fs.writeFileSync(path.join(evidenceDir, 'certification-integrity-evidence.json'), JSON.stringify(output, null, 2));
   console.log(JSON.stringify(output, null, 2));
   if (!output.summary.certificationAuthoritative) process.exitCode = 1;
 }
