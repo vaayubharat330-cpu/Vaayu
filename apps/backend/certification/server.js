@@ -32,7 +32,7 @@ const suites = {
   lifecycle: 'Backend delivery lifecycle E2E',
   'shared-state-consistency': 'Cross-role shared-state reconciliation',
   'deep-lifecycle-consistency': 'Full delivery lifecycle with geofence, OTP, persistence and tracking reconciliation',
-  'realtime-state-reconciliation': 'PostgreSQL → WebSocket → telemetry → public tracking reconciliation',
+  'realtime-state-reconciliation': 'Customer → driver → admin → PostgreSQL → WebSocket → public tracking reconciliation',
   'financial-lifecycle-reconciliation': 'Wallet → escrow → delivered trip → settlement → ledger reconciliation',
   'merchant-operational-reconciliation': 'Merchant → driver → trip → PostgreSQL → merchant orders → proof-of-delivery reconciliation',
   'failure-resilience': 'Negative-path authorization and state-preservation certification',
@@ -43,6 +43,7 @@ const suites = {
   'postgres-ledger': 'PostgreSQL ledger certification',
   security: 'Comprehensive security certification',
   'component-audit': 'Backend component inventory, syntax and infrastructure audit',
+  'route-contract-audit': 'Registered API route source/runtime contract audit',
   'state-integrity': 'PostgreSQL and Redis runtime state integrity',
   'enterprise-battery': 'Broader backend behavioural certification battery',
 };
@@ -62,6 +63,7 @@ function evidenceSummary() {
   const latest = readJsonFile('latest.json');
   const running = readJsonFile('running.json');
   const componentAudit = readJsonFile('component-audit.json');
+  const routeContractAudit = readJsonFile('route-contract-audit.json');
   const stateIntegrity = readJsonFile('state-integrity.json');
   const enterpriseBattery = readJsonFile('enterprise-battery.json');
   const suiteResults = {};
@@ -74,7 +76,7 @@ function evidenceSummary() {
     .map(name => readJsonFile(name)).filter(Boolean)
     .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt))).slice(0, 20)
     .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total, artifacts: item.artifacts || [] }));
-  return { latest, running, suites: suiteResults, componentAudit, stateIntegrity, enterpriseBattery, historicalRuns };
+  return { latest, running, suites: suiteResults, componentAudit, routeContractAudit, stateIntegrity, enterpriseBattery, historicalRuns };
 }
 function artifactInventory() {
   const files = [];
@@ -133,6 +135,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/runs') return json(res, 200, evidenceSummary().historicalRuns);
     if (url.pathname === '/api/suites') return json(res, 200, { suites });
     if (url.pathname === '/api/components') return json(res, 200, evidenceSummary().componentAudit || { status: 'NOT_RUN' });
+    if (url.pathname === '/api/route-contract-audit') return json(res, 200, evidenceSummary().routeContractAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/state-integrity') return json(res, 200, evidenceSummary().stateIntegrity || { status: 'NOT_RUN' });
     if (url.pathname === '/api/enterprise-battery') return json(res, 200, evidenceSummary().enterpriseBattery || { status: 'NOT_RUN' });
     if (url.pathname.startsWith('/api/evidence/')) { const name = decodeURIComponent(url.pathname.slice('/api/evidence/'.length)); const item = readJsonFile(name); return item ? json(res, 200, item) : json(res, 404, { error: 'Evidence not found' }); }
