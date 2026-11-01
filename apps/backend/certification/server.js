@@ -37,6 +37,7 @@ const suites = {
   'postgres-ledger': 'PostgreSQL ledger certification',
   security: 'Comprehensive security certification',
   'component-audit': 'Backend component inventory, syntax and infrastructure audit',
+  'enterprise-battery': 'Broader backend behavioural certification battery',
 };
 
 function json(res, status, payload) {
@@ -47,43 +48,30 @@ function json(res, status, payload) {
   });
   res.end(JSON.stringify(payload));
 }
-
 function safeError(error) { return error?.message || String(error); }
-
 function readJsonFile(fileName) {
   if (!/^[a-zA-Z0-9_-]+\.json$/.test(fileName)) return null;
   const file = path.join(EVIDENCE_DIR, fileName);
   if (!fs.existsSync(file)) return null;
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) { return { status: 'CORRUPT', error: safeError(error) }; }
 }
-
 function evidenceSummary() {
   const latest = readJsonFile('latest.json');
   const running = readJsonFile('running.json');
   const componentAudit = readJsonFile('component-audit.json');
+  const enterpriseBattery = readJsonFile('enterprise-battery.json');
   const suiteResults = {};
   for (const key of Object.keys(suites)) {
     const item = readJsonFile(`${key}.json`);
-    suiteResults[key] = item ? {
-      status: item.status || 'COMPLETED',
-      startedAt: item.startedAt,
-      finishedAt: item.finishedAt,
-      exitCode: item.exitCode,
-      mode: item.mode,
-      error: item.error,
-      outputTail: item.output ? String(item.output).slice(-5000) : undefined,
-    } : { status: 'NOT_RUN' };
+    suiteResults[key] = item ? { status: item.status || 'COMPLETED', startedAt: item.startedAt, finishedAt: item.finishedAt, exitCode: item.exitCode, mode: item.mode, error: item.error, outputTail: item.output ? String(item.output).slice(-5000) : undefined } : { status: 'NOT_RUN' };
   }
   const historicalRuns = fs.readdirSync(EVIDENCE_DIR)
     .filter(name => /^cert-\d+\.json$/.test(name))
-    .map(name => readJsonFile(name))
-    .filter(Boolean)
-    .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt)))
-    .slice(0, 20)
+    .map(name => readJsonFile(name)).filter(Boolean)
+    .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt))).slice(0, 20)
     .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total, artifacts: item.artifacts || [] }));
-  return { latest, running, suites: suiteResults, componentAudit, historicalRuns };
+  return { latest, running, suites: suiteResults, componentAudit, enterpriseBattery, historicalRuns };
 }
-
 function artifactInventory() {
   const files = [];
   const walk = base => {
@@ -92,10 +80,7 @@ function artifactInventory() {
       for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
         const full = path.join(current, entry.name);
         if (entry.isDirectory()) visit(full);
-        else {
-          const stat = fs.statSync(full);
-          files.push({ root: path.basename(base), path: path.relative(path.resolve(__dirname, '..'), full), bytes: stat.size, modifiedAt: stat.mtime.toISOString() });
-        }
+        else { const stat = fs.statSync(full); files.push({ root: path.basename(base), path: path.relative(path.resolve(__dirname, '..'), full), bytes: stat.size, modifiedAt: stat.mtime.toISOString() }); }
       }
     };
     visit(base);
@@ -103,60 +88,36 @@ function artifactInventory() {
   ARTIFACT_ROOTS.forEach(walk);
   return files.sort((a, b) => String(b.modifiedAt).localeCompare(String(a.modifiedAt))).slice(0, 1000);
 }
-
 async function backendHealth() {
   const started = Date.now();
   try {
     const response = await fetch(`${BACKEND_URL}/api/health`, { signal: AbortSignal.timeout(5000) });
-    const text = await response.text();
-    let body = null;
-    try { body = JSON.parse(text); } catch (_) {}
+    const text = await response.text(); let body = null; try { body = JSON.parse(text); } catch (_) {}
     return { ok: response.ok, status: response.status, latencyMs: Date.now() - started, body };
-  } catch (error) {
-    return { ok: false, latencyMs: Date.now() - started, error: safeError(error) };
-  }
+  } catch (error) { return { ok: false, latencyMs: Date.now() - started, error: safeError(error) }; }
 }
-
 async function postgresSnapshot() {
   if (!DATABASE_URL) return { ok: false, error: 'DATABASE_URL is not configured.' };
   const pool = new Pool({ connectionString: DATABASE_URL, max: 1, connectionTimeoutMillis: 3000 });
   try {
     const counts = await pool.query('SELECT collection, count(*)::int AS count FROM vaayu_records GROUP BY collection ORDER BY collection');
     const recent = await pool.query('SELECT collection, record_key, version, updated_at FROM vaayu_records ORDER BY updated_at DESC LIMIT 25');
-    let database = null;
-    try { database = new URL(DATABASE_URL).pathname.replace(/^\//, '') || null; } catch (_) {}
+    let database = null; try { database = new URL(DATABASE_URL).pathname.replace(/^\//, '') || null; } catch (_) {}
     return { ok: true, database, recordCountByCollection: counts.rows, recentRecords: recent.rows };
-  } catch (error) {
-    return { ok: false, error: safeError(error) };
-  } finally { await pool.end().catch(() => {}); }
+  } catch (error) { return { ok: false, error: safeError(error) }; }
+  finally { await pool.end().catch(() => {}); }
 }
-
 async function redisHealth() {
   const redis = new Redis(REDIS_URL, { lazyConnect: true, connectTimeout: 3000, maxRetriesPerRequest: 1 });
-  try {
-    await redis.connect();
-    const [pong, dbSize, info] = await Promise.all([redis.ping(), redis.dbsize(), redis.info('server')]);
-    const version = String(info).match(/redis_version:([^\r\n]+)/)?.[1] || null;
-    return { ok: pong === 'PONG', ping: pong, dbSize, version };
-  } catch (error) {
-    return { ok: false, error: safeError(error) };
-  } finally { redis.disconnect(); }
+  try { await redis.connect(); const [pong, dbSize, info] = await Promise.all([redis.ping(), redis.dbsize(), redis.info('server')]); const version = String(info).match(/redis_version:([^\r\n]+)/)?.[1] || null; return { ok: pong === 'PONG', ping: pong, dbSize, version }; }
+  catch (error) { return { ok: false, error: safeError(error) }; }
+  finally { redis.disconnect(); }
 }
-
 async function systemSnapshot() {
   const [backend, postgres, redis] = await Promise.all([backendHealth(), postgresSnapshot(), redisHealth()]);
-  return {
-    timestamp: new Date().toISOString(),
-    certification: { target: process.env.VAAYU_TEST_TARGET, backendUrl: BACKEND_URL, controlCenterPort: PORT, mode: 'read-only-observer' },
-    backend, postgres, redis, suites, evidence: evidenceSummary(), artifacts: artifactInventory(),
-  };
+  return { timestamp: new Date().toISOString(), certification: { target: process.env.VAAYU_TEST_TARGET, backendUrl: BACKEND_URL, controlCenterPort: PORT, mode: 'read-only-observer' }, backend, postgres, redis, suites, evidence: evidenceSummary(), artifacts: artifactInventory() };
 }
-
-function dashboard(res) {
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-  fs.createReadStream(path.join(PUBLIC_DIR, 'index.html')).pipe(res);
-}
-
+function dashboard(res) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); fs.createReadStream(path.join(PUBLIC_DIR, 'index.html')).pipe(res); }
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
@@ -168,18 +129,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/runs') return json(res, 200, evidenceSummary().historicalRuns);
     if (url.pathname === '/api/suites') return json(res, 200, { suites });
     if (url.pathname === '/api/components') return json(res, 200, evidenceSummary().componentAudit || { status: 'NOT_RUN' });
-    if (url.pathname.startsWith('/api/evidence/')) {
-      const name = decodeURIComponent(url.pathname.slice('/api/evidence/'.length));
-      const item = readJsonFile(name);
-      return item ? json(res, 200, item) : json(res, 404, { error: 'Evidence not found' });
-    }
+    if (url.pathname === '/api/enterprise-battery') return json(res, 200, evidenceSummary().enterpriseBattery || { status: 'NOT_RUN' });
+    if (url.pathname.startsWith('/api/evidence/')) { const name = decodeURIComponent(url.pathname.slice('/api/evidence/'.length)); const item = readJsonFile(name); return item ? json(res, 200, item) : json(res, 404, { error: 'Evidence not found' }); }
     return json(res, 404, { error: 'Not found' });
   } catch (error) { return json(res, 500, { error: safeError(error) }); }
 });
-
-server.listen(PORT, HOST, () => {
-  console.log(`[VAAYU CERT] Control Center listening on http://${HOST}:${PORT}`);
-  console.log(`[VAAYU CERT] Observing backend ${BACKEND_URL}`);
-});
+server.listen(PORT, HOST, () => { console.log(`[VAAYU CERT] Control Center listening on http://${HOST}:${PORT}`); console.log(`[VAAYU CERT] Observing backend ${BACKEND_URL}`); });
 process.on('SIGTERM', () => server.close(() => process.exit(0)));
 process.on('SIGINT', () => server.close(() => process.exit(0)));
