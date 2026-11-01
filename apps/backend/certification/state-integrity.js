@@ -48,6 +48,10 @@ function redisPing(url) {
   });
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 async function main() {
   if (!databaseUrl) throw new Error('DATABASE_URL is required for state integrity certification.');
   fs.mkdirSync(evidenceDir, { recursive: true });
@@ -58,6 +62,43 @@ async function main() {
   try {
     const health = await pool.query('SELECT 1 AS ok');
     checks.push({ name: 'postgres-connectivity', ok: health.rows[0]?.ok === 1 });
+
+    const allRecords = await pool.query(
+      'SELECT collection, record_key, data FROM vaayu_records ORDER BY created_at DESC'
+    );
+
+    let malformedRecords = 0;
+    let missingRecordKeys = 0;
+    let invalidRecordKeyFormat = 0;
+    let mismatchedRecordIdentity = 0;
+    const seenRecordKeys = new Set();
+    let duplicateRecordKeys = 0;
+
+    for (const row of allRecords.rows) {
+      const data = row.data;
+      if (!row.record_key || typeof row.record_key !== 'string') {
+        missingRecordKeys++;
+      } else {
+        if (seenRecordKeys.has(row.record_key)) duplicateRecordKeys++;
+        seenRecordKeys.add(row.record_key);
+        if (!/^id:.+/.test(row.record_key)) invalidRecordKeyFormat++;
+      }
+
+      if (!isPlainObject(data)) {
+        malformedRecords++;
+        continue;
+      }
+
+      if (data.id !== undefined && row.record_key !== `id:${data.id}`) {
+        mismatchedRecordIdentity++;
+      }
+    }
+
+    checks.push({ name: 'persisted-record-shape', ok: malformedRecords === 0, failures: malformedRecords });
+    checks.push({ name: 'persisted-record-key-presence', ok: missingRecordKeys === 0, failures: missingRecordKeys });
+    checks.push({ name: 'persisted-record-key-format', ok: invalidRecordKeyFormat === 0, failures: invalidRecordKeyFormat });
+    checks.push({ name: 'persisted-record-identity', ok: mismatchedRecordIdentity === 0, failures: mismatchedRecordIdentity });
+    checks.push({ name: 'persisted-record-key-uniqueness', ok: duplicateRecordKeys === 0, failures: duplicateRecordKeys });
 
     const trips = await pool.query(
       "SELECT record_key, data FROM vaayu_records WHERE collection='trips' ORDER BY created_at DESC"
@@ -95,11 +136,12 @@ async function main() {
       target: process.env.VAAYU_TEST_TARGET,
       databaseUrl: databaseUrl.replace(/:\/\/[^@]+@/, '://***@'),
       redisUrl,
+      totalPersistedRecords: allRecords.rows.length,
       tripRecords: trips.rows.length,
       checks,
       passed: checks.filter(c => c.ok).length,
       failed: checks.filter(c => !c.ok).length,
-      policy: 'Structural integrity only; behavioural correctness must be proven by E2E suites.'
+      policy: 'Structural persistence and dependency integrity only; behavioural correctness must be proven by E2E and runtime component suites.'
     };
 
     fs.writeFileSync(path.join(evidenceDir, 'state-integrity.json'), JSON.stringify(result, null, 2));
