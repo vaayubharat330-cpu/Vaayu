@@ -42,8 +42,33 @@ async function probe(pathname, method) {
   }
 }
 
-function reachable(runtime) {
-  return runtime && runtime.status !== 404 && runtime.status !== 405;
+function expectedOutcome(route) {
+  if (route.requiredRole === 'PUBLIC') {
+    // Public GETs are safe to execute and must produce a real successful response.
+    // Public POSTs are intentionally skipped because they may mutate external state.
+    return route.method === 'GET'
+      ? { type: 'PUBLIC_GET', allowedStatuses: [200, 204, 301, 302, 304] }
+      : { type: 'PUBLIC_MUTATING_POST', skipped: true };
+  }
+
+  // Protected probes intentionally carry no credentials. A healthy protected endpoint
+  // must reject the request through its auth/RBAC boundary, not merely return some
+  // non-404 response. This prevents 500/502/503 responses from being misclassified as
+  // reachable/healthy routes.
+  return { type: 'PROTECTED_UNAUTHENTICATED', allowedStatuses: [401, 403] };
+}
+
+function evaluateProbe(runtime, expected) {
+  if (expected.skipped) return { passed: true, reason: 'public-mutating-post' };
+  if (!runtime || runtime.status == null) {
+    return { passed: false, reason: runtime?.error || 'NO_RESPONSE' };
+  }
+  const passed = expected.allowedStatuses.includes(runtime.status);
+  return {
+    passed,
+    reason: passed ? 'EXPECTED_STATUS' : `UNEXPECTED_STATUS_${runtime.status}`,
+    allowedStatuses: expected.allowedStatuses,
+  };
 }
 
 async function main() {
@@ -59,26 +84,25 @@ async function main() {
       .filter(item => item.text.includes(`'${route.path}'`) || item.text.includes(`"${route.path}"`))
       .map(item => path.relative(srcRoot, item.file));
 
-    // A protected endpoint can safely be probed without credentials: the expected result is
-    // an auth/authorization response rather than a missing route. Public GET routes are also
-    // safe to probe. Public POST routes are catalogued but deliberately not invoked.
-    const safeToProbe = route.method === 'GET' || route.requiredRole !== 'PUBLIC';
-    const legacyRuntime = safeToProbe
-      ? await probe(route.path, route.method)
-      : { skipped: true, reason: 'public-mutating-post' };
-    const v1Runtime = safeToProbe
-      ? await probe(route.v1Path, route.method)
-      : { skipped: true, reason: 'public-mutating-post' };
+    const expected = expectedOutcome(route);
+    const legacyRuntime = expected.skipped
+      ? { skipped: true, reason: 'public-mutating-post' }
+      : await probe(route.path, route.method);
+    const v1Runtime = expected.skipped
+      ? { skipped: true, reason: 'public-mutating-post' }
+      : await probe(route.v1Path, route.method);
     const sourceReferenced = textualImplementations.length > 0;
-    const legacyReachable = v1Runtime.skipped || reachable(legacyRuntime);
-    const v1Reachable = v1Runtime.skipped || reachable(v1Runtime);
+    const legacyEvaluation = evaluateProbe(legacyRuntime, expected);
+    const v1Evaluation = evaluateProbe(v1Runtime, expected);
 
     results.push({
       ...route,
       sourceReferenced,
       sourceImplementations: textualImplementations,
+      expectedOutcome: expected,
       runtime: { legacy: legacyRuntime, v1: v1Runtime },
-      contract: sourceReferenced && legacyReachable && v1Reachable ? 'REACHABLE' : 'GAP'
+      evaluation: { legacy: legacyEvaluation, v1: v1Evaluation },
+      contract: sourceReferenced && legacyEvaluation.passed && v1Evaluation.passed ? 'REACHABLE' : 'GAP'
     });
   }
 
@@ -90,15 +114,16 @@ async function main() {
     totalRegisteredRoutes: results.length,
     sourceReferenced: results.filter(item => item.sourceReferenced).length,
     runtimeProbed: results.filter(item => !item.runtime.legacy.skipped).length,
-    legacyRuntimeReachable: results.filter(item => item.runtime.legacy.skipped || reachable(item.runtime.legacy)).length,
-    v1RuntimeReachable: results.filter(item => item.runtime.v1.skipped || reachable(item.runtime.v1)).length,
+    semanticallyHealthy: results.filter(item => item.contract === 'REACHABLE').length,
     gaps: gaps.length,
     policy: {
       sourcePresence: 'REQUIRED',
-      runtimeReachability: 'REQUIRED',
-      versionedAliasReachability: 'REQUIRED',
+      semanticRuntimeContract: 'REQUIRED',
+      versionedAliasSemanticContract: 'REQUIRED',
       publicMutatingPost: 'NOT_INVOKED',
-      rule: 'A registered route is not considered implemented until source, legacy runtime routing and /api/v1 runtime routing all agree.'
+      protectedUnauthenticatedStatuses: [401, 403],
+      publicGetSuccessStatuses: [200, 204, 301, 302, 304],
+      rule: 'A registered route is not considered implemented until source, legacy runtime semantics and /api/v1 runtime semantics all agree.'
     }
   };
 
