@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 const Redis = require('ioredis');
+const { SUITE_NAMES } = require('./suite-registry');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -24,7 +25,10 @@ const EVIDENCE_DIR = path.resolve(__dirname, 'artifacts');
 const ARTIFACT_ROOTS = [path.resolve(__dirname, '..', 'test-results'), path.resolve(__dirname, '..', 'playwright-report')];
 fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 
-const suites = {
+// Human-readable labels are intentionally separate from suite membership. Membership is
+// owned exclusively by suite-registry.js, so adding a certification suite cannot silently
+// leave the Control Center with a stale catalog.
+const SUITE_DESCRIPTIONS = Object.freeze({
   'certification-preflight': 'Certification registry and executable-source preflight gate',
   'portal-smoke': 'Portal smoke — six entry surfaces',
   'customer-journey': 'Customer — registration, authentication and booking workspace',
@@ -51,8 +55,12 @@ const suites = {
   'runtime-dependency-audit': 'Live HTTP → PostgreSQL → Redis → WebSocket runtime dependency round trips',
   'route-contract-audit': 'Registered API route source/runtime contract audit',
   'state-integrity': 'PostgreSQL and Redis runtime state integrity',
-  'enterprise-battery': 'Broader backend behavioural certification battery',
-};
+  'enterprise-battery': 'Broader backend behavioural certification battery'
+});
+
+const suites = Object.freeze(Object.fromEntries(
+  SUITE_NAMES.map(name => [name, SUITE_DESCRIPTIONS[name] || `Certification suite: ${name}`])
+));
 
 function json(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
