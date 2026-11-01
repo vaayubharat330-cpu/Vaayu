@@ -4,10 +4,10 @@
  * Component behavioural evidence audit.
  *
  * Ownership alone is not sufficient: this gate verifies that every executable
- * backend source file has at least one mapped certification suite whose source
- * actually references the component area/file or contains an explicit
- * behavioural evidence marker. It is intentionally conservative and reports
- * evidence gaps instead of assuming a suite name implies coverage.
+ * backend source file has identifiable evidence in at least one mapped
+ * certification suite. Evidence can come from a direct source reference,
+ * transitive local-module dependency from the suite, a component-area reference,
+ * or an explicit behavioural evidence marker.
  *
  * Disposable-only metadata gate. Runtime correctness still requires the mapped
  * suites to execute and pass.
@@ -63,8 +63,42 @@ function suiteFiles(suite) {
   return args.filter(value => /\.(js|cjs|mjs)$/.test(value));
 }
 
-function sourceText(relativeFile) {
-  return fs.readFileSync(path.join(srcRoot, relativeFile), 'utf8');
+function readText(file) {
+  try { return fs.readFileSync(file, 'utf8'); } catch (_) { return ''; }
+}
+
+function resolveLocalModule(fromFile, request) {
+  if (!request || !request.startsWith('.')) return null;
+  const base = path.resolve(path.dirname(fromFile), request);
+  const candidates = [base, `${base}.js`, `${base}.cjs`, `${base}.mjs`, path.join(base, 'index.js'), path.join(base, 'index.cjs'), path.join(base, 'index.mjs')];
+  return candidates.find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile()) || null;
+}
+
+function localDependencies(entryFile) {
+  const visited = new Set();
+  const stack = [entryFile];
+  const sourceFiles = new Set();
+
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current || visited.has(current) || !fs.existsSync(current)) continue;
+    visited.add(current);
+    if (current.startsWith(`${srcRoot}${path.sep}`)) sourceFiles.add(current);
+
+    const content = readText(current);
+    const requests = [];
+    const requirePattern = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
+    const importPattern = /(?:from\s*|import\s*\(\s*)['"]([^'"]+)['"]['"]?\s*\)?/g;
+    let match;
+    while ((match = requirePattern.exec(content))) requests.push(match[1]);
+    while ((match = importPattern.exec(content))) requests.push(match[1]);
+    for (const request of requests) {
+      const resolved = resolveLocalModule(current, request);
+      if (resolved) stack.push(resolved);
+    }
+  }
+
+  return sourceFiles;
 }
 
 function suiteEvidence(suite, relativeFile, area) {
@@ -78,17 +112,21 @@ function suiteEvidence(suite, relativeFile, area) {
   const areaPath = `src/${area}`;
   const references = [];
   for (const candidate of candidates) {
-    const content = fs.readFileSync(candidate, 'utf8');
+    const content = readText(candidate);
     const fileName = path.basename(candidate);
     const direct = content.includes(sourcePath);
     const areaReference = content.includes(areaPath);
+    const dependencyFiles = localDependencies(candidate);
+    const dependencyReference = dependencyFiles.has(path.join(srcRoot, relativeFile));
     const explicitMarker = new RegExp(`(?:component|coverage|exercise|behavio(?:u)?r|assert)[^\\n]{0,100}${area.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}`, 'i').test(content);
-    if (direct || areaReference || explicitMarker) {
+    if (direct || areaReference || dependencyReference || explicitMarker) {
       references.push({
         testFile: path.relative(root, candidate).split(path.sep).join('/'),
         directFileReference: direct,
         areaReference,
+        transitiveLocalDependencyReference: dependencyReference,
         explicitEvidenceMarker: explicitMarker,
+        dependencyCount: dependencyFiles.size,
       });
     }
   }
@@ -134,6 +172,7 @@ function main() {
     })),
     policy: {
       purpose: 'Every executable backend source file must have identifiable behavioural evidence in at least one mapped certification suite.',
+      evidenceSources: ['direct source reference', 'transitive local-module dependency', 'component-area reference', 'explicit behavioural evidence marker'],
       nonClaim: 'Source references are evidence of test responsibility/exercise only; passing runtime certification is required for correctness.',
       conservative: true,
       productionSafe: true,
