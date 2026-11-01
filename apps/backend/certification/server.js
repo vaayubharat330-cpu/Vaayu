@@ -46,6 +46,7 @@ const suites = {
   'component-behavior-coverage': 'Backend component → behavioural certification ownership gate',
   'behavioral-capability-audit': 'Critical backend capability → executable evidence gate',
   'component-runtime-ownership-audit': 'Backend source area → runtime certification ownership gate',
+  'component-behavior-evidence-audit': 'Backend source file → identifiable behavioural evidence gate',
   'runtime-dependency-audit': 'Live HTTP → PostgreSQL → Redis → WebSocket runtime dependency round trips',
   'route-contract-audit': 'Registered API route source/runtime contract audit',
   'state-integrity': 'PostgreSQL and Redis runtime state integrity',
@@ -70,6 +71,7 @@ function evidenceSummary() {
   const componentBehaviorCoverage = readJsonFile('component-behavior-coverage.json');
   const behavioralCapabilityAudit = readJsonFile('behavioral-capability-audit.json');
   const componentRuntimeOwnershipAudit = readJsonFile('component-runtime-ownership-audit.json');
+  const componentBehaviorEvidenceAudit = readJsonFile('component-behavior-evidence-audit.json');
   const runtimeDependencyAudit = readJsonFile('runtime-dependency-audit.json');
   const routeContractAudit = readJsonFile('route-contract-audit.json');
   const stateIntegrity = readJsonFile('state-integrity.json');
@@ -85,7 +87,7 @@ function evidenceSummary() {
     .map(name => readJsonFile(name)).filter(Boolean)
     .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt))).slice(0, 20)
     .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total, artifacts: item.artifacts || [] }));
-  return { latest, running, suites: suiteResults, componentAudit, componentBehaviorCoverage, behavioralCapabilityAudit, componentRuntimeOwnershipAudit, runtimeDependencyAudit, routeContractAudit, stateIntegrity, enterpriseBattery, certificationIntegrity, historicalRuns };
+  return { latest, running, suites: suiteResults, componentAudit, componentBehaviorCoverage, behavioralCapabilityAudit, componentRuntimeOwnershipAudit, componentBehaviorEvidenceAudit, runtimeDependencyAudit, routeContractAudit, stateIntegrity, enterpriseBattery, certificationIntegrity, historicalRuns };
 }
 function artifactInventory() {
   const files = [];
@@ -147,6 +149,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/component-behavior-coverage') return json(res, 200, evidenceSummary().componentBehaviorCoverage || { status: 'NOT_RUN' });
     if (url.pathname === '/api/behavioral-capability-audit') return json(res, 200, evidenceSummary().behavioralCapabilityAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/component-runtime-ownership-audit') return json(res, 200, evidenceSummary().componentRuntimeOwnershipAudit || { status: 'NOT_RUN' });
+    if (url.pathname === '/api/component-behavior-evidence-audit') return json(res, 200, evidenceSummary().componentBehaviorEvidenceAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/runtime-dependency-audit') return json(res, 200, evidenceSummary().runtimeDependencyAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/route-contract-audit') return json(res, 200, evidenceSummary().routeContractAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/state-integrity') return json(res, 200, evidenceSummary().stateIntegrity || { status: 'NOT_RUN' });
