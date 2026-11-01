@@ -44,7 +44,7 @@ class JsonDatabaseRepository extends DatabaseRepository {
     const db = this.readDb();
     if (!phone) return null;
     const cleanInput = phone.replace(/\D/g, '').slice(-10);
-    return db.users.find(u => {
+    return (db.users || []).find(u => {
       const matchPhone = (u.phone || '').replace(/\D/g, '').slice(-10) === cleanInput;
       if (!matchPhone) return false;
       if (role) {
@@ -65,7 +65,7 @@ class JsonDatabaseRepository extends DatabaseRepository {
 
   getCustomers() {
     const db = this.readDb();
-    return db.users.filter(u => u.role === 'CUSTOMER' || !u.role);
+    return (db.users || []).filter(u => u.role === 'CUSTOMER' || !u.role);
   }
 
   getDrivers() {
