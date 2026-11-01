@@ -35,7 +35,7 @@ function redisPing(url) {
       socket.destroy();
       resolve({ ok: false, error: 'Redis PING timeout' });
     }, 3000);
-    socket.once('connect', () => socket.write('*1\r\n$4\r\nPING\r\n'));
+    socket.once('connect', () => socket.write('*1\\r\\n$4\\r\\nPING\\r\\n'));
     socket.on('data', chunk => {
       clearTimeout(timer);
       const response = chunk.toString();
@@ -111,6 +111,61 @@ async function redisDriverSpatialIntegrity() {
   }
 }
 
+async function redisTripBindingIntegrity(tripRows) {
+  const redis = new Redis(redisUrl, {
+    lazyConnect: true,
+    connectTimeout: 3000,
+    maxRetriesPerRequest: 1,
+  });
+  const bindingRequiredStates = new Set([
+    'DRIVER_ACCEPTED',
+    'DRIVER_ARRIVING',
+    'DRIVER_AT_PICKUP',
+    'PICKUP_CONFIRMED',
+    'IN_TRANSIT',
+    'DRIVER_AT_DROPOFF',
+  ]);
+  const missingBindings = [];
+  const mismatchedBindings = [];
+  const checkedBindings = [];
+
+  try {
+    await redis.connect();
+    for (const row of tripRows) {
+      const trip = row.data || {};
+      if (!trip.id || !bindingRequiredStates.has(trip.status)) continue;
+
+      const driverId = trip.driver?.id || trip.driverId || null;
+      if (!driverId) {
+        missingBindings.push({ tripId: trip.id, reason: 'authoritative trip has no driver identity' });
+        continue;
+      }
+
+      const location = await redis.hgetall(`driver:loc:${driverId}`);
+      if (!location || Object.keys(location).length === 0) {
+        missingBindings.push({ tripId: trip.id, driverId, reason: 'Redis driver location hash missing' });
+        continue;
+      }
+
+      const redisTripId = location.currentTripId || null;
+      checkedBindings.push({ tripId: trip.id, driverId, redisTripId, status: trip.status });
+      if (redisTripId !== trip.id) {
+        mismatchedBindings.push({ tripId: trip.id, driverId, expectedTripId: trip.id, redisTripId });
+      }
+    }
+
+    return {
+      ok: missingBindings.length === 0 && mismatchedBindings.length === 0,
+      checkedBindings: checkedBindings.length,
+      missingBindings,
+      mismatchedBindings,
+      policy: 'For active delivery states that require driver telemetry, PostgreSQL authoritative trip.driver identity must converge with Redis driver:loc:<driverId>.currentTripId.'
+    };
+  } finally {
+    redis.disconnect();
+  }
+}
+
 async function main() {
   if (!databaseUrl) throw new Error('DATABASE_URL is required for state integrity certification.');
   fs.mkdirSync(evidenceDir, { recursive: true });
@@ -119,6 +174,7 @@ async function main() {
   const pool = new Pool({ connectionString: databaseUrl, max: 2 });
   const checks = [];
   let redisSpatial = { ok: false, error: 'not executed' };
+  let redisTripBinding = { ok: false, error: 'not executed' };
   try {
     const health = await pool.query('SELECT 1 AS ok');
     checks.push({ name: 'postgres-connectivity', ok: health.rows[0]?.ok === 1 });
@@ -200,6 +256,14 @@ async function main() {
       validLocations: redisSpatial.validLocations,
     });
 
+    redisTripBinding = await redisTripBindingIntegrity(trips.rows);
+    checks.push({
+      name: 'redis-trip-binding-integrity',
+      ok: redisTripBinding.ok,
+      failures: redisTripBinding.missingBindings.length + redisTripBinding.mismatchedBindings.length,
+      checkedBindings: redisTripBinding.checkedBindings,
+    });
+
     const result = {
       generatedAt: new Date().toISOString(),
       target: process.env.VAAYU_TEST_TARGET,
@@ -209,9 +273,10 @@ async function main() {
       tripRecords: trips.rows.length,
       checks,
       redisDriverSpatial: redisSpatial,
+      redisTripBinding,
       passed: checks.filter(c => c.ok).length,
       failed: checks.filter(c => !c.ok).length,
-      policy: 'Structural persistence and Redis state integrity only; behavioural correctness must be proven by E2E and runtime component suites.'
+      policy: 'Structural persistence, Redis spatial state, and authoritative PostgreSQL-to-Redis trip binding integrity; behavioural correctness must be proven by E2E and runtime component suites.'
     };
 
     fs.writeFileSync(path.join(evidenceDir, 'state-integrity.json'), JSON.stringify(result, null, 2));
