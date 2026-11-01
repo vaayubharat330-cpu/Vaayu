@@ -38,7 +38,7 @@ const ownership = {
   root: ['lifecycle', 'component-audit', 'behavioral-capability-audit', 'runtime-dependency-audit']
 };
 
-const runnerSuites = new Set([
+const allSuites = new Set([
   'portal-smoke', 'customer-journey', 'merchant-journey', 'browser-all',
   'lifecycle', 'shared-state-consistency', 'deep-lifecycle-consistency',
   'realtime-state-reconciliation', 'financial-lifecycle-reconciliation',
@@ -46,7 +46,7 @@ const runnerSuites = new Set([
   'enterprise-operations', 'websocket-e2e', 'location-integrity',
   'postgres-ledger', 'security', 'component-audit', 'component-behavior-coverage',
   'behavioral-capability-audit', 'runtime-dependency-audit', 'route-contract-audit',
-  'state-integrity', 'enterprise-battery'
+  'state-integrity', 'enterprise-battery', 'component-runtime-ownership-audit'
 ]);
 
 function walk(dir) {
@@ -72,7 +72,7 @@ function main() {
 
   const results = [...areas.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([area, filesInArea]) => {
     const suites = ownership[area] || [];
-    const invalidSuites = suites.filter(suite => !runnerSuites.has(suite));
+    const invalidSuites = suites.filter(suite => !allSuites.has(suite));
     const covered = suites.length > 0 && invalidSuites.length === 0;
     return {
       area,
@@ -88,6 +88,7 @@ function main() {
   const output = {
     generatedAt: new Date().toISOString(),
     target,
+    selectedSuites: String(process.env.CERTIFICATION_SUITES || '').split(',').map(x => x.trim()).filter(Boolean),
     summary: {
       backendAreas: results.length,
       ownedAreas: results.length - gaps.length,
