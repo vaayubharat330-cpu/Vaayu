@@ -3,9 +3,9 @@
 /**
  * Backend component runtime ownership audit.
  *
- * Maps discovered backend source areas to certification suites using explicit
- * source-path evidence. This prevents a component from being considered
- * covered merely because another, unrelated backend test passed.
+ * Maps every discovered executable backend source file to explicit
+ * certification ownership. Area-level ownership alone can hide an untested
+ * file behind an unrelated test, so this gate records ownership at file level.
  *
  * This is an evidence gate only. Runtime correctness still requires the mapped
  * suites to execute and pass in the disposable certification environment.
@@ -60,45 +60,54 @@ function walk(dir) {
   return result;
 }
 
+function suitesFor(relativePath) {
+  const parts = relativePath.split('/');
+  const area = parts.length > 1 ? parts[0] : 'root';
+  return ownership[area] || [];
+}
+
 function main() {
   const files = walk(srcRoot);
-  const areas = new Map();
-  for (const file of files) {
-    const relative = path.relative(srcRoot, file).split(path.sep);
-    const area = relative.length > 1 ? relative[0] : 'root';
-    if (!areas.has(area)) areas.set(area, []);
-    areas.get(area).push(path.relative(root, file));
-  }
-
-  const results = [...areas.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([area, filesInArea]) => {
-    const suites = ownership[area] || [];
+  const components = files.map(file => {
+    const relative = path.relative(srcRoot, file).split(path.sep).join('/');
+    const suites = suitesFor(relative);
     const invalidSuites = suites.filter(suite => !allSuites.has(suite));
-    const covered = suites.length > 0 && invalidSuites.length === 0;
     return {
-      area,
-      sourceFiles: filesInArea.length,
-      sourceSample: filesInArea.slice(0, 12),
+      sourceFile: path.relative(root, file).split(path.sep).join('/'),
+      sourceArea: relative.includes('/') ? relative.split('/')[0] : 'root',
       certificationSuites: suites,
       invalidSuites,
-      status: covered ? 'OWNED' : 'OWNERSHIP_GAP',
+      status: suites.length > 0 && invalidSuites.length === 0 ? 'OWNED' : 'OWNERSHIP_GAP',
     };
-  });
+  }).sort((a, b) => a.sourceFile.localeCompare(b.sourceFile));
 
-  const gaps = results.filter(result => result.status !== 'OWNED');
+  const gaps = components.filter(component => component.status !== 'OWNED');
+  const areaSummary = {};
+  for (const component of components) {
+    const area = component.sourceArea;
+    if (!areaSummary[area]) areaSummary[area] = { sourceFiles: 0, ownedFiles: 0, ownershipGaps: 0 };
+    areaSummary[area].sourceFiles += 1;
+    if (component.status === 'OWNED') areaSummary[area].ownedFiles += 1;
+    else areaSummary[area].ownershipGaps += 1;
+  }
+
   const output = {
     generatedAt: new Date().toISOString(),
     target,
     selectedSuites: String(process.env.CERTIFICATION_SUITES || '').split(',').map(x => x.trim()).filter(Boolean),
     summary: {
-      backendAreas: results.length,
-      ownedAreas: results.length - gaps.length,
+      backendAreas: Object.keys(areaSummary).length,
+      sourceFiles: components.length,
+      ownedFiles: components.length - gaps.length,
       ownershipGaps: gaps.length,
-      sourceFiles: files.length,
     },
-    areas: results,
+    areaSummary,
+    components,
     policy: {
-      purpose: 'Every discovered backend source area must have explicit certification ownership.',
+      purpose: 'Every discovered executable backend source file must have explicit certification ownership.',
       nonClaim: 'Ownership proves test responsibility, not runtime correctness; mapped suites must pass.',
+      discoveryScope: 'Executable .js/.cjs/.mjs files under apps/backend/src.',
+      nonExecutableAssetsExcluded: 'CSS and other non-executable source assets are outside this runtime ownership gate.',
       productionSafe: true,
     },
   };
