@@ -25,6 +25,7 @@ const allSuites = [
   ['postgres-ledger', ['test/unit/postgresLedger.test.js'], 'node'],
   ['security', ['test/unit/comprehensiveSecurityAudit.test.js'], 'node'],
   ['component-audit', ['certification/component-audit.js'], 'node'],
+  ['state-integrity', ['certification/state-integrity.js'], 'node'],
   ['enterprise-battery', ['certification/enterprise-battery.js'], 'node'],
 ];
 
@@ -47,9 +48,7 @@ function run(name, args, mode = 'playwright') {
       ENABLE_TEST_ENDPOINTS: 'true',
       JWT_SECRET: process.env.JWT_SECRET || DISPOSABLE_JWT_SECRET,
       VAAYU_TEST_JWT_SECRET:
-        process.env.VAAYU_TEST_JWT_SECRET ||
-        process.env.JWT_SECRET ||
-        DISPOSABLE_JWT_SECRET,
+        process.env.VAAYU_TEST_JWT_SECRET || process.env.JWT_SECRET || DISPOSABLE_JWT_SECRET,
     };
     const command = process.execPath;
     const commandArgs = mode === 'node'
