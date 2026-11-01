@@ -25,6 +25,7 @@ const ARTIFACT_ROOTS = [path.resolve(__dirname, '..', 'test-results'), path.reso
 fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 
 const suites = {
+  'certification-preflight': 'Certification registry and executable-source preflight gate',
   'portal-smoke': 'Portal smoke — six entry surfaces',
   'customer-journey': 'Customer — registration, authentication and booking workspace',
   'merchant-journey': 'Merchant — registration, authentication and workspace',
@@ -76,6 +77,7 @@ function evidenceSummary() {
   const routeContractAudit = readJsonFile('route-contract-audit.json');
   const stateIntegrity = readJsonFile('state-integrity.json');
   const enterpriseBattery = readJsonFile('enterprise-battery.json');
+  const certificationPreflight = readJsonFile('certification-preflight.json');
   const certificationIntegrity = readJsonFile('certification-integrity-evidence.json');
   const suiteResults = {};
   for (const key of Object.keys(suites)) {
@@ -87,7 +89,7 @@ function evidenceSummary() {
     .map(name => readJsonFile(name)).filter(Boolean)
     .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt))).slice(0, 20)
     .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total, artifacts: item.artifacts || [] }));
-  return { latest, running, suites: suiteResults, componentAudit, componentBehaviorCoverage, behavioralCapabilityAudit, componentRuntimeOwnershipAudit, componentBehaviorEvidenceAudit, runtimeDependencyAudit, routeContractAudit, stateIntegrity, enterpriseBattery, certificationIntegrity, historicalRuns };
+  return { latest, running, suites: suiteResults, componentAudit, componentBehaviorCoverage, behavioralCapabilityAudit, componentRuntimeOwnershipAudit, componentBehaviorEvidenceAudit, runtimeDependencyAudit, routeContractAudit, stateIntegrity, enterpriseBattery, certificationPreflight, certificationIntegrity, historicalRuns };
 }
 function artifactInventory() {
   const files = [];
@@ -150,6 +152,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/behavioral-capability-audit') return json(res, 200, evidenceSummary().behavioralCapabilityAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/component-runtime-ownership-audit') return json(res, 200, evidenceSummary().componentRuntimeOwnershipAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/component-behavior-evidence-audit') return json(res, 200, evidenceSummary().componentBehaviorEvidenceAudit || { status: 'NOT_RUN' });
+    if (url.pathname === '/api/certification-preflight') return json(res, 200, evidenceSummary().certificationPreflight || { status: 'NOT_RUN' });
     if (url.pathname === '/api/runtime-dependency-audit') return json(res, 200, evidenceSummary().runtimeDependencyAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/route-contract-audit') return json(res, 200, evidenceSummary().routeContractAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/state-integrity') return json(res, 200, evidenceSummary().stateIntegrity || { status: 'NOT_RUN' });
