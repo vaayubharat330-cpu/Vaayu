@@ -20,6 +20,7 @@ const allSuites = [
   ['shared-state-consistency', ['test/integration/sharedStateConsistency.test.js'], 'node'],
   ['deep-lifecycle-consistency', ['test/integration/deepLifecycleConsistency.test.js'], 'node'],
   ['realtime-state-reconciliation', ['test/integration/realtimeStateReconciliation.test.js'], 'node'],
+  ['financial-lifecycle-reconciliation', ['test/integration/financialLifecycleReconciliation.test.js'], 'node'],
   ['failure-resilience', ['test/integration/failureResilience.test.js'], 'node'],
   ['merchant-e2e', ['test/integration/merchantLifecycle.test.js'], 'node'],
   ['enterprise-operations', ['test/integration/operations.test.js'], 'node'],
