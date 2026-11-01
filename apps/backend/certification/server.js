@@ -44,6 +44,7 @@ const suites = {
   security: 'Comprehensive security certification',
   'component-audit': 'Backend component inventory, syntax and infrastructure audit',
   'component-behavior-coverage': 'Backend component → behavioural certification ownership gate',
+  'behavioral-capability-audit': 'Critical backend capability → executable evidence gate',
   'route-contract-audit': 'Registered API route source/runtime contract audit',
   'state-integrity': 'PostgreSQL and Redis runtime state integrity',
   'enterprise-battery': 'Broader backend behavioural certification battery',
@@ -65,6 +66,7 @@ function evidenceSummary() {
   const running = readJsonFile('running.json');
   const componentAudit = readJsonFile('component-audit.json');
   const componentBehaviorCoverage = readJsonFile('component-behavior-coverage.json');
+  const behavioralCapabilityAudit = readJsonFile('behavioral-capability-audit.json');
   const routeContractAudit = readJsonFile('route-contract-audit.json');
   const stateIntegrity = readJsonFile('state-integrity.json');
   const enterpriseBattery = readJsonFile('enterprise-battery.json');
@@ -78,7 +80,7 @@ function evidenceSummary() {
     .map(name => readJsonFile(name)).filter(Boolean)
     .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt))).slice(0, 20)
     .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total, artifacts: item.artifacts || [] }));
-  return { latest, running, suites: suiteResults, componentAudit, componentBehaviorCoverage, routeContractAudit, stateIntegrity, enterpriseBattery, historicalRuns };
+  return { latest, running, suites: suiteResults, componentAudit, componentBehaviorCoverage, behavioralCapabilityAudit, routeContractAudit, stateIntegrity, enterpriseBattery, historicalRuns };
 }
 function artifactInventory() {
   const files = [];
@@ -138,6 +140,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/suites') return json(res, 200, { suites });
     if (url.pathname === '/api/components') return json(res, 200, evidenceSummary().componentAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/component-behavior-coverage') return json(res, 200, evidenceSummary().componentBehaviorCoverage || { status: 'NOT_RUN' });
+    if (url.pathname === '/api/behavioral-capability-audit') return json(res, 200, evidenceSummary().behavioralCapabilityAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/route-contract-audit') return json(res, 200, evidenceSummary().routeContractAudit || { status: 'NOT_RUN' });
     if (url.pathname === '/api/state-integrity') return json(res, 200, evidenceSummary().stateIntegrity || { status: 'NOT_RUN' });
     if (url.pathname === '/api/enterprise-battery') return json(res, 200, evidenceSummary().enterpriseBattery || { status: 'NOT_RUN' });
