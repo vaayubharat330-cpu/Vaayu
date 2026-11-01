@@ -13,6 +13,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { SUITE_NAMES } = require('./suite-registry');
 
 const root = path.resolve(__dirname, '..');
 const srcRoot = path.join(root, 'src');
@@ -25,6 +26,7 @@ if (process.env.NODE_ENV === 'production' || target !== 'disposable') {
 
 fs.mkdirSync(evidenceDir, { recursive: true });
 
+const allSuites = new Set(SUITE_NAMES);
 const ownership = {
   db: ['postgres-ledger', 'state-integrity', 'runtime-dependency-audit'],
   http: ['route-contract-audit', 'security', 'browser-all'],
@@ -37,17 +39,6 @@ const ownership = {
   ],
   root: ['lifecycle', 'component-audit', 'behavioral-capability-audit', 'runtime-dependency-audit']
 };
-
-const allSuites = new Set([
-  'portal-smoke', 'customer-journey', 'merchant-journey', 'browser-all',
-  'lifecycle', 'shared-state-consistency', 'deep-lifecycle-consistency',
-  'realtime-state-reconciliation', 'financial-lifecycle-reconciliation',
-  'merchant-operational-reconciliation', 'failure-resilience', 'merchant-e2e',
-  'enterprise-operations', 'websocket-e2e', 'location-integrity',
-  'postgres-ledger', 'security', 'component-audit', 'component-behavior-coverage',
-  'behavioral-capability-audit', 'runtime-dependency-audit', 'route-contract-audit',
-  'state-integrity', 'enterprise-battery', 'component-runtime-ownership-audit'
-]);
 
 function walk(dir) {
   if (!fs.existsSync(dir)) return [];
@@ -95,6 +86,7 @@ function main() {
     generatedAt: new Date().toISOString(),
     target,
     selectedSuites: String(process.env.CERTIFICATION_SUITES || '').split(',').map(x => x.trim()).filter(Boolean),
+    registeredSuiteCount: SUITE_NAMES.length,
     summary: {
       backendAreas: Object.keys(areaSummary).length,
       sourceFiles: components.length,
@@ -108,6 +100,7 @@ function main() {
       nonClaim: 'Ownership proves test responsibility, not runtime correctness; mapped suites must pass.',
       discoveryScope: 'Executable .js/.cjs/.mjs files under apps/backend/src.',
       nonExecutableAssetsExcluded: 'CSS and other non-executable source assets are outside this runtime ownership gate.',
+      suiteRegistrySourceOfTruth: 'apps/backend/certification/suite-registry.js',
       productionSafe: true,
     },
   };
