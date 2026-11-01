@@ -30,6 +30,8 @@ const suites = {
   'merchant-journey': 'Merchant — registration, authentication and workspace',
   'browser-all': 'All browser certification tests',
   lifecycle: 'Backend delivery lifecycle E2E',
+  'shared-state-consistency': 'Cross-role shared-state reconciliation',
+  'failure-resilience': 'Negative-path authorization and state-preservation certification',
   'merchant-e2e': 'Backend merchant lifecycle E2E',
   'enterprise-operations': 'Enterprise operations E2E',
   'websocket-e2e': 'WebSocket E2E',
@@ -37,15 +39,12 @@ const suites = {
   'postgres-ledger': 'PostgreSQL ledger certification',
   security: 'Comprehensive security certification',
   'component-audit': 'Backend component inventory, syntax and infrastructure audit',
+  'state-integrity': 'PostgreSQL and Redis runtime state integrity',
   'enterprise-battery': 'Broader backend behavioural certification battery',
 };
 
 function json(res, status, payload) {
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
-  });
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
   res.end(JSON.stringify(payload));
 }
 function safeError(error) { return error?.message || String(error); }
@@ -59,6 +58,7 @@ function evidenceSummary() {
   const latest = readJsonFile('latest.json');
   const running = readJsonFile('running.json');
   const componentAudit = readJsonFile('component-audit.json');
+  const stateIntegrity = readJsonFile('state-integrity.json');
   const enterpriseBattery = readJsonFile('enterprise-battery.json');
   const suiteResults = {};
   for (const key of Object.keys(suites)) {
@@ -70,7 +70,7 @@ function evidenceSummary() {
     .map(name => readJsonFile(name)).filter(Boolean)
     .sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt))).slice(0, 20)
     .map(item => ({ runId: item.runId, startedAt: item.startedAt, finishedAt: item.finishedAt, passed: item.passed, failed: item.failed, total: item.total, artifacts: item.artifacts || [] }));
-  return { latest, running, suites: suiteResults, componentAudit, enterpriseBattery, historicalRuns };
+  return { latest, running, suites: suiteResults, componentAudit, stateIntegrity, enterpriseBattery, historicalRuns };
 }
 function artifactInventory() {
   const files = [];
@@ -129,6 +129,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/runs') return json(res, 200, evidenceSummary().historicalRuns);
     if (url.pathname === '/api/suites') return json(res, 200, { suites });
     if (url.pathname === '/api/components') return json(res, 200, evidenceSummary().componentAudit || { status: 'NOT_RUN' });
+    if (url.pathname === '/api/state-integrity') return json(res, 200, evidenceSummary().stateIntegrity || { status: 'NOT_RUN' });
     if (url.pathname === '/api/enterprise-battery') return json(res, 200, evidenceSummary().enterpriseBattery || { status: 'NOT_RUN' });
     if (url.pathname.startsWith('/api/evidence/')) { const name = decodeURIComponent(url.pathname.slice('/api/evidence/'.length)); const item = readJsonFile(name); return item ? json(res, 200, item) : json(res, 404, { error: 'Evidence not found' }); }
     return json(res, 404, { error: 'Not found' });
