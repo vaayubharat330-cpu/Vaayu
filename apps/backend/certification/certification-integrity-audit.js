@@ -4,17 +4,17 @@
  * Certification integrity gate.
  *
  * Prevents the Control Center from presenting an incomplete or stale
- * certification run as authoritative. It compares the runner's declared
- * suites with the Control Center registry, verifies every selected suite has
- * a result in the latest run, and requires all selected suites to pass.
+ * certification run as authoritative. The suite registry is the single source
+ * of truth; the Control Center registry must still expose every registered
+ * suite, and the latest run must contain passing evidence for its selection.
  */
 
 const fs = require('fs');
 const path = require('path');
+const { SUITE_NAMES } = require('./suite-registry');
 
 const certificationRoot = path.resolve(__dirname);
 const evidenceDir = path.join(certificationRoot, 'artifacts');
-const runnerFile = path.join(certificationRoot, 'run-certification.js');
 const serverFile = path.join(certificationRoot, 'server.js');
 const target = process.env.VAAYU_TEST_TARGET;
 
@@ -26,14 +26,6 @@ fs.mkdirSync(evidenceDir, { recursive: true });
 
 function read(file) {
   return fs.readFileSync(file, 'utf8');
-}
-
-function extractRunnerSuites(content) {
-  const names = [];
-  const re = /\['([^']+)',\s*\[/g;
-  let match;
-  while ((match = re.exec(content))) names.push(match[1]);
-  return [...new Set(names)];
 }
 
 function extractServerSuites(content) {
@@ -55,9 +47,8 @@ function latestRun() {
 }
 
 function main() {
-  const runnerContent = read(runnerFile);
   const serverContent = read(serverFile);
-  const runnerSuites = extractRunnerSuites(runnerContent);
+  const runnerSuites = [...SUITE_NAMES];
   const serverSuites = extractServerSuites(serverContent);
   const latest = latestRun();
   const selectedSuites = Array.isArray(latest?.selectedSuites) && latest.selectedSuites.length
@@ -76,7 +67,7 @@ function main() {
     .map(result => ({ name: result.name, status: result.status, exitCode: result.exitCode, error: result.error }));
 
   const checks = [
-    { name: 'runner-server-suite-parity', ok: missingFromServer.length === 0 && missingFromRunner.length === 0, missingFromServer, missingFromRunner },
+    { name: 'registry-server-suite-parity', ok: missingFromServer.length === 0 && missingFromRunner.length === 0, missingFromServer, missingFromRunner },
     { name: 'latest-run-exists', ok: Boolean(latest?.runId && Array.isArray(latest.results)) },
     { name: 'selected-suite-registry-valid', ok: unknownSelectedSuites.length === 0, unknownSelectedSuites },
     { name: 'latest-run-suite-completeness', ok: missingResults.length === 0, selectedSuites, missingResults },
