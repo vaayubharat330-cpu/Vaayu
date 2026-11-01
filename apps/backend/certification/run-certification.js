@@ -18,6 +18,7 @@ const allSuites = [
   ['browser-all', ['test/browser']],
   ['lifecycle', ['test/integration/lifecycle.test.js'], 'node'],
   ['shared-state-consistency', ['test/integration/sharedStateConsistency.test.js'], 'node'],
+  ['deep-lifecycle-consistency', ['test/integration/deepLifecycleConsistency.test.js'], 'node'],
   ['failure-resilience', ['test/integration/failureResilience.test.js'], 'node'],
   ['merchant-e2e', ['test/integration/merchantLifecycle.test.js'], 'node'],
   ['enterprise-operations', ['test/integration/operations.test.js'], 'node'],
@@ -118,17 +119,11 @@ function assertEnvironment() {
     runId, startedAt, finishedAt: new Date().toISOString(), target: process.env.VAAYU_TEST_TARGET,
     baseUrl: process.env.VAAYU_TEST_BASE, results,
     passed: results.filter(r => r.status === 'PASSED').length,
-    failed: results.filter(r => r.status === 'FAILED').length,
-    total: results.length, artifacts: collectArtifacts(),
+    failed: results.filter(r => r.status !== 'PASSED').length,
+    artifacts: collectArtifacts()
   };
-
   writeJson('latest.json', summary);
   writeJson(`${runId}.json`, summary);
-  try { fs.unlinkSync(path.join(evidenceDir, 'running.json')); } catch (_) {}
-  console.log(JSON.stringify(summary, null, 2));
-  process.exit(summary.failed === 0 ? 0 : 1);
-})().catch(error => {
-  writeJson('latest.json', { runId: `cert-${Date.now()}`, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), target: process.env.VAAYU_TEST_TARGET || null, status: 'FAILED', error: error.message });
-  console.error(error);
-  process.exit(1);
-});
+  fs.writeFileSync(path.join(evidenceDir, 'running.json'), JSON.stringify({ ...summary, status: summary.failed ? 'FAILED' : 'PASSED' }, null, 2));
+  process.exit(summary.failed ? 1 : 0);
+})();
