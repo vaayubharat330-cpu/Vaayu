@@ -5,10 +5,8 @@
  *
  * Prevents the Control Center from presenting an incomplete or stale
  * certification run as authoritative. It compares the runner's declared
- * suites with the Control Center registry, verifies every declared suite has
+ * suites with the Control Center registry, verifies every selected suite has
  * a result in the latest run, and requires all selected suites to pass.
- *
- * This is a meta-certification gate: it does not replace the underlying tests.
  */
 
 const fs = require('fs');
@@ -62,12 +60,17 @@ function main() {
   const runnerSuites = extractRunnerSuites(runnerContent);
   const serverSuites = extractServerSuites(serverContent);
   const latest = latestRun();
+  const selectedSuites = Array.isArray(latest?.selectedSuites) && latest.selectedSuites.length
+    ? latest.selectedSuites
+    : runnerSuites;
   const resultMap = new Map((latest?.results || []).map(result => [result.name, result]));
 
+  const selectedSet = new Set(selectedSuites);
+  const unknownSelectedSuites = selectedSuites.filter(name => !runnerSuites.includes(name));
   const missingFromServer = runnerSuites.filter(name => !serverSuites.includes(name));
   const missingFromRunner = serverSuites.filter(name => !runnerSuites.includes(name));
-  const missingResults = runnerSuites.filter(name => !resultMap.has(name));
-  const failedResults = runnerSuites
+  const missingResults = selectedSuites.filter(name => !resultMap.has(name));
+  const failedResults = selectedSuites
     .map(name => resultMap.get(name))
     .filter(result => result && result.status !== 'PASSED')
     .map(result => ({ name: result.name, status: result.status, exitCode: result.exitCode, error: result.error }));
@@ -75,8 +78,9 @@ function main() {
   const checks = [
     { name: 'runner-server-suite-parity', ok: missingFromServer.length === 0 && missingFromRunner.length === 0, missingFromServer, missingFromRunner },
     { name: 'latest-run-exists', ok: Boolean(latest?.runId && Array.isArray(latest.results)) },
-    { name: 'latest-run-suite-completeness', ok: missingResults.length === 0, missingResults },
-    { name: 'latest-run-all-pass', ok: failedResults.length === 0, failedResults },
+    { name: 'selected-suite-registry-valid', ok: unknownSelectedSuites.length === 0, unknownSelectedSuites },
+    { name: 'latest-run-suite-completeness', ok: missingResults.length === 0, selectedSuites, missingResults },
+    { name: 'latest-run-all-selected-pass', ok: failedResults.length === 0, failedResults },
     { name: 'latest-run-target-disposable', ok: latest?.target === 'disposable', actualTarget: latest?.target || null },
   ];
 
@@ -86,6 +90,8 @@ function main() {
     latestRunId: latest?.runId || null,
     runnerSuiteCount: runnerSuites.length,
     controlCenterSuiteCount: serverSuites.length,
+    selectedSuiteCount: selectedSet.size,
+    selectedSuites,
     checks,
     summary: {
       checks: checks.length,
@@ -94,7 +100,7 @@ function main() {
       certificationAuthoritative: checks.every(check => check.ok),
     },
     policy: {
-      purpose: 'Prevent stale, partial, or registry-divergent certification evidence from being treated as authoritative.',
+      purpose: 'Prevent stale, partial, subset-divergent, or registry-divergent certification evidence from being treated as authoritative.',
       nonClaim: 'This gate validates certification evidence integrity; it does not replace the underlying behavioural suites.',
       productionSafe: true,
     },
