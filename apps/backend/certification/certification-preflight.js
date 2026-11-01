@@ -8,6 +8,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { getAllSuites } = require('./suite-registry');
 
 const root = path.resolve(__dirname, '..');
@@ -27,6 +28,18 @@ function inspectEntry(relativePath) {
   return { path: relativePath, exists: true, type: stat.isDirectory() ? 'directory' : 'file', entries: stat.isDirectory() ? fs.readdirSync(absolute).length : undefined };
 }
 
+function syntaxCheck(relativePath) {
+  const absolute = path.resolve(root, relativePath);
+  const result = spawnSync(process.execPath, ['--check', absolute], { encoding: 'utf8' });
+  return {
+    path: relativePath,
+    ok: result.status === 0,
+    exitCode: result.status,
+    error: result.error ? result.error.message : null,
+    stderr: result.stderr ? result.stderr.trim() : '',
+  };
+}
+
 function main() {
   const suites = getAllSuites();
   const names = suites.map(([name]) => name);
@@ -37,6 +50,9 @@ function main() {
   const entries = suites.flatMap(([name, args, mode]) => args.map(arg => ({ suite: name, mode: mode || 'playwright', ...inspectEntry(arg) })));
   const missingEntries = entries.filter(entry => !entry.exists);
   const emptyDirectories = entries.filter(entry => entry.exists && entry.type === 'directory' && Number(entry.entries) === 0);
+  const syntaxTargets = entries.filter(entry => entry.exists && entry.type === 'file' && /\.(js|cjs|mjs)$/.test(entry.path));
+  const syntaxChecks = syntaxTargets.map(entry => ({ suite: entry.suite, mode: entry.mode, ...syntaxCheck(entry.path) }));
+  const syntaxFailures = syntaxChecks.filter(check => !check.ok);
   const requiredFiles = ['certification/run-certification.js', 'certification/certification-integrity-audit.js', 'certification/server.js'];
   const requiredFileChecks = requiredFiles.map(inspectEntry);
   const missingRequiredFiles = requiredFileChecks.filter(item => !item.exists);
@@ -46,6 +62,7 @@ function main() {
     { name: 'valid-suite-modes', ok: invalidModes.length === 0, invalidModes },
     { name: 'registered-suite-sources-exist', ok: missingEntries.length === 0, missingEntries },
     { name: 'registered-suite-directories-nonempty', ok: emptyDirectories.length === 0, emptyDirectories },
+    { name: 'registered-certification-sources-parse', ok: syntaxFailures.length === 0, syntaxFailures },
     { name: 'certification-control-files-exist', ok: missingRequiredFiles.length === 0, missingRequiredFiles },
   ];
 
@@ -55,12 +72,15 @@ function main() {
     suiteCount: suites.length,
     suiteNames: names,
     entries,
+    syntaxChecks,
     requiredFileChecks,
     checks,
     summary: {
       checks: checks.length,
       passed: checks.filter(check => check.ok).length,
       failed: checks.filter(check => !check.ok).length,
+      registeredSourceFiles: syntaxChecks.length,
+      syntaxValid: syntaxFailures.length === 0,
       preflightPassed: checks.every(check => check.ok),
     },
     policy: {
