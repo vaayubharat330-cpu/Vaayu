@@ -6,14 +6,15 @@
  * Unlike the source/component inventory audits, this test performs real runtime
  * operations against the disposable backend dependencies. It deliberately
  * verifies PostgreSQL and Redis with write/read/delete round trips, then checks
- * the live HTTP server and WebSocket handshake. These checks prove that the
- * runtime dependency path is usable; they do not replace the domain suites.
+ * the live HTTP server and authenticated WebSocket handshake. These checks prove
+ * that the runtime dependency path is usable; they do not replace the domain suites.
  */
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const dotenv = require(path.join(__dirname, '..', 'node_modules', 'dotenv'));
+const jwt = require(path.join(__dirname, '..', 'node_modules', 'jsonwebtoken'));
 const { Pool } = require(path.join(__dirname, '..', 'node_modules', 'pg'));
 const Redis = require(path.join(__dirname, '..', 'node_modules', 'ioredis'));
 const WebSocket = require(path.join(__dirname, '..', 'node_modules', 'ws'));
@@ -25,6 +26,7 @@ const target = process.env.VAAYU_TEST_TARGET;
 const baseUrl = String(process.env.VAAYU_TEST_BASE || 'http://127.0.0.1:4000').replace(/\/$/, '');
 const databaseUrl = process.env.DATABASE_URL || parsed.DATABASE_URL || '';
 const redisUrl = process.env.REDIS_URL || parsed.REDIS_URL || '';
+const secret = process.env.VAAYU_TEST_JWT_SECRET || process.env.JWT_SECRET || parsed.JWT_SECRET || '';
 const evidenceDir = path.join(__dirname, 'artifacts');
 
 if (process.env.NODE_ENV === 'production' || target !== 'disposable') {
@@ -78,17 +80,19 @@ async function redisProbe() {
 }
 
 async function websocketProbe() {
+  if (secret.length < 32) throw new Error('JWT secret must be at least 32 chars');
   const wsUrl = baseUrl.replace(/^http/, 'ws');
+  const token = jwt.sign({ id: `cert_ws_${Date.now()}`, name: 'Certification WebSocket Probe', phone: '9999900000', role: 'ADMIN', city: 'Hyderabad' }, secret, { algorithm: 'HS256', expiresIn: 60 });
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`${wsUrl}/ws`);
+    const ws = new WebSocket(`${wsUrl}/ws?token=${encodeURIComponent(token)}`);
     const timer = setTimeout(() => {
       try { ws.close(); } catch (_) {}
-      reject(new Error('WebSocket handshake timed out'));
+      reject(new Error('Authenticated WebSocket handshake timed out'));
     }, 5000);
     ws.once('open', () => {
       clearTimeout(timer);
       ws.close();
-      resolve({ connected: true });
+      resolve({ connected: true, authenticated: true });
     });
     ws.once('error', error => {
       clearTimeout(timer);
