@@ -31,6 +31,7 @@ const suites = {
   'browser-all': 'All browser certification tests',
   lifecycle: 'Backend delivery lifecycle E2E',
   'shared-state-consistency': 'Cross-role shared-state reconciliation',
+  'deep-lifecycle-consistency': 'Full delivery lifecycle with geofence, OTP, persistence and tracking reconciliation',
   'failure-resilience': 'Negative-path authorization and state-preservation certification',
   'merchant-e2e': 'Backend merchant lifecycle E2E',
   'enterprise-operations': 'Enterprise operations E2E',
