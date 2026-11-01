@@ -17,6 +17,7 @@ const allSuites = [
   ['merchant-journey', ['test/browser/merchantJourney.spec.js']],
   ['browser-all', ['test/browser']],
   ['lifecycle', ['test/integration/lifecycle.test.js'], 'node'],
+  ['shared-state-consistency', ['test/integration/sharedStateConsistency.test.js'], 'node'],
   ['merchant-e2e', ['test/integration/merchantLifecycle.test.js'], 'node'],
   ['enterprise-operations', ['test/integration/operations.test.js'], 'node'],
   ['websocket-e2e', ['test/integration/websocket.test.js'], 'node'],
@@ -54,37 +55,17 @@ function run(name, args, mode = 'playwright') {
     const commandArgs = mode === 'node'
       ? args
       : [path.resolve(root, 'node_modules/@playwright/test/cli.js'), 'test', ...args, '--config', 'playwright.config.js'];
-    const child = spawn(command, commandArgs, {
-      cwd: root,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawn(command, commandArgs, { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
 
-    child.stdout.on('data', chunk => {
-      output.push(chunk.toString());
-      process.stdout.write(chunk);
-    });
-    child.stderr.on('data', chunk => {
-      output.push(chunk.toString());
-      process.stderr.write(chunk);
-    });
+    child.stdout.on('data', chunk => { output.push(chunk.toString()); process.stdout.write(chunk); });
+    child.stderr.on('data', chunk => { output.push(chunk.toString()); process.stderr.write(chunk); });
     child.on('error', error => {
-      const result = {
-        name, mode, startedAt, finishedAt: new Date().toISOString(),
-        status: 'FAILED', exitCode: null, signal: null,
-        error: error.message, output: output.join('').slice(-50000),
-      };
-      writeJson(`${name}.json`, result);
-      resolve(result);
+      const result = { name, mode, startedAt, finishedAt: new Date().toISOString(), status: 'FAILED', exitCode: null, signal: null, error: error.message, output: output.join('').slice(-50000) };
+      writeJson(`${name}.json`, result); resolve(result);
     });
     child.on('close', (code, signal) => {
-      const result = {
-        name, mode, startedAt, finishedAt: new Date().toISOString(),
-        status: code === 0 ? 'PASSED' : 'FAILED', exitCode: code, signal,
-        output: output.join('').slice(-50000),
-      };
-      writeJson(`${name}.json`, result);
-      resolve(result);
+      const result = { name, mode, startedAt, finishedAt: new Date().toISOString(), status: code === 0 ? 'PASSED' : 'FAILED', exitCode: code, signal, output: output.join('').slice(-50000) };
+      writeJson(`${name}.json`, result); resolve(result);
     });
   });
 }
@@ -128,25 +109,17 @@ function assertEnvironment() {
 
   const runId = `cert-${Date.now()}`;
   const startedAt = new Date().toISOString();
-  writeJson('running.json', {
-    runId, startedAt, status: 'RUNNING', total: suites.length,
-    selectedSuites: suites.map(x => x[0]), target: process.env.VAAYU_TEST_TARGET,
-  });
+  writeJson('running.json', { runId, startedAt, status: 'RUNNING', total: suites.length, selectedSuites: suites.map(x => x[0]), target: process.env.VAAYU_TEST_TARGET });
 
   const results = [];
   for (const [name, args, mode] of suites) results.push(await run(name, args, mode));
 
   const summary = {
-    runId,
-    startedAt,
-    finishedAt: new Date().toISOString(),
-    target: process.env.VAAYU_TEST_TARGET,
-    baseUrl: process.env.VAAYU_TEST_BASE,
-    results,
+    runId, startedAt, finishedAt: new Date().toISOString(), target: process.env.VAAYU_TEST_TARGET,
+    baseUrl: process.env.VAAYU_TEST_BASE, results,
     passed: results.filter(r => r.status === 'PASSED').length,
     failed: results.filter(r => r.status === 'FAILED').length,
-    total: results.length,
-    artifacts: collectArtifacts(),
+    total: results.length, artifacts: collectArtifacts(),
   };
 
   writeJson('latest.json', summary);
@@ -155,12 +128,7 @@ function assertEnvironment() {
   console.log(JSON.stringify(summary, null, 2));
   process.exit(summary.failed === 0 ? 0 : 1);
 })().catch(error => {
-  writeJson('latest.json', {
-    runId: `cert-${Date.now()}`,
-    startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(),
-    target: process.env.VAAYU_TEST_TARGET || null,
-    status: 'FAILED', error: error.message,
-  });
+  writeJson('latest.json', { runId: `cert-${Date.now()}`, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), target: process.env.VAAYU_TEST_TARGET || null, status: 'FAILED', error: error.message });
   console.error(error);
   process.exit(1);
 });
