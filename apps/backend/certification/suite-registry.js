@@ -33,6 +33,7 @@ const SUITES = Object.freeze([
   ['state-integrity', ['certification/state-integrity.js'], 'node'],
   ['enterprise-battery', ['certification/enterprise-battery.js'], 'node'],
   ['component-runtime-ownership-audit', ['certification/component-runtime-ownership-audit.js'], 'node'],
+  ['component-behavior-evidence-audit', ['certification/component-behavior-evidence-audit.js'], 'node'],
 ]);
 
 const SUITE_NAMES = Object.freeze(SUITES.map(([name]) => name));
