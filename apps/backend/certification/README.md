@@ -58,7 +58,7 @@ node certification/run-certification.js
 Run a subset:
 
 ```bash
-export CERTIFICATION_SUITES=portal-smoke,multi-role
+export CERTIFICATION_SUITES=portal-smoke,customer-journey,component-audit
 node certification/run-certification.js
 ```
 
