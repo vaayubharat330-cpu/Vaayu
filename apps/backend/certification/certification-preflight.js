@@ -28,6 +28,22 @@ function inspectEntry(relativePath) {
   return { path: relativePath, exists: true, type: stat.isDirectory() ? 'directory' : 'file', entries: stat.isDirectory() ? fs.readdirSync(absolute).length : undefined };
 }
 
+function walkJavaScript(relativePath) {
+  const absolute = path.resolve(root, relativePath);
+  if (!fs.existsSync(absolute)) return [];
+  const stat = fs.statSync(absolute);
+  if (stat.isFile()) return /\.(js|cjs|mjs)$/.test(absolute) ? [relativePath] : [];
+
+  const files = [];
+  for (const entry of fs.readdirSync(absolute, { withFileTypes: true })) {
+    if (entry.name === 'node_modules') continue;
+    const child = path.join(relativePath, entry.name);
+    if (entry.isDirectory()) files.push(...walkJavaScript(child));
+    else if (/\.(js|cjs|mjs)$/.test(entry.name)) files.push(child);
+  }
+  return files;
+}
+
 function syntaxCheck(relativePath) {
   const absolute = path.resolve(root, relativePath);
   const result = spawnSync(process.execPath, ['--check', absolute], { encoding: 'utf8' });
@@ -50,17 +66,22 @@ function main() {
   const entries = suites.flatMap(([name, args, mode]) => args.map(arg => ({ suite: name, mode: mode || 'playwright', ...inspectEntry(arg) })));
   const missingEntries = entries.filter(entry => !entry.exists);
   const emptyDirectories = entries.filter(entry => entry.exists && entry.type === 'directory' && Number(entry.entries) === 0);
-  const syntaxTargets = entries.filter(entry => entry.exists && entry.type === 'file' && /\.(js|cjs|mjs)$/.test(entry.path));
+
+  const syntaxTargets = entries.flatMap(entry => entry.exists ? walkJavaScript(entry.path).map(file => ({
+    suite: entry.suite,
+    controlFile: false,
+    mode: entry.mode,
+    path: file,
+  })) : []);
+
   const requiredFiles = ['certification/run-certification.js', 'certification/certification-integrity-audit.js', 'certification/server.js'];
   const requiredFileChecks = requiredFiles.map(inspectEntry);
-  const requiredSyntaxTargets = requiredFileChecks.filter(entry => entry.exists && entry.type === 'file' && /\.(js|cjs|mjs)$/.test(entry.path));
+  const requiredSyntaxTargets = requiredFileChecks
+    .filter(entry => entry.exists && entry.type === 'file' && /\.(js|cjs|mjs)$/.test(entry.path))
+    .map(entry => ({ suite: null, controlFile: true, mode: null, path: entry.path }));
+
   const syntaxTargetsByPath = new Map([...syntaxTargets, ...requiredSyntaxTargets].map(entry => [entry.path, entry]));
-  const syntaxChecks = [...syntaxTargetsByPath.values()].map(entry => ({
-    suite: entry.suite || null,
-    controlFile: !entry.suite,
-    mode: entry.mode || null,
-    ...syntaxCheck(entry.path),
-  }));
+  const syntaxChecks = [...syntaxTargetsByPath.values()].map(entry => ({ ...entry, ...syntaxCheck(entry.path) }));
   const syntaxFailures = syntaxChecks.filter(check => !check.ok);
   const missingRequiredFiles = requiredFileChecks.filter(item => !item.exists);
 
