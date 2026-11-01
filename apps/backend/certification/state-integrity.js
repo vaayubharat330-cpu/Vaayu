@@ -74,8 +74,9 @@ async function redisDriverSpatialIntegrity() {
         continue;
       }
 
-      const latitude = Number(location.latitude);
-      const longitude = Number(location.longitude);
+      // RedisDriverLocationStore persists `lat`/`lng`, not `latitude`/`longitude`.
+      const latitude = Number(location.lat);
+      const longitude = Number(location.lng);
       const lastPingMs = Number(location.lastPingMs);
       const validCoordinates = Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
         && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
@@ -90,7 +91,7 @@ async function redisDriverSpatialIntegrity() {
         driverId,
         latitude,
         longitude,
-        online: String(location.online) === 'true',
+        status: location.status || null,
         currentTripId: location.currentTripId || null,
         lastPingMs,
       });
@@ -103,7 +104,7 @@ async function redisDriverSpatialIntegrity() {
       orphanedSpatialMembers,
       malformedLocations,
       activeLocations,
-      policy: 'Every Redis active-driver spatial member must have a valid driver location hash and valid coordinates/timestamp.'
+      policy: 'Every Redis active-driver spatial member must have a valid driver location hash using the application lat/lng schema and a valid timestamp.'
     };
   } finally {
     redis.disconnect();
