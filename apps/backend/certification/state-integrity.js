@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const net = require('net');
 const { Pool } = require('pg');
+const Redis = require('ioredis');
 const dotenv = require('dotenv');
 
 const root = path.resolve(__dirname, '..');
@@ -52,6 +53,63 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+async function redisDriverSpatialIntegrity() {
+  const redis = new Redis(redisUrl, {
+    lazyConnect: true,
+    connectTimeout: 3000,
+    maxRetriesPerRequest: 1,
+  });
+
+  try {
+    await redis.connect();
+    const driverIds = await redis.zrange('drivers:active:spatial', 0, -1);
+    const orphanedSpatialMembers = [];
+    const malformedLocations = [];
+    const activeLocations = [];
+
+    for (const driverId of driverIds) {
+      const location = await redis.hgetall(`driver:loc:${driverId}`);
+      if (!location || Object.keys(location).length === 0) {
+        orphanedSpatialMembers.push(driverId);
+        continue;
+      }
+
+      const latitude = Number(location.latitude);
+      const longitude = Number(location.longitude);
+      const lastPingMs = Number(location.lastPingMs);
+      const validCoordinates = Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+        && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+      const validTimestamp = Number.isFinite(lastPingMs) && lastPingMs > 0;
+
+      if (!validCoordinates || !validTimestamp) {
+        malformedLocations.push({ driverId, fields: Object.keys(location) });
+        continue;
+      }
+
+      activeLocations.push({
+        driverId,
+        latitude,
+        longitude,
+        online: String(location.online) === 'true',
+        currentTripId: location.currentTripId || null,
+        lastPingMs,
+      });
+    }
+
+    return {
+      ok: orphanedSpatialMembers.length === 0 && malformedLocations.length === 0,
+      spatialMembers: driverIds.length,
+      validLocations: activeLocations.length,
+      orphanedSpatialMembers,
+      malformedLocations,
+      activeLocations,
+      policy: 'Every Redis active-driver spatial member must have a valid driver location hash and valid coordinates/timestamp.'
+    };
+  } finally {
+    redis.disconnect();
+  }
+}
+
 async function main() {
   if (!databaseUrl) throw new Error('DATABASE_URL is required for state integrity certification.');
   fs.mkdirSync(evidenceDir, { recursive: true });
@@ -59,6 +117,7 @@ async function main() {
   const redis = await redisPing(redisUrl);
   const pool = new Pool({ connectionString: databaseUrl, max: 2 });
   const checks = [];
+  let redisSpatial = { ok: false, error: 'not executed' };
   try {
     const health = await pool.query('SELECT 1 AS ok');
     checks.push({ name: 'postgres-connectivity', ok: health.rows[0]?.ok === 1 });
@@ -131,6 +190,15 @@ async function main() {
     checks.push({ name: 'tracking-token-uniqueness', ok: duplicateTrackingTokens === 0, failures: duplicateTrackingTokens });
     checks.push({ name: 'redis-connectivity', ...redis });
 
+    redisSpatial = await redisDriverSpatialIntegrity();
+    checks.push({
+      name: 'redis-driver-spatial-integrity',
+      ok: redisSpatial.ok,
+      failures: redisSpatial.orphanedSpatialMembers.length + redisSpatial.malformedLocations.length,
+      spatialMembers: redisSpatial.spatialMembers,
+      validLocations: redisSpatial.validLocations,
+    });
+
     const result = {
       generatedAt: new Date().toISOString(),
       target: process.env.VAAYU_TEST_TARGET,
@@ -139,9 +207,10 @@ async function main() {
       totalPersistedRecords: allRecords.rows.length,
       tripRecords: trips.rows.length,
       checks,
+      redisDriverSpatial: redisSpatial,
       passed: checks.filter(c => c.ok).length,
       failed: checks.filter(c => !c.ok).length,
-      policy: 'Structural persistence and dependency integrity only; behavioural correctness must be proven by E2E and runtime component suites.'
+      policy: 'Structural persistence and Redis state integrity only; behavioural correctness must be proven by E2E and runtime component suites.'
     };
 
     fs.writeFileSync(path.join(evidenceDir, 'state-integrity.json'), JSON.stringify(result, null, 2));
